@@ -64,7 +64,7 @@ final class ClueInvariantTests: XCTestCase {
 
     static func describe(_ audio: Audio) -> String {
         FlybyAnalyzer().analyze(audio).tracks.map { t in
-            String(format: "%@ %.1f Hz (%.1f–%.1f) for %.1f s", "\(t.kind)", t.meanFrequency, t.minFrequency, t.maxFrequency, t.duration)
+            "\(t.kind) " + String(format: "%.1f Hz (%.1f–%.1f) for %.1f s", t.meanFrequency, t.minFrequency, t.maxFrequency, t.duration)
         }.joined(separator: "; ")
     }
 
