@@ -9,6 +9,8 @@ sdk=${SWIFT_WASM_SDK:-swift-6.4.2-RELEASE_wasm}
 flags=(-c "${CONFIG:-release}" --swift-sdk "$sdk" --product octave-camo-wasm
        -Xswiftc -Xclang-linker -Xswiftc -mexec-model=reactor)
 [ "${CONFIG:-release}" = release ] && flags+=(-Xlinker --strip-debug)
+# WASM_LINK_MAP=file writes the linker's map (which symbol sits at which address), for diagnosis.
+[ -n "${WASM_LINK_MAP:-}" ] && flags+=(-Xlinker "--Map=$WASM_LINK_MAP")
 swift build "${flags[@]}"
 bin=$(swift build "${flags[@]}" --show-bin-path)
 mkdir -p "$(dirname "$out")"
