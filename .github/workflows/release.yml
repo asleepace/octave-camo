@@ -1,41 +1,88 @@
 name: Release
 
-# Push a tag like v0.1.0 (matching web/package.json and OctaveCamo.version). Builds everything
-# from that commit, checks the wasm build is reproducible (two clean builds in different
-# directories must be byte-identical), and publishes a GitHub release with checksums.
+# Push a tag like v0.1.0 (matching web/package.json and OctaveCamo.version), or run by hand for
+# an existing tag to refresh its release. The release ships the exact WebAssembly that CI built
+# and deployed for that commit (the bytes the site's footer hashes), never a rebuild. Rebuilds are
+# made only to report whether the build is reproducible.
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to (re)publish, e.g. v0.1.0
+        required: true
 
 permissions:
   contents: read
 
+env:
+  TAG: ${{ inputs.tag || github.ref_name }}
+
 jobs:
-  wasm:
-    name: WebAssembly (built twice)
+  deployed:
+    name: The deployed wasm for this commit
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ env.TAG }}
+      - name: Find this commit's successful CI run on main (the one that deployed it)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sha=$(git rev-parse HEAD)
+          run=$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${sha}&branch=main&event=push&status=success" \
+            --jq '.workflow_runs[0].id')
+          [ -n "$run" ] && [ "$run" != null ] || { echo "no successful CI run on main for $sha: push the commit to main first"; exit 1; }
+          echo "CI run $run deployed $sha"
+          gh run download "$run" -n octave-camo-wasm -D deployed
+          sha256sum deployed/octave-camo.wasm
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: wasm
+          path: deployed/octave-camo.wasm
+          if-no-files-found: error
+
+  reproducible:
+    name: Rebuild the wasm (same path, other path) and compare
+    needs: deployed
     runs-on: ubuntu-latest
     container: swift:6.4.2
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - name: Install the Swift SDK for WebAssembly
-        run: >
-          swift sdk install
-          https://download.swift.org/swift-6.4.2-release/wasm-sdk/swift-6.4.2-RELEASE/swift-6.4.2-RELEASE_wasm.artifactbundle.tar.gz
-          --checksum 83baca83553f8c443cda7b84800912e6e709c3acd2e7ebf277794ca5836c0da5
-      - name: Build, then build again from a clean copy elsewhere, and compare
-        run: |
-          git config --global --add safe.directory "$PWD"
-          scripts/build-wasm.sh out/octave-camo.wasm
-          mkdir -p /tmp/elsewhere && git archive HEAD | tar -x -C /tmp/elsewhere
-          (cd /tmp/elsewhere && scripts/build-wasm.sh out/octave-camo.wasm)
-          sha256sum out/octave-camo.wasm /tmp/elsewhere/out/octave-camo.wasm
-          if cmp -s out/octave-camo.wasm /tmp/elsewhere/out/octave-camo.wasm; then echo yes > out/reproducible; else echo no > out/reproducible; fi
-          echo "reproducible: $(cat out/reproducible)"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          ref: ${{ env.TAG }}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: wasm
-          path: out/
-          if-no-files-found: error
+          path: deployed
+      - name: Install the Swift SDK for WebAssembly
+        # Retried: swift sdk install occasionally crashes as its download finishes.
+        run: |
+          for attempt in 1 2 3; do
+            swift sdk install \
+              https://download.swift.org/swift-6.4.2-release/wasm-sdk/swift-6.4.2-RELEASE/swift-6.4.2-RELEASE_wasm.artifactbundle.tar.gz \
+              --checksum 83baca83553f8c443cda7b84800912e6e709c3acd2e7ebf277794ca5836c0da5 && break
+            [ "$attempt" = 3 ] && exit 1
+            sleep 10
+          done
+      - name: Build here and elsewhere; compare with what was deployed
+        run: |
+          git config --global --add safe.directory "$PWD"
+          scripts/build-wasm.sh out/same-path.wasm
+          mkdir -p /tmp/elsewhere && git archive HEAD | tar -x -C /tmp/elsewhere
+          (cd /tmp/elsewhere && scripts/build-wasm.sh out/octave-camo.wasm) && cp /tmp/elsewhere/out/octave-camo.wasm out/other-path.wasm
+          sha256sum deployed/octave-camo.wasm out/same-path.wasm out/other-path.wasm
+          same() { cmp -s deployed/octave-camo.wasm "$1" && echo yes || echo no; }
+          printf 'same path: %s; another path: %s\n' "$(same out/same-path.wasm)" "$(same out/other-path.wasm)" | tee out/reproducible
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: reproducible
+          path: out/reproducible
 
   cli:
     name: CLI (Linux x86-64, static Swift runtime)
@@ -43,9 +90,11 @@ jobs:
     container: swift:6.0
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ env.TAG }}
       - run: swift build -c release --static-swift-stdlib --product octave-camo
       - name: The CLI reports the tagged version
-        run: test "$(.build/release/octave-camo --version)" = "octave-camo ${GITHUB_REF_NAME#v}"
+        run: test "$(.build/release/octave-camo --version)" = "octave-camo ${TAG#v}"
       - run: mkdir -p out && cp .build/release/octave-camo out/octave-camo-linux-x86_64
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
@@ -55,15 +104,17 @@ jobs:
 
   release:
     name: Publish
-    needs: [wasm, cli]
+    needs: [deployed, reproducible, cli]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ env.TAG }}
       - name: Tag, web app and Swift agree on the version
         run: |
-          v="${GITHUB_REF_NAME#v}"
+          v="${TAG#v}"
           test "$(jq -r .version web/package.json)" = "$v"
           grep -q "version = \"$v\"" Sources/OctaveCamoKit/Version.swift
           grep -q "^## \[$v\]" CHANGELOG.md
@@ -71,7 +122,7 @@ jobs:
         with:
           path: artifacts
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
-      - name: Test and build the site with this wasm
+      - name: Test and build the site with the deployed wasm (the web build is reproducible)
         working-directory: web
         run: |
           cp ../artifacts/wasm/octave-camo.wasm public/
@@ -81,7 +132,7 @@ jobs:
           bunx vite build
       - name: Assets and notes
         run: |
-          v="${GITHUB_REF_NAME#v}"
+          v="${TAG#v}"
           mkdir -p assets
           cp artifacts/wasm/octave-camo.wasm artifacts/cli/octave-camo-linux-x86_64 web/dist/checksums.txt assets/
           mv assets/checksums.txt assets/site-checksums.txt
@@ -93,24 +144,27 @@ jobs:
             echo
             echo "### Verifying"
             echo
-            echo "- The page footer shows the version, the commit, and the SHA-256 of the wasm it loaded,"
-            echo "  computed in your browser from the bytes it runs. It should equal \`octave-camo.wasm\` below."
-            echo "- \`site-checksums.txt\` lists every file of the site built from this commit; the site deployed"
-            echo "  from this commit serves an identical \`checksums.txt\` (the live site moves on with \`main\`; its"
-            echo "  footer shows its commit). After every deploy, CI re-downloads the live site and checks each"
-            echo "  file against its own build."
-            echo "- Reproducible wasm build (two clean builds in different directories, byte-identical): **$(cat artifacts/wasm/reproducible)**."
-            echo "  To rebuild: \`docker run --rm -v \"\$PWD\":/src -w /src swift:6.4.2\`, install the wasm SDK as in"
-            echo "  \`.github/workflows/release.yml\`, then \`scripts/build-wasm.sh\` and compare SHA-256."
+            echo "- \`octave-camo.wasm\` is the exact file CI built and deployed for this commit. The page footer"
+            echo "  shows the SHA-256 of the wasm it loaded, computed in your browser from the bytes it runs: on"
+            echo "  the site deployed from $(git rev-parse --short HEAD) it equals the checksum below."
+            echo "- \`site-checksums.txt\` lists every file of that site; after every deploy, CI re-downloads the"
+            echo "  live site and checks each file against its own build. (The live site moves on with \`main\`;"
+            echo "  its footer shows which commit it is.)"
+            echo "- Rebuilding the wasm from source gives the same bytes: **$(cat artifacts/reproducible/reproducible)**."
+            echo "  Until both say yes, a rebuild can't independently confirm the deployed file."
             echo
             echo '```'
             cat assets/SHA256SUMS
             echo '```'
           } > notes.md
           cat notes.md
-      - name: Publish the release
+      - name: Publish (or refresh) the release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: >
-          gh release create "$GITHUB_REF_NAME" assets/* --title "octave-camo $GITHUB_REF_NAME"
-          --notes-file notes.md --verify-tag
+        run: |
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release upload "$TAG" assets/* --clobber
+            gh release edit "$TAG" --notes-file notes.md
+          else
+            gh release create "$TAG" assets/* --title "octave-camo $TAG" --notes-file notes.md --verify-tag
+          fi

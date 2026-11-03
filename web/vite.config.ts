@@ -6,13 +6,15 @@ import { join, relative, resolve } from "node:path";
 import { defineConfig, type Plugin } from "vite";
 import pkg from "./package.json" with { type: "json" };
 
-/** The commit being built: CI's, else the working tree's (nothing in the build depends on the clock). */
+/**
+ * The commit being built: the checkout's (on a manually run workflow GITHUB_SHA is the branch's
+ * head, not the commit checked out), else CI's. Nothing in the build depends on the clock.
+ */
 function commit(): string {
-  if (process.env.GITHUB_SHA) return process.env.GITHUB_SHA;
   try {
-    return execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+    return execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
   } catch {
-    return "unknown";
+    return process.env.GITHUB_SHA ?? "unknown";
   }
 }
 
