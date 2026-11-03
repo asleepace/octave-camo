@@ -25,6 +25,23 @@ export type Trace = {
 
 export type ScrubResult = { output: Samples; log: string[] };
 
+/** Row profiles of a video: log brightness per frame, column strip and row band (row 0 on top). */
+export type Profiles = { frames: number; strips: number; rows: number; values: Float32Array; times: Float32Array };
+
+/** Mains flicker in the picture (Swift's FlickerScan). */
+export type Flicker = {
+  detected: boolean;
+  /** Line strength (robust z); detection above 60. */
+  z: number;
+  flickerHz: number;
+  readoutMs: number;
+  /** The same scan on the corrected picture (equal to the above when nothing was removed). */
+  after: { detected: boolean; z: number };
+  passesRemoved: number;
+  /** frames × rows multiplicative gains (only when cleaning). */
+  gains?: Float32Array<ArrayBuffer>;
+};
+
 export type ScrubOptions = {
   /** Steps to run; omitted means the Swift default. */
   steps?: readonly Step[];
@@ -45,13 +62,15 @@ type Exports = {
   camo_scrub(pointer: number, channels: number, frames: number, sampleRate: number,
              steps: number, seedLo: number, seedHi: number, cutoffHz: number, keepVoice: number): number;
   camo_analyze(pointer: number, channels: number, frames: number, sampleRate: number): number;
+  camo_flicker(pointer: number, frames: number, strips: number, rows: number, clean: number): number;
+  camo_flicker_gains(): number;
   camo_output(): number;
   camo_log(): number;
   camo_log_length(): number;
 };
 
-const EXPORTS = ["camo_alloc", "camo_free", "camo_steps", "camo_scrub", "camo_analyze", "camo_output",
-  "camo_log", "camo_log_length"] as const;
+const EXPORTS = ["camo_alloc", "camo_free", "camo_steps", "camo_scrub", "camo_analyze", "camo_flicker",
+  "camo_flicker_gains", "camo_output", "camo_log", "camo_log_length"] as const;
 
 export class Camo {
   private constructor(private readonly x: Exports) {}
@@ -100,6 +119,28 @@ export class Camo {
       const [tones, doppler, hum, flybys] = new Int32Array(this.x.memory.buffer, at, 4);
       return { tones: tones!, doppler: doppler!, hum: hum!, flybys: flybys! };
     });
+  }
+
+  /** Scan row profiles for mains flicker; with `clean`, also compute per-row gains that remove it. */
+  flicker(p: Profiles, clean = false): Flicker {
+    const n = p.frames * p.strips * p.rows;
+    if (p.values.length !== n || p.times.length !== p.frames) throw new Error("profile size mismatch");
+    const pointer = this.x.camo_alloc(n + p.frames);
+    try {
+      const heap = new Float32Array(this.x.memory.buffer, pointer, n + p.frames);
+      heap.set(p.values, 0);
+      heap.set(p.times, n);
+      const at = this.x.camo_flicker(pointer, p.frames, p.strips, p.rows, clean ? 1 : 0);
+      const v = new Float64Array(this.x.memory.buffer, at, 8);
+      const result: Flicker = {
+        detected: v[0] === 1, z: v[1]!, flickerHz: v[2]!, readoutMs: v[4]! * 1000,
+        after: { detected: v[5] === 1, z: v[6]! }, passesRemoved: v[7]!,
+      };
+      if (clean) result.gains = new Float32Array(this.x.memory.buffer, this.x.camo_flicker_gains(), p.frames * p.rows).slice();
+      return result;
+    } finally {
+      this.x.camo_free(pointer);
+    }
   }
 
   /** Copies the clip into wasm memory (planar) for one call. */

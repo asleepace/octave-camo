@@ -11,6 +11,14 @@
 //   camo_free(ptr)
 //   st  = camo_analyze(ptr, channels, frames, sampleRate)
 //         4 Int32: long tonal tracks, Doppler-shaped tracks, mains-hum lines, fitted flybys
+//
+// Video flicker (the picture's ENF clock), on row profiles the page measures:
+//   ptr = camo_alloc(frames * strips * rows + frames)   log brightness [frame][strip][row], then
+//                                                       each frame's time in seconds
+//   sum = camo_flicker(ptr, frames, strips, rows, clean)
+//         8 Float64: detected, z, flicker Hz, cycles per frame, readout s, after detected, after z,
+//         passes removed
+//   g   = camo_flicker_gains()                          frames × rows Float32 gains (after clean = 1)
 // stepsMask bit i enables ScrubStep.allCases[i]; 0 means the default steps. cutoffHz <= 0 keeps the
 // lowband default; keepVoice is 0 or 1.
 
@@ -23,6 +31,8 @@ enum Shared {
     nonisolated(unsafe) static var output: [Float] = []
     nonisolated(unsafe) static var logBytes: [UInt8] = []
     nonisolated(unsafe) static var stats = [Int32](repeating: 0, count: 4)
+    nonisolated(unsafe) static var flicker = [Double](repeating: 0, count: 8)
+    nonisolated(unsafe) static var gains: [Float] = []
 }
 
 func audio(_ input: UnsafePointer<Float>, _ channelCount: Int32, _ frames: Int32, _ sampleRate: Int32) -> Audio? {
@@ -99,6 +109,53 @@ func camoAnalyze(_ input: UnsafePointer<Float>, _ channelCount: Int32, _ frames:
         Shared.stats[3] = Int32(analysis.flybys.filter { $0.fit != nil }.count)
     }
     return Shared.stats.withUnsafeBufferPointer { $0.baseAddress }
+}
+
+@_expose(wasm, "camo_flicker")
+@_cdecl("camo_flicker")
+func camoFlicker(_ input: UnsafePointer<Float>, _ frames: Int32, _ strips: Int32, _ rows: Int32,
+                 _ clean: Int32) -> UnsafePointer<Double>? {
+    for i in 0..<Shared.flicker.count { Shared.flicker[i] = 0 }
+    Shared.gains = []
+    let K = Int(frames), S = Int(strips), R = Int(rows)
+    guard K >= 8, S >= 1, R >= 8 else { return Shared.flicker.withUnsafeBufferPointer { $0.baseAddress } }
+    var values = [Double](repeating: 0, count: K * S * R)
+    for i in 0..<(K * S * R) { values[i] = Double(input[i]) }
+    var times = [Double](repeating: 0, count: K)
+    for k in 0..<K { times[k] = Double(input[K * S * R + k]) }
+    let profiles = FlickerScan.Profiles(frames: K, strips: S, rows: R, values: values, times: times)
+    let scan = FlickerScan()
+
+    func store(_ f: FlickerScan.Finding, at offset: Int) {
+        if offset == 0 {
+            Shared.flicker[0] = f.detected ? 1 : 0
+            Shared.flicker[1] = f.z
+            Shared.flicker[2] = f.flicker
+            Shared.flicker[3] = f.cycles
+            Shared.flicker[4] = f.readoutSeconds
+        } else {
+            Shared.flicker[5] = f.detected ? 1 : 0
+            Shared.flicker[6] = f.z
+        }
+    }
+    if clean != 0 {
+        let result = scan.clean(profiles)
+        if let first = result.findings.first { store(first, at: 0) }
+        store(result.after, at: 1)
+        Shared.flicker[7] = Double(result.findings.filter(\.detected).count)
+        Shared.gains = result.gains.map { Float($0) }
+    } else {
+        let finding = scan.scan(profiles)
+        store(finding, at: 0)
+        store(finding, at: 1)
+    }
+    return Shared.flicker.withUnsafeBufferPointer { $0.baseAddress }
+}
+
+@_expose(wasm, "camo_flicker_gains")
+@_cdecl("camo_flicker_gains")
+func camoFlickerGains() -> UnsafePointer<Float>? {
+    Shared.gains.withUnsafeBufferPointer { $0.baseAddress }
 }
 
 @_expose(wasm, "camo_output")
