@@ -92,7 +92,7 @@ IDEAS.md              backlog
 import OctaveCamoKit
 
 var pipeline = ScrubPipeline()          // mono → hum → subtract → scurve → lowband
-pipeline.hum.mains = 50                 // e.g. for EU footage
+pipeline.hum.mains = [50, 60]           // the default: both grids, refilled
 pipeline.lowband.cutoff = 250
 let result = pipeline.run(audio)        // Audio in, mono Audio out
 result.log.forEach { print($0) }
@@ -112,7 +112,7 @@ on or off.
 | `analyze in.wav [--threshold dB] [--json]` | attacker | Tracks tones lasting > 2 s, fits a straight-line flyby (with propagation delay), reports distance / speed / t₀ |
 | `scrub in.wav out.wav` | defense | The default chain above |
 
-`scrub` flags: `--steps mono,hum,subtract,scurve,lowband[,wobble]`, `--mains 60|50`,
+`scrub` flags: `--steps mono,hum,subtract,scurve,lowband[,wobble]`, `--mains 50,60`,
 `--passes 3`, `--cutoff 300`, `--lowband-mode regenerate|highpass`, `--no-keep-voice`,
 `--depth 0.015` and `--wobble-top 600` (wobble only), `--seed N`.
 `scripts/scrub-video.sh in.mov` runs it on a video (picture copied, metadata stripped).

@@ -79,7 +79,14 @@ func scrub(_ args: Arguments) throws {
     if let raw = args.string("steps") {
         pipeline.steps = try parseSteps(raw)
     }
-    pipeline.hum.mains = try args.value("mains", default: pipeline.hum.mains)
+    if let raw = args.string("mains") {
+        pipeline.hum.mains = try raw.split(separator: ",").map { part -> Double in
+            guard let v = Double(part.trimmingCharacters(in: .whitespaces)), v >= 0, v.isFinite else {
+                throw UsageError("--mains takes a comma-separated list such as 50,60 (0 disables)")
+            }
+            return v
+        }.filter { $0 > 0 }
+    }
     pipeline.subtraction.passes = try args.value("passes", default: pipeline.subtraction.passes)
     pipeline.lowband.cutoff = try args.value("cutoff", default: pipeline.lowband.cutoff)
     if let raw = args.string("lowband-mode") {
@@ -93,7 +100,7 @@ func scrub(_ args: Arguments) throws {
     pipeline.wobble.top = try args.value("wobble-top", default: pipeline.wobble.top)
     pipeline.wobble.seed = try args.value("seed", default: pipeline.wobble.seed)
     pipeline.lowband.seed = pipeline.wobble.seed
-    try require(pipeline.hum.mains >= 0 && pipeline.hum.mains.isFinite, "--mains must be 50, 60, or 0 to disable")
+    pipeline.hum.seed = pipeline.wobble.seed
     try require(pipeline.subtraction.passes >= 0, "--passes must be 0 or more")
     try require(pipeline.wobble.depth >= 0 && pipeline.wobble.depth <= 0.1, "--depth must be between 0 and 0.1")
     try require(pipeline.lowband.cutoff > 20 && pipeline.lowband.cutoff.isFinite, "--cutoff must be above 20 Hz")

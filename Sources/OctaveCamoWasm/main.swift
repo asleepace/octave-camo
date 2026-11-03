@@ -86,6 +86,7 @@ func camoScrub(_ input: UnsafePointer<Float>, _ channelCount: Int32, _ frames: I
     if seed != 0 {
         pipeline.lowband.seed = seed
         pipeline.wobble.seed = seed
+        pipeline.hum.seed = seed
     }
 
     let result = pipeline.run(clip)

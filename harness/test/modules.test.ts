@@ -25,18 +25,28 @@ const db = (a: number, b: number) => 20 * Math.log10(a / b);
 
 describe("hum", () => {
   const sr = 8_000, n = sr * 4;
-  const mixed = () => { const x = new Float32Array(n); for (const f of [60, 120, 180, 100]) addTone(x, sr, () => f, 0.1); return x; };
+  const mixed = () => { const x = new Float32Array(n); for (const f of [60, 120, 180, 100, 430, 1000]) addTone(x, sr, () => f, 0.1); return x; };
 
-  test("notches 60 Hz harmonics and leaves other tones alone", async () => {
-    const y = await runChain(parseChain("hum"), mixed(), ctx(sr));
+  test("notches both the 50 and 60 Hz families and leaves other tones alone", async () => {
+    const y = await runChain(parseChain("hum(refill=false)"), mixed(), ctx(sr));
     const mid = y.subarray(sr, -sr);
-    for (const f of [60, 120, 180]) expect(amplitudeAt(mid, sr, f)).toBeLessThan(0.1 * 10 ** (-30 / 20));
-    expect(db(amplitudeAt(mid, sr, 100), 0.1)).toBeGreaterThan(-0.5);
+    for (const f of [60, 120, 180, 100]) expect(amplitudeAt(mid, sr, f)).toBeLessThan(0.1 * 10 ** (-30 / 20));
+    for (const f of [430, 1000]) expect(db(amplitudeAt(mid, sr, f), 0.1)).toBeGreaterThan(-0.5);
+  });
+  test("refill removes a wandering mains line without leaving a dip", async () => {
+    const r = new Rng(5), x = new Float32Array(n);
+    for (let i = 0; i < n; i++) x[i] = 0.02 * r.gaussian();
+    addTone(x, sr, (i) => 60 + 0.05 * Math.sin((2 * Math.PI * i) / sr / 3), 0.05);   // ENF-like wander
+    const y = (await runChain(parseChain("hum"), x, ctx(sr))).subarray(sr, -sr);
+    expect(amplitudeAt(y, sr, 60)).toBeLessThan(0.05 * 10 ** (-26 / 20));
+    // The band around 60 Hz keeps about the noise floor's power (no hole, no line).
+    const band = (f: number) => { let p = 0; for (let d = -1; d <= 1; d += 0.25) p += amplitudeAt(y, sr, f + d) ** 2; return p; };
+    expect(Math.abs(10 * Math.log10(band(60) / band(75)))).toBeLessThan(4);
   });
   test("mains=50 targets 50 Hz harmonics instead", async () => {
     const x = new Float32Array(n);
     addTone(x, sr, () => 50, 0.1); addTone(x, sr, () => 60, 0.1);
-    const y = (await runChain(parseChain("hum(mains=50)"), x, ctx(sr))).subarray(sr, -sr);
+    const y = (await runChain(parseChain("hum(mains=50,refill=false)"), x, ctx(sr))).subarray(sr, -sr);
     expect(amplitudeAt(y, sr, 50)).toBeLessThan(0.003);
     expect(amplitudeAt(y, sr, 60)).toBeGreaterThan(0.09);
   });

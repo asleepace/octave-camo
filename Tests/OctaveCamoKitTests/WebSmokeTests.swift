@@ -35,6 +35,7 @@ final class WebSmokeTests: XCTestCase {
     func testDefaultScrubRemovesThem() {
         var pipeline = ScrubPipeline()
         pipeline.lowband.seed = 42
+        pipeline.hum.seed = 42
         let out = pipeline.run(flybyClip()).audio
         let analysis = FlybyAnalyzer().analyze(out)
         XCTAssertEqual(analysis.flybys.count, 0)

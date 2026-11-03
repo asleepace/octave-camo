@@ -151,6 +151,7 @@ final class LowBandTests: XCTestCase {
         XCTAssertEqual(ScrubPipeline.defaultSteps, [.mono, .hum, .subtract, .scurve, .lowband])
         var pipeline = ScrubPipeline()
         pipeline.lowband.seed = 1
+        pipeline.hum.seed = 1
         pipeline.subtraction.passes = 1
         let out = pipeline.run(Audio(sampleRate: sr, channels: [noise(sr * 4, rms: 0.05)]))
         XCTAssertTrue(out.log.contains { $0.hasPrefix("lowband:") })

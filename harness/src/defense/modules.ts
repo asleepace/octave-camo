@@ -7,8 +7,19 @@ import { Analyzer } from "../analyzer.ts";
 import { informedCancel } from "../cancel.ts";
 import { readMono, writeMonoWav } from "../dsp.ts";
 import { defaultMatchedConfig, whitenedSpectrogram } from "../matched.ts";
-import { decimate } from "./signal.ts";
+import { decimate, Rng } from "./signal.ts";
 import { defineDefense } from "./types.ts";
+
+/** Centered moving average of x², square-rooted: a smooth RMS envelope. */
+function envelope(x: Float32Array, length: number): Float32Array {
+  const n = x.length, prefix = new Float64Array(n + 1), out = new Float32Array(n), h = length >> 1;
+  for (let i = 0; i < n; i++) prefix[i + 1] = prefix[i]! + x[i]! * x[i]!;
+  for (let i = 0; i < n; i++) {
+    const lo = Math.max(0, i - h), hi = Math.min(n - 1, i + h);
+    out[i] = Math.sqrt((prefix[hi + 1]! - prefix[lo]!) / (hi - lo + 1));
+  }
+  return out;
+}
 
 /** Zero-phase RBJ notch. */
 function notch(x: Float32Array, f: number, q: number, sampleRate: number): Float32Array {
@@ -31,15 +42,54 @@ export const hum = defineDefense({
   summary: "notch mains harmonics (removes the grid-frequency clock)",
   tier: "basic",
   options: z.object({
-    mains: z.coerce.number().min(0).default(60),
+    /** Mains frequencies, "|"-separated (both by default: notching only the local grid would leave
+     *  dips that say which grid, and so which part of the world). 0 disables. */
+    mains: z.string().default("50|60").transform((v, ctx) => {
+      const values = v.split("|").map(Number);
+      if (values.some((n) => !Number.isFinite(n) || n < 0)) {
+        ctx.addIssue({ code: "custom", message: "mains must be numbers like 50|60 (0 disables)" });
+      }
+      return values.filter((n) => n > 0);
+    }),
     maxHz: z.coerce.number().default(400),
     q: z.coerce.number().positive().default(30),
+    /** Refill each notch with noise at the neighbouring bands' level, so no dips are left behind. */
+    refill: z.stringbool().default(true),
   }),
   create: (o) => ({
     process(x, ctx) {
-      let y = x, count = 0;
-      for (let f = o.mains; o.mains > 0 && f < o.maxHz; f += o.mains, count++) y = notch(y, f, o.q, ctx.sampleRate);
-      ctx.log(`hum: notched ${count} harmonics of ${o.mains} Hz`);
+      const sr = ctx.sampleRate, freqs: number[] = [];
+      for (const base of o.mains) {
+        for (let f = base; f < o.maxHz; f += base) if (!freqs.some((g) => Math.abs(g - f) < 0.5)) freqs.push(f);
+      }
+      freqs.sort((a, b) => a - b);
+      let y = x;
+      for (const f of freqs) y = notch(y, f, o.q, sr);
+      if (o.refill && freqs.length) {
+        // For each notch: a narrow band of noise (white noise minus its own notch), whose RMS over
+        // time follows the notched signal's neighbouring bands, two bandwidths either side.
+        const rng = new Rng(ctx.seed ^ 0x5eed), L = Math.max(1, Math.round(0.25 * sr));
+        const white = Float32Array.from({ length: x.length }, () => rng.gaussian());
+        const out = Float32Array.from(y);
+        for (const f of freqs) {
+          const bw = f / o.q;
+          const sides = [f - 2 * bw, f + 2 * bw].filter((g) => g > 0 && !freqs.some((h) => Math.abs(h - g) < 1.5 * h / o.q));
+          if (!sides.length) continue;
+          const level = new Float32Array(x.length);
+          for (const g of sides) {
+            const n = notch(y, g, o.q, sr), band = new Float32Array(x.length);
+            for (let i = 0; i < x.length; i++) band[i] = y[i]! - n[i]!;
+            const e = envelope(band, L);
+            for (let i = 0; i < x.length; i++) level[i]! += (e[i]! * e[i]! * (f / g)) / sides.length;   // bandwidth ∝ f
+          }
+          const nn = notch(white, f, o.q, sr), fill = new Float32Array(x.length);
+          for (let i = 0; i < x.length; i++) fill[i] = white[i]! - nn[i]!;
+          const own = envelope(fill, L);
+          for (let i = 0; i < x.length; i++) out[i]! += (fill[i]! / (own[i]! || 1)) * Math.sqrt(level[i]!);
+        }
+        y = out;
+      }
+      ctx.log(`hum: notched${o.refill ? " and refilled" : ""} ${freqs.length} harmonics of ${o.mains.length ? o.mains.join(" and ") + " Hz" : "nothing"}`);
       return y;
     },
   }),

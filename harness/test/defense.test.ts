@@ -5,7 +5,7 @@ import { trackPitch } from "../src/defense/pitch.ts";
 import { LowBandSTFT, Rng } from "../src/defense/signal.ts";
 import type { DefenseContext } from "../src/defense/types.ts";
 import { ratioCurve } from "../src/matched.ts";
-import { fft } from "../src/dsp.ts";
+import { fft, median } from "../src/dsp.ts";
 import { TrackPath } from "../src/track.ts";
 import { clipInfo, straightTrack } from "./helpers.ts";
 
@@ -126,4 +126,42 @@ describe("chains", () => {
   test("online modules refuse to run without tracks", async () => {
     expect(runChain(parseChain("informed"), noise(SR, 0.1), ctx())).rejects.toThrow();
   });
+});
+
+describe("no fingerprints from the cloak itself", () => {
+  /** Mean dB of the long-term spectrum at f relative to its neighbourhood (negative = a dip). */
+  function prominence(x: Float32Array, sr: number, freqs: number[]): number {
+    const n = 1 << 16, hopN = n / 2, P = new Float64Array(n / 2);
+    const w = Float64Array.from({ length: n }, (_, i) => 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / n));
+    let segments = 0;
+    for (let s = 0; s + n <= x.length; s += hopN, segments++) {
+      const re = new Float64Array(n), im = new Float64Array(n);
+      for (let i = 0; i < n; i++) re[i] = x[s + i]! * w[i]!;
+      fft(re, im);
+      for (let k = 0; k < n / 2; k++) P[k]! += re[k]! ** 2 + im[k]! ** 2;
+    }
+    const binHz = sr / n;
+    const values = freqs.map((f) => {
+      const k = Math.round(f / binHz), at = Math.min(...Array.from({ length: 5 }, (_, d) => P[k - 2 + d]!));
+      const around: number[] = [];
+      for (let d = Math.round(4 / binHz); d <= Math.round(12 / binHz); d++) around.push(P[k - d]!, P[k + d]!);
+      return 10 * Math.log10(at / median(around));
+    });
+    return values.reduce((a, b) => a + b, 0) / values.length;
+  }
+
+  test("the default chain leaves no dips that tell 60 Hz grids from 50 Hz ones", async () => {
+    const sr = SR, x = noise(sr * 30, 0.05, 21);
+    const y = await runChain(parseChain("hum+lowband"), x, ctx());
+    // Harmonics that belong to only one family, above and below the lowband cutoff.
+    const sixty = prominence(y, sr, [120, 180, 240, 360]), fifty = prominence(y, sr, [100, 150, 200, 250, 350]);
+    expect(Math.abs(sixty - fifty)).toBeLessThan(1.5);
+  }, 120_000);
+
+  test("regenerated low-band noise carries no narrow lines from the input", async () => {
+    const sr = SR, x = noise(sr * 30, 0.05, 22);
+    addTone(x, () => 87, 0.02);                   // a steady motor hum below the cutoff
+    const y = await runChain(parseChain("lowband(keepVoice=false)"), x, ctx());
+    expect(prominence(y, sr, [87])).toBeLessThan(3);
+  }, 120_000);
 });

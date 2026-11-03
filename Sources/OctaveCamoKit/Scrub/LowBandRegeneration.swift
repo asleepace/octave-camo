@@ -33,6 +33,9 @@ public struct LowBandRegeneration: ScrubStage {
     /// Slow random gain per band, ±dB, with 10–30 s periods.
     public var jitterDB = 1.5
     public var fftSize = 8_192
+    /// Width, in ERBs, over which the noise's spectral shape is smoothed. Anything narrower (a
+    /// notch left by `hum`, a steady motor tone) would otherwise be copied into the new noise.
+    public var profileSmoothingERB = 1.0
     public var pitch = PitchTracker()
     public var seed: UInt64 = .random(in: 1...UInt64.max)
 
@@ -100,7 +103,7 @@ public struct LowBandRegeneration: ScrubStage {
         }
 
         // Static per-bin spectral shape (long-term median power): carries no time-varying information.
-        var profile = [Double](repeating: 0, count: K)
+        var rawProfile = [Double](repeating: 0, count: K)
         var powers = [Double](repeating: 0, count: F)
         for k in 0..<K {
             for m in 0..<F {
@@ -108,8 +111,9 @@ public struct LowBandRegeneration: ScrubStage {
                 let p: Double = stft.re[i] * stft.re[i] + stft.im[i] * stft.im[i]
                 powers[m] = p
             }
-            profile[k] = DSP.median(powers[...]) + 1e-20
+            rawProfile[k] = DSP.median(powers[...]) + 1e-20
         }
+        let profile = Self.smoothProfile(rawProfile, binHz: binHz, erbs: profileSmoothingERB)
 
         // Band energy per frame (replaced bins only), smoothed, with slow random gain.
         var rng = SeededRNG(seed: seed)
@@ -158,5 +162,21 @@ public struct LowBandRegeneration: ScrubStage {
         }
         let voice = keepVoice ? ", kept voice harmonics in \(100 * voicedFrames / max(F, 1))% of frames" : ""
         return (stft.render(re: outRe, im: outIm), "lowband: regenerated below \(Int(cutoff)) Hz in \(B) ERB bands\(voice)")
+    }
+
+    /// Centered moving average of a power spectrum, `erbs` ERBs wide at each bin (at least 3 bins).
+    static func smoothProfile(_ profile: [Double], binHz: Double, erbs: Double) -> [Double] {
+        guard erbs > 0 else { return profile }
+        let K = profile.count
+        var prefix = [Double](repeating: 0, count: K + 1)
+        for k in 0..<K { prefix[k + 1] = prefix[k] + profile[k] }
+        var out = [Double](repeating: 0, count: K)
+        for k in 0..<K {
+            let width: Double = erbs * ERB.bandwidth(Double(k) * binHz) / binHz
+            let half = max(1, Int((width / 2).rounded()))
+            let lo = max(0, k - half), hi = min(K - 1, k + half)
+            out[k] = (prefix[hi + 1] - prefix[lo]) / Double(hi - lo + 1)
+        }
+        return out
     }
 }

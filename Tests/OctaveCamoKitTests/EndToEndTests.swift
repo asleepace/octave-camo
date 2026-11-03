@@ -26,6 +26,7 @@ final class EndToEndTests: XCTestCase {
         var pipeline = ScrubPipeline()
         pipeline.wobble.seed = 7
         pipeline.lowband.seed = 7
+        pipeline.hum.seed = 7
         let scrubbed = pipeline.run(clip().audio).audio
         let analysis = FlybyAnalyzer().analyze(scrubbed)
         XCTAssertNil(analysis.consensus, "flyby still recoverable after scrubbing")
@@ -37,6 +38,7 @@ final class EndToEndTests: XCTestCase {
         var pipeline = ScrubPipeline()
         pipeline.wobble.seed = 7
         pipeline.lowband.seed = 7
+        pipeline.hum.seed = 7
         let scrubbed = pipeline.run(audio).audio
         var attacker = FlybyAnalyzer()
         attacker.tracker.config.thresholdDB = 6

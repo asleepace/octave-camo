@@ -12,8 +12,21 @@
 import { z } from "zod";
 import { median } from "../dsp.ts";
 import { trackPitch, defaultPitchOptions } from "./pitch.ts";
-import { LowBandSTFT, Rng, erbBands, smooth } from "./signal.ts";
+import { LowBandSTFT, Rng, erb, erbBands, smooth } from "./signal.ts";
 import { defineDefense } from "./types.ts";
+
+/** Centered moving average of a power spectrum, `erbs` ERBs wide at each bin (at least 3 bins). */
+export function smoothProfile(profile: Float64Array, binHz: number, erbs: number): Float64Array {
+  if (erbs <= 0) return profile;
+  const K = profile.length, prefix = new Float64Array(K + 1), out = new Float64Array(K);
+  for (let k = 0; k < K; k++) prefix[k + 1] = prefix[k]! + profile[k]!;
+  for (let k = 0; k < K; k++) {
+    const half = Math.max(1, Math.round((erbs * erb(k * binHz)) / binHz / 2));
+    const lo = Math.max(0, k - half), hi = Math.min(K - 1, k + half);
+    out[k] = (prefix[hi + 1]! - prefix[lo]!) / (hi - lo + 1);
+  }
+  return out;
+}
 
 export const lowband = defineDefense({
   name: "lowband",
@@ -30,6 +43,8 @@ export const lowband = defineDefense({
     /** Slow random gain per band, ±dB, with 10–30 s periods. */
     jitterDb: z.coerce.number().min(0).default(1.5),
     fftSize: z.coerce.number().int().default(8192),
+    /** Width in ERBs over which the noise's spectral shape is smoothed (0 = per bin). */
+    profileErb: z.coerce.number().min(0).default(1),
   }),
   create: (o) => ({
     process(x, ctx) {
@@ -84,8 +99,10 @@ export const lowband = defineDefense({
       const B = edges.length - 1;
 
       // Static per-bin spectral shape (long-term median power): carries no time-varying information.
-      const profile = Float64Array.from({ length: K }, (_, k) =>
+      const rawProfile = Float64Array.from({ length: K }, (_, k) =>
         median(Array.from({ length: F }, (_, m) => stft.re[m * K + k]! ** 2 + stft.im[m * K + k]! ** 2)) + 1e-20);
+      // Smoothed across about one ERB, so nothing narrow (a notch, a steady tone) is copied into the noise.
+      const profile = smoothProfile(rawProfile, binHz, o.profileErb);
 
       // Band energy per frame (replaced bins only), smoothed, with slow random gain.
       const rng = new Rng(ctx.seed);
