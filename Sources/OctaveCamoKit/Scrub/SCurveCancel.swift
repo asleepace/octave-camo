@@ -55,6 +55,7 @@ public struct SCurveCancel: ScrubStage {
     static let maxRatio = 1.6
 
     public func process(_ x: [Double], sampleRate: Int) -> (output: [Double], summary: String) {
+        guard f0Min > 0, f0Max > f0Min * 1.1 else { return (x, "scurve: skipped (empty f0 range)") }
         let (low, rate) = DSP.decimate(x, sampleRate: Double(sampleRate), to: Self.analysisRate)
         let spec = WhitenedSpectrogram(low, sampleRate: rate, window: Self.window, hop: Self.hop,
                                        fMin: f0Min, fMax: f0Max * Self.maxRatio)
@@ -68,6 +69,7 @@ public struct SCurveCancel: ScrubStage {
         let J = rows.columns
         let jLo = Int((log(1 / Self.minRatio) / delta).rounded())
         let jHi = min(Int((log(f0Max / rowsMin) / delta).rounded()), J - 1)
+        guard jHi > jLo else { return (x, "scurve: skipped (f0 range above the analysis band)") }
 
         // The physical family on a grid.
         var curves: [Curve] = []

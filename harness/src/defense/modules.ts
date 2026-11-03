@@ -21,20 +21,39 @@ function envelope(x: Float32Array, length: number): Float32Array {
   return out;
 }
 
-/** Zero-phase RBJ notch. */
-function notch(x: Float32Array, f: number, q: number, sampleRate: number): Float32Array {
+/**
+ * Zero-phase RBJ notch (forward then backward). A pass starting cold lets the notched tone
+ * through until it settles, so near each edge both passes instead run toward the edge from inside
+ * the clip and cross-fade into the zero-phase result (same as Swift's Biquad.applyZeroPhase).
+ */
+export function notch(x: Float32Array, f: number, q: number, sampleRate: number): Float32Array {
   const w = (2 * Math.PI * f) / sampleRate, alpha = Math.sin(w) / (2 * q), cw = Math.cos(w), a0 = 1 + alpha;
   const b0 = 1 / a0, b1 = (-2 * cw) / a0, b2 = 1 / a0, a1 = (-2 * cw) / a0, a2 = (1 - alpha) / a0;
-  const pass = (input: Float32Array) => {
-    const out = new Float32Array(input.length);
+  /** In place, cold start, ascending or descending. */
+  const run = (y: Float32Array, backward: boolean) => {
     let x1 = 0, x2 = 0, y1 = 0, y2 = 0;
-    for (let i = 0; i < input.length; i++) {
-      const xn = input[i]!, yn = b0 * xn + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2;
-      x2 = x1; x1 = xn; y2 = y1; y1 = yn; out[i] = yn;
+    for (let k = 0; k < y.length; k++) {
+      const i = backward ? y.length - 1 - k : k;
+      const xn = y[i]!, yn = b0 * xn + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2;
+      x2 = x1; x1 = xn; y2 = y1; y1 = yn; y[i] = yn;
     }
-    return out;
   };
-  return pass(pass(x).reverse()).reverse();
+  const n = x.length, mid = Float32Array.from(x);
+  run(mid, false);
+  run(mid, true);
+  const settle = a2 > 0 && a2 < 1 ? Math.ceil(Math.log(1e-3) / Math.log(Math.sqrt(a2))) : 0;
+  const L = Math.min(settle, Math.floor(n / 4));
+  if (L < 8) return mid;
+  const left = x.slice(0, 4 * L), right = x.slice(n - 4 * L);
+  run(left, true); run(left, true);
+  run(right, false); run(right, false);
+  for (let i = 0; i < 2 * L; i++) {
+    const wgt = i < L ? 1 : 0.5 + 0.5 * Math.cos((Math.PI * (i - L)) / L);
+    mid[i] = wgt * left[i]! + (1 - wgt) * mid[i]!;
+    const j = n - 1 - i;
+    mid[j] = wgt * right[4 * L - 1 - i]! + (1 - wgt) * mid[j]!;
+  }
+  return mid;
 }
 
 export const hum = defineDefense({
@@ -51,20 +70,26 @@ export const hum = defineDefense({
       }
       return values.filter((n) => n > 0);
     }),
-    maxHz: z.coerce.number().default(400),
+    /** Harmonics are notched below this (ENF can be read from any harmonic the mic picks up). */
+    maxHz: z.coerce.number().default(1000),
     q: z.coerce.number().positive().default(30),
+    /** From here up, notches are `narrowHz` wide instead of f/q (at Q 30 they'd merge and remove
+     *  most of the voice band between 400 Hz and 1 kHz). */
+    wideBelow: z.coerce.number().default(400),
+    narrowHz: z.coerce.number().positive().default(3),
     /** Refill each notch with noise at the neighbouring bands' level, so no dips are left behind. */
     refill: z.stringbool().default(true),
   }),
   create: (o) => ({
     process(x, ctx) {
-      const sr = ctx.sampleRate, freqs: number[] = [];
-      for (const base of o.mains) {
-        for (let f = base; f < o.maxHz; f += base) if (!freqs.some((g) => Math.abs(g - f) < 0.5)) freqs.push(f);
+      const sr = ctx.sampleRate, freqs: number[] = [], top = Math.min(o.maxHz, 0.45 * sr);
+      const qAt = (f: number) => (f < o.wideBelow ? o.q : Math.max(o.q, f / o.narrowHz));
+      for (const base of o.mains.filter((m) => m >= 10)) {
+        for (let f = base; f < top; f += base) if (!freqs.some((g) => Math.abs(g - f) < 0.5)) freqs.push(f);
       }
       freqs.sort((a, b) => a - b);
       let y = x;
-      for (const f of freqs) y = notch(y, f, o.q, sr);
+      for (const f of freqs) y = notch(y, f, qAt(f), sr);
       if (o.refill && freqs.length) {
         // For each notch: a narrow band of noise (white noise minus its own notch) at the long-term
         // median level of the notched signal's neighbouring bands, two bandwidths either side.
@@ -74,18 +99,18 @@ export const hum = defineDefense({
         const white = Float32Array.from({ length: x.length }, () => rng.gaussian());
         const out = Float32Array.from(y);
         for (const f of freqs) {
-          const bw = f / o.q;
-          const sides = [f - 2 * bw, f + 2 * bw].filter((g) => g > 0 && !freqs.some((h) => Math.abs(h - g) < 1.5 * h / o.q));
+          const q = qAt(f), bw = f / q;
+          const sides = [f - 2 * bw, f + 2 * bw].filter((g) => g > 0 && g < 0.45 * sr && !freqs.some((h) => Math.abs(h - g) < 1.5 * h / qAt(h)));
           if (!sides.length) continue;
           let level = 0;
           for (const g of sides) {
-            const n = notch(y, g, o.q, sr), band = new Float32Array(x.length);
+            const n = notch(y, g, q, sr), band = new Float32Array(x.length);
             for (let i = 0; i < x.length; i++) band[i] = y[i]! - n[i]!;
             const e = envelope(band, L), power = new Float64Array(Math.ceil(x.length / L));
             for (let j = 0; j < power.length; j++) power[j] = e[Math.min(x.length - 1, j * L)]! ** 2;
             level += (median(power) * (f / g)) / sides.length;                // bandwidth ∝ f
           }
-          const nn = notch(white, f, o.q, sr), fill = new Float32Array(x.length);
+          const nn = notch(white, f, q, sr), fill = new Float32Array(x.length);
           for (let i = 0; i < x.length; i++) fill[i] = white[i]! - nn[i]!;
           let own = 0;
           for (let i = 0; i < x.length; i++) own += fill[i]! * fill[i]!;

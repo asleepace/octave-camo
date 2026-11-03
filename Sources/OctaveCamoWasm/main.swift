@@ -11,14 +11,17 @@
 //   camo_free(ptr)
 //   st  = camo_analyze(ptr, channels, frames, sampleRate)
 //         4 Int32: long tonal tracks, Doppler-shaped tracks, mains-hum lines, fitted flybys
+//         (all -1: the input was rejected, which is not the same as clean)
+// camo_scrub returns 0 and leaves an empty output when it rejects its input (no stale result).
 //
 // Video flicker (the picture's ENF clock), on row profiles the page measures:
 //   ptr = camo_alloc(frames * strips * rows + frames)   log brightness [frame][strip][row], then
 //                                                       each frame's time in seconds
 //   sum = camo_flicker(ptr, frames, strips, rows, clean)
-//         8 Float64: detected, z, flicker Hz, cycles per frame, readout s, after detected, after z,
-//         passes removed
-//   g   = camo_flicker_gains()                          frames × rows Float32 gains (after clean = 1)
+//         9 Float64: detected, z, flicker Hz, cycles per frame, readout s, after detected, after z,
+//         passes removed, checked (0: too few frames or too high a frame rate to look; not clean)
+//   g   = camo_flicker_gains(), n = camo_flicker_gains_length()
+//         n Float32 gains, frames × rows after a clean (1 where untouched), 0 otherwise
 // stepsMask bit i enables ScrubStep.allCases[i]; 0 means the default steps. cutoffHz <= 0 keeps the
 // lowband default; keepVoice is 0 or 1.
 
@@ -58,9 +61,21 @@ enum Shared {
     nonisolated(unsafe) static let gains = Outbox<Float>()
 }
 
+/// `a × b × …` if it fits in Int (32 bits in wasm32), else nil: sizes come from JavaScript.
+func product(_ factors: Int...) -> Int? {
+    var total = 1
+    for f in factors {
+        guard f >= 0 else { return nil }
+        let (value, overflow) = total.multipliedReportingOverflow(by: f)
+        if overflow { return nil }
+        total = value
+    }
+    return total
+}
+
 func audio(_ input: UnsafePointer<Float>, _ channelCount: Int32, _ frames: Int32, _ sampleRate: Int32) -> Audio? {
     let c = Int(channelCount), n = Int(frames)
-    guard c > 0, n > 0, sampleRate > 0 else { return nil }
+    guard c > 0, c <= 64, n > 0, sampleRate > 0, product(c, n, MemoryLayout<Double>.stride) != nil else { return nil }
     var channels: [[Double]] = []
     for ch in 0..<c {
         var samples = [Double](repeating: 0, count: n)
@@ -96,7 +111,11 @@ func camoSteps() -> Int32 {
 func camoScrub(_ input: UnsafePointer<Float>, _ channelCount: Int32, _ frames: Int32, _ sampleRate: Int32,
                _ stepsMask: Int32, _ seedLo: UInt32, _ seedHi: UInt32,
                _ cutoffHz: Double, _ keepVoice: Int32) -> Int32 {
-    guard let clip = audio(input, channelCount, frames, sampleRate) else { return 0 }
+    guard let clip = audio(input, channelCount, frames, sampleRate) else {
+        Shared.output.set([])
+        Shared.logBytes.set(Array("scrub: input rejected".utf8))
+        return 0
+    }
     var pipeline = ScrubPipeline()
     if stepsMask != 0 {
         var steps = Set<ScrubStep>()
@@ -122,7 +141,7 @@ func camoScrub(_ input: UnsafePointer<Float>, _ channelCount: Int32, _ frames: I
 @_cdecl("camo_analyze")
 func camoAnalyze(_ input: UnsafePointer<Float>, _ channelCount: Int32, _ frames: Int32,
                  _ sampleRate: Int32) -> UnsafePointer<Int32> {
-    var stats = [Int32](repeating: 0, count: 4)
+    var stats = [Int32](repeating: -1, count: 4)
     if let clip = audio(input, channelCount, frames, sampleRate) {
         let analysis = FlybyAnalyzer().analyze(clip)
         stats = [Int32(analysis.tracks.count), Int32(analysis.flybys.count), Int32(analysis.hum.count),
@@ -136,17 +155,17 @@ func camoAnalyze(_ input: UnsafePointer<Float>, _ channelCount: Int32, _ frames:
 @_cdecl("camo_flicker")
 func camoFlicker(_ input: UnsafePointer<Float>, _ frames: Int32, _ strips: Int32, _ rows: Int32,
                  _ clean: Int32) -> UnsafePointer<Double> {
-    var summary = [Double](repeating: 0, count: 8)
+    var summary = [Double](repeating: 0, count: 9)
     Shared.gains.set([])
     let K = Int(frames), S = Int(strips), R = Int(rows)
-    guard K >= 8, S >= 1, R >= 8 else {
+    guard K >= 8, S >= 1, R >= 8, let total = product(K, S, R), product(total + K, MemoryLayout<Double>.stride) != nil else {
         Shared.flicker.set(summary)
         return UnsafePointer(Shared.flicker.pointer)
     }
-    var values = [Double](repeating: 0, count: K * S * R)
-    for i in 0..<(K * S * R) { values[i] = Double(input[i]) }
+    var values = [Double](repeating: 0, count: total)
+    for i in 0..<(total) { values[i] = Double(input[i]) }
     var times = [Double](repeating: 0, count: K)
-    for k in 0..<K { times[k] = Double(input[K * S * R + k]) }
+    for k in 0..<K { times[k] = Double(input[total + k]) }
     let profiles = FlickerScan.Profiles(frames: K, strips: S, rows: R, values: values, times: times)
     let scan = FlickerScan()
 
@@ -157,6 +176,7 @@ func camoFlicker(_ input: UnsafePointer<Float>, _ frames: Int32, _ strips: Int32
             summary[2] = f.flicker
             summary[3] = f.cycles
             summary[4] = f.readoutSeconds
+            summary[8] = f.checked ? 1 : 0
         } else {
             summary[5] = f.detected ? 1 : 0
             summary[6] = f.z
@@ -181,6 +201,12 @@ func camoFlicker(_ input: UnsafePointer<Float>, _ frames: Int32, _ strips: Int32
 @_cdecl("camo_flicker_gains")
 func camoFlickerGains() -> UnsafePointer<Float> {
     UnsafePointer(Shared.gains.pointer)
+}
+
+@_expose(wasm, "camo_flicker_gains_length")
+@_cdecl("camo_flicker_gains_length")
+func camoFlickerGainsLength() -> Int32 {
+    Int32(Shared.gains.count)
 }
 
 @_expose(wasm, "camo_output")

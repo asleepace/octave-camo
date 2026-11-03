@@ -69,8 +69,34 @@ public struct FlickerScan {
             self.frames = frames
             self.strips = strips
             self.rows = rows
-            self.values = values
-            self.times = times
+            self.values = Self.repaired(values, frames: frames, perFrame: strips * rows)
+            self.times = Self.repaired(times)
+        }
+
+        /// One NaN would spread through the running sums and quietly turn detection off (reading as
+        /// "no flicker"). A bad value takes the same position's value in the previous frame, or the
+        /// mean of the good values.
+        static func repaired(_ values: [Double], frames: Int, perFrame: Int) -> [Double] {
+            guard !values.allSatisfy(\.isFinite) else { return values }
+            let good = values.filter(\.isFinite)
+            let fallback = good.isEmpty ? 0 : good.reduce(0, +) / Double(good.count)
+            var out = values
+            for k in 0..<frames {
+                for i in 0..<perFrame where !out[k * perFrame + i].isFinite {
+                    out[k * perFrame + i] = k > 0 ? out[(k - 1) * perFrame + i] : fallback
+                }
+            }
+            return out
+        }
+
+        /// Frame times with bad entries interpolated from their neighbours' spacing.
+        static func repaired(_ times: [Double]) -> [Double] {
+            guard !times.allSatisfy(\.isFinite) else { return times }
+            var out = times
+            let steps = zip(times.dropFirst(), times).map { $0 - $1 }.filter { $0.isFinite && $0 > 0 }.sorted()
+            let step = steps.isEmpty ? 1.0 / 30 : steps[steps.count / 2]
+            for k in out.indices where !out[k].isFinite { out[k] = k > 0 ? out[k - 1] + step : 0 }
+            return out
         }
 
         var fps: Double {
@@ -89,6 +115,10 @@ public struct FlickerScan {
         /// Implied rolling-shutter readout time, s.
         public var readoutSeconds: Double
         public var detected: Bool
+        /// False when the scan couldn't look: fewer frames than one segment, or a frame rate so
+        /// high the band would be under half a cycle per frame (it looks like a gradient). Not
+        /// checked is not the same as clean.
+        public var checked = true
     }
 
     public struct Cleaned {
@@ -117,6 +147,7 @@ public struct FlickerScan {
         let segment = max(4, Int((segmentSeconds * fps).rounded()))
 
         var best = Finding(z: -.infinity, flicker: 0, cycles: 0, readoutSeconds: 0, detected: false)
+        var candidates = 0
         var power = [Double](repeating: 0, count: NC)
         var accRe = [Double](repeating: 0, count: NC), accIm = [Double](repeating: 0, count: NC)
         var row = [Double](repeating: 0, count: NC)
@@ -147,6 +178,7 @@ public struct FlickerScan {
                 for j in 0..<NC { row[j] = abs(power[j] - median) }
                 let mad = DSP.median(row[...]) * 1.4826 + 1e-30
                 for j in 0..<NC where cycles[j] >= lo && cycles[j] <= hi {
+                    candidates += 1
                     let z = (power[j] - median) / mad
                     if z > best.z {
                         best = Finding(z: z, flicker: f, cycles: cycles[j], readoutSeconds: cycles[j] / f, detected: false)
@@ -154,6 +186,9 @@ public struct FlickerScan {
                 }
                 f += stepHz
             }
+        }
+        guard candidates > 0, K >= segment, best.z.isFinite else {
+            return Finding(z: 0, flicker: 0, cycles: 0, readoutSeconds: 0, detected: false, checked: false)
         }
         best.detected = best.z > detectZ
         return best

@@ -23,9 +23,12 @@ export const standIn = {
     return { tones, doppler: Math.round(tones / 3), hum: tones > 2 ? 2 : 0, flybys: tones > 4 ? 1 : 0 };
   },
   flicker(p: Profiles, clean: boolean): Flicker {
-    // Always "finds" flicker, with no-op gains, so the re-encode path can be exercised (dev only).
+    // With VITE_STANDIN_FLICKER=1 it always "finds" flicker (no-op gains), to exercise the
+    // re-encode path; otherwise it never does (dev only, either way).
+    const found = import.meta.env.VITE_STANDIN_FLICKER === "1";
     const gains = clean ? new Float32Array(p.frames * p.rows).fill(1) : undefined;
-    return { detected: true, z: 300, flickerHz: 120, readoutMs: 16, after: { detected: false, z: 15 }, passesRemoved: 1, gains };
+    return { checked: true, detected: found, z: found ? 300 : 5, flickerHz: found ? 120 : 0, readoutMs: found ? 16 : 0,
+      after: { detected: false, z: 5 }, passesRemoved: found ? 1 : 0, gains };
   },
   scrub(clip: Clip, r: ScrubRequest) {
     const x = mono(clip), y = new Float32Array(x.length);

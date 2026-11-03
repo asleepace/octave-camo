@@ -1,6 +1,7 @@
 import "./style.css";
 import type { Step, Trace } from "./engine/camo.ts";
 import { type Request, type Stage, WorkerMessage } from "./engine/protocol.ts";
+import workerUrl from "./engine/worker.ts?worker&url";
 
 type FlickerScan = { detected: boolean; z: number; flickerHz: number; readoutMs: number; gains?: Float32Array<ArrayBuffer>; frames: number };
 import { load, type Loaded, MediaError, outputName, save } from "./media.ts";
@@ -49,13 +50,15 @@ const state = {
   preset: "full" as Preset,
   /** Preset the current output was made with. */
   outputPreset: null as Preset | null,
+  /** Preset of the cloak in progress (becomes outputPreset when its result arrives). */
+  pendingPreset: null as Preset | null,
   busy: null as Stage | "decoding" | "saving" | null,
   ms: 0,
   engine: "wasm" as "wasm" | "stand-in",
   error: "",
   /** The picture's flicker scan (mains clock in rolling-shutter bands). */
   picture: {
-    status: "none" as "none" | "scanning" | "done" | "error" | "short",
+    status: "none" as "none" | "scanning" | "done" | "error" | "short" | "unchecked",
     progress: 0,
     scan: null as FlickerScan | null,
     /** Remove flicker on save (re-encodes the picture). Defaults to on when flicker is found. */
@@ -69,18 +72,28 @@ const state = {
 };
 /** Bumped per opened file, so a slow picture scan can't land on the next clip. */
 let fileToken = 0;
+/** Bumped per save, so a slow check of an earlier save can't describe a later one. */
+let saveSeq = 0;
 
 const demoData = demo();
 const player = new Player();
 const terrain = new Terrain($<HTMLCanvasElement>("terrain"));
 terrain.cutoff = CUTOFF;
-const worker = new Worker(new URL("./engine/worker.ts", import.meta.url), { type: "module" });
+// The worker holds the decoded audio, so it must be under the page's Content-Security-Policy. A
+// worker loaded from its own URL takes its policy from its own HTTP response, and GitHub Pages
+// sends none; one started from a blob: URL inherits the page's. So a one-line blob: module
+// imports the real worker script.
+const worker = new Worker(URL.createObjectURL(new Blob([`import ${JSON.stringify(new URL(workerUrl, location.href).href)};`],
+  { type: "text/javascript" })), { type: "module", name: "octave-camo" });
 
 const fresh = () => !!state.outputSamples && state.outputPreset === state.preset;
 
 // ---------- worker ----------
 
-const send = (request: Request) => worker.postMessage(request);
+const send = (request: Request, transfer: Transferable[] = []) => worker.postMessage(request, transfer);
+
+worker.onerror = (event) => { event.preventDefault(); fail("the scrubber stopped working; reload the page"); };
+worker.onmessageerror = () => fail("the scrubber sent a message that couldn't be read");
 
 worker.onmessage = (event) => {
   const parsed = WorkerMessage.safeParse(event.data);
@@ -100,8 +113,8 @@ worker.onmessage = (event) => {
       const loaded = state.loaded;
       if (!loaded) return;
       Object.assign(state, {
-        busy: null, outputSamples: m.output, after: m.after, log: m.log, ms: m.ms, engine: m.engine,
-        output: spectrogram(m.output, loaded.clip.sampleRate),
+        busy: null, outputSamples: m.output, outputPreset: state.pendingPreset, after: m.after, log: m.log, ms: m.ms,
+        engine: m.engine, output: spectrogram(m.output, loaded.clip.sampleRate),
       });
       player.set("out", [m.output], loaded.clip.sampleRate);
       setSide("out");
@@ -109,12 +122,22 @@ worker.onmessage = (event) => {
     }
     case "flicker":
       if (m.purpose === "clip") {
+        if (!m.checked) {
+          state.picture.status = "unchecked";
+          state.picture.message = "the frame rate is too high, or there are too few frames, to check the picture for light flicker";
+          break;
+        }
         const frames = m.gains ? m.gains.length / ROWS : 0;
+        if (m.detected && (!m.gains || !Number.isInteger(frames) || frames !== pendingScanFrames)) {
+          state.picture.status = "error";
+          state.picture.message = "the flicker scan returned the wrong number of frames";
+          break;
+        }
         state.picture.scan = { detected: m.detected, z: m.z, flickerHz: m.flickerHz, readoutMs: m.readoutMs, gains: m.gains, frames };
         state.picture.status = "done";
         state.picture.fix = m.detected;
-      } else {
-        state.picture.verify = { detected: m.detected, z: m.z };
+      } else if (m.seq === saveSeq) {
+        state.picture.verify = { detected: m.detected || !m.checked, z: m.z };
       }
       break;
     case "error":
@@ -139,28 +162,33 @@ function fail(message: string) {
 async function open(file: File) {
   player.clear();
   Object.assign(state, {
-    loaded: null, input: null, output: null, outputSamples: null, outputPreset: null, before: null, after: null,
-    log: [], busy: "decoding", error: "",
+    loaded: null, input: null, output: null, outputSamples: null, outputPreset: null, pendingPreset: null, before: null,
+    after: null, log: [], busy: "decoding", error: "",
   });
   state.picture = { status: "none", progress: 0, scan: null, fix: false, verify: null, codec: "", message: "" };
   const token = ++fileToken;
   render();
   try {
     const loaded = await load(file);
+    if (token !== fileToken) return;           // another file was opened while this one decoded
     state.loaded = loaded;
     state.input = spectrogram(mix(loaded.clip.channels), loaded.clip.sampleRate);
     player.set("in", loaded.clip.channels, loaded.clip.sampleRate);
     setSide("in");
     state.busy = "analyzing";
     send({ type: "analyze", token, sampleRate: loaded.clip.sampleRate, channels: loaded.clip.channels });
-    // The scan sums whole 4 s segments; shorter clips can't be checked (and must not read as clean).
-    if (loaded.video && loaded.duration < MIN_PICTURE_SECONDS) state.picture.status = "short";
+    // The scan sums whole 4 s segments; a shorter picture can't be checked (and must not read as clean).
+    if (loaded.video && loaded.videoDuration < MIN_PICTURE_SECONDS) state.picture.status = "short";
     else if (loaded.video) void scanPicture(loaded, token);
   } catch (error) {
+    if (token !== fileToken) return;
     fail(error instanceof MediaError ? error.message : `couldn't read this file (${(error as Error).message})`);
   }
   render();
 }
+
+/** Frames in the profiles last sent for the clip scan (its gains must match). */
+let pendingScanFrames = 0;
 
 /** Measure row profiles (one decode pass) and ask the worker for flicker and removal gains. */
 async function scanPicture(loaded: Loaded, token: number) {
@@ -169,14 +197,15 @@ async function scanPicture(loaded: Loaded, token: number) {
   render();
   try {
     let last = 0;
-    const profiles = await measureProfiles(loaded.video, loaded.duration, (f) => {
+    const profiles = await measureProfiles(loaded.video, loaded.videoDuration, (f) => {
       if (token !== fileToken || f - last < 0.02) return;
       last = f;
       state.picture.progress = f;
       renderTrace();
     });
     if (token !== fileToken) return;
-    send({ type: "flicker", token, ...profiles, clean: true, purpose: "clip" });
+    pendingScanFrames = profiles.frames;
+    send({ type: "flicker", token, ...profiles, clean: true, purpose: "clip", seq: 0 }, [profiles.values.buffer, profiles.times.buffer]);
   } catch (error) {
     if (token !== fileToken) return;
     state.picture.status = "error";
@@ -186,16 +215,16 @@ async function scanPicture(loaded: Loaded, token: number) {
 }
 
 /** Decode the saved file and scan its picture again: the check the "gone" in the table reports. */
-async function verifyPicture(blob: Blob, token: number) {
+async function verifyPicture(blob: Blob, token: number, seq: number) {
   try {
     const input = new Input({ source: new BlobSource(blob), formats: ALL_FORMATS });
     const video = await input.getPrimaryVideoTrack();
     if (!video) throw new Error("the saved file has no picture");
     const profiles = await measureProfiles(video, await video.computeDuration());
-    if (token !== fileToken) return;
-    send({ type: "flicker", token, ...profiles, clean: false, purpose: "verify" });
+    if (token !== fileToken || seq !== saveSeq) return;
+    send({ type: "flicker", token, ...profiles, clean: false, purpose: "verify", seq }, [profiles.values.buffer, profiles.times.buffer]);
   } catch (error) {
-    if (token !== fileToken) return;
+    if (token !== fileToken || seq !== saveSeq) return;
     state.picture.message = `couldn't check the saved picture: ${(error as Error).message}`;
     render();
   }
@@ -206,33 +235,42 @@ const fixingPicture = () => !!state.loaded?.video && state.picture.fix && !!stat
 function cloak() {
   const loaded = state.loaded;
   if (!loaded || state.busy) return;
-  state.error = "";
-  state.busy = "loading";
-  state.outputPreset = state.preset;
-  send({
-    type: "scrub", token: fileToken, sampleRate: loaded.clip.sampleRate, channels: loaded.clip.channels,
-    steps: ["mono", ...PRESETS[state.preset].steps], seed: randomSeed(), cutoff: CUTOFF, keepVoice: true,
-  });
+  // The previous output is no longer what the button would save: if this run fails, there must be
+  // nothing left over to save under the new preset's name.
+  Object.assign(state, { error: "", busy: "loading", outputSamples: null, outputPreset: null, output: null, after: null,
+    pendingPreset: state.preset });
+  try {
+    send({
+      type: "scrub", token: fileToken, sampleRate: loaded.clip.sampleRate, channels: loaded.clip.channels,
+      steps: ["mono", ...PRESETS[state.preset].steps], seed: randomSeed(), cutoff: CUTOFF, keepVoice: true,
+    });
+  } catch (error) {
+    return fail(`couldn't start the cloak (${(error as Error).message})`);
+  }
   render();
 }
 
+/** The picture scan is still running: saving now would skip removing flicker it may yet find. */
+const waitingForPicture = () => !!state.loaded?.video && state.picture.status === "scanning";
+
 async function download() {
   const { loaded, outputSamples } = state;
-  if (!loaded || !outputSamples || state.busy) return;
+  if (!loaded || !outputSamples || state.busy || waitingForPicture()) return;
   state.busy = "saving";
   render();
+  const token = fileToken, seq = ++saveSeq;
   try {
     const scan = state.picture.scan;
     const picture = fixingPicture() && scan?.gains ? { gains: scan.gains, frames: scan.frames } : undefined;
-    const token = fileToken;
     state.picture.verify = null;
     const saved = await save(loaded, outputSamples, loaded.clip.sampleRate, (f) => {
       saveProgress = f;
       renderPrimary();
     }, picture);
     saveProgress = 0;
+    if (token !== fileToken) return;            // another file was opened meanwhile
     // Verify on the saved file itself (decoded again), not on what was fed to the encoder.
-    if (picture && loaded.video) void verifyPicture(saved.blob, token);
+    if (picture && loaded.video) void verifyPicture(saved.blob, token, seq);
     state.picture.codec = saved.videoCodec ?? "";
     const blob = saved.blob;
     const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(blob), download: outputName(loaded) });
@@ -240,6 +278,8 @@ async function download() {
     setTimeout(() => URL.revokeObjectURL(a.href), 30_000);
     state.busy = null;
   } catch (error) {
+    saveProgress = 0;
+    if (token !== fileToken) return;
     fail(`saving failed: ${(error as Error).message}`);
   }
   render();
@@ -275,11 +315,11 @@ function renderPrimary() {
     decoding: "DECODING…", loading: "LOADING…", analyzing: "LISTENING…", scrubbing: "CLOAKING…",
     verifying: "CHECKING…", saving: "ENCODING…",
   };
-  const waitingForPicture = fresh() && !s.busy && s.picture.status === "scanning";
-  button.disabled = !s.loaded || !!s.busy || waitingForPicture;
+  const scanning = fresh() && !s.busy && waitingForPicture();
+  button.disabled = !s.loaded || !!s.busy || scanning;
   button.textContent = s.busy === "saving" && saveProgress > 0 ? `ENCODING… ${Math.round(saveProgress * 100)}%`
     : s.busy ? stageText[s.busy]!
-    : waitingForPicture ? `SCANNING PICTURE… ${Math.round(s.picture.progress * 100)}%`
+    : scanning ? `SCANNING PICTURE… ${Math.round(s.picture.progress * 100)}%`
     : fresh() ? "SAVE CLOAKED FILE" : "CLOAK";
   const ready = fresh() && !s.busy;
   for (const c of ["border-white", "text-white", "hover:bg-white"]) button.classList.toggle(c, !ready);
@@ -301,6 +341,7 @@ function renderPrimary() {
   status.innerHTML = `${text}${s.loaded && !s.error ? ` <span class="text-neutral-700">· ${PRESETS[s.preset].note}</span>` : ""}`;
   const pic = s.picture;
   const warning = !s.loaded?.video ? ""
+    : pic.status === "unchecked" ? pic.message
     : pic.status === "error" || pic.message ? `the picture wasn't checked for light flicker (${pic.message || "the scan failed"})`
     : pic.status === "short" ? `the clip is too short (under ${MIN_PICTURE_SECONDS} s) to check the picture for light flicker`
     : "";
@@ -336,6 +377,7 @@ function pictureRow(): string {
   else if (p.status === "scanning") vin = `scanning ${Math.round(p.progress * 100)}%`;
   else if (p.status === "error") vin = `<span class="text-red-400">not checked</span>`;
   else if (p.status === "short") vin = `<span class="text-neutral-500">too short</span>`;
+  else if (p.status === "unchecked") vin = `<span class="text-amber-300/80">not checkable</span>`;
   else if (p.scan) vin = p.scan.detected ? `${Math.round(p.scan.flickerHz)} Hz` : "none";
   if (p.verify) vout = p.verify.detected ? `<span class="text-red-400">left</span>` : `<span class="text-accent">gone</span>`;
   else if (p.scan?.detected && fresh()) vout = p.fix ? `<span class="text-neutral-500">on save</span>` : `<span class="text-neutral-500">kept</span>`;
@@ -379,7 +421,7 @@ function renderTransport() {
   }
   $("drop").classList.toggle("hidden", has || state.busy === "decoding");
   $("file-name").textContent = state.loaded
-    ? `${state.loaded.name} · ${clock(state.loaded.duration)} · ${state.loaded.clip.sampleRate / 1000} kHz · ${!state.loaded.video ? "audio only" : fixingPicture() ? "picture re-encoded without flicker" : "picture kept as is"} · audio replaced · metadata dropped`
+    ? `${state.loaded.name} · ${clock(state.loaded.duration)} · ${state.loaded.clip.sampleRate / 1000} kHz · ${!state.loaded.video ? "audio only" : fixingPicture() ? "picture re-encoded without flicker" : "picture kept as is, embedded data removed"} · audio replaced · metadata dropped`
     : "";
   $("legend-main").textContent = terrain.show;
   $("legend-ghost").textContent = terrain.show === "in" ? "out" : "in";

@@ -30,6 +30,8 @@ export type Profiles = { frames: number; strips: number; rows: number; values: S
 
 /** Mains flicker in the picture (Swift's FlickerScan). */
 export type Flicker = {
+  /** False when the scan couldn't look (too few frames, or a frame rate too high): not clean. */
+  checked: boolean;
   detected: boolean;
   /** Line strength (robust z); detection above 60. */
   z: number;
@@ -64,18 +66,19 @@ type Exports = {
   camo_analyze(pointer: number, channels: number, frames: number, sampleRate: number): number;
   camo_flicker(pointer: number, frames: number, strips: number, rows: number, clean: number): number;
   camo_flicker_gains(): number;
+  camo_flicker_gains_length(): number;
   camo_output(): number;
   camo_log(): number;
   camo_log_length(): number;
 };
 
 const EXPORTS = ["camo_alloc", "camo_free", "camo_steps", "camo_scrub", "camo_analyze", "camo_flicker",
-  "camo_flicker_gains", "camo_output", "camo_log", "camo_log_length"] as const;
+  "camo_flicker_gains", "camo_flicker_gains_length", "camo_output", "camo_log", "camo_log_length"] as const;
 
 export class Camo {
   private constructor(private readonly x: Exports) {}
 
-  static async load(bytes: BufferSource | Response | Promise<Response>): Promise<Camo> {
+  static async load(bytes: BufferSource | WebAssembly.Module | Response | Promise<Response>): Promise<Camo> {
     const fds = [
       new OpenFile(new File([])),
       ConsoleStdout.lineBuffered((line) => console.log(`[camo] ${line}`)),
@@ -86,7 +89,7 @@ export class Camo {
     const source = await bytes;
     const instance = source instanceof Response
       ? (await WebAssembly.instantiateStreaming(source, imports)).instance
-      : await WebAssembly.instantiate(await WebAssembly.compile(source), imports);
+      : await WebAssembly.instantiate(source instanceof WebAssembly.Module ? source : await WebAssembly.compile(source), imports);
     const x = instance.exports as unknown as Exports;
     for (const name of EXPORTS) {
       if (typeof x[name] !== "function") throw new Error(`octave-camo.wasm is missing export ${name}`);
@@ -107,6 +110,7 @@ export class Camo {
     return this.withInput(clip, (pointer, frames) => {
       const n = this.x.camo_scrub(pointer, clip.channels.length, frames, clip.sampleRate, mask,
         seed >>> 0, Math.floor(seed / 2 ** 32) >>> 0, options.cutoff ?? 0, options.keepVoice === false ? 0 : 1);
+      if (n !== frames) throw new Error("the scrubber rejected this audio");
       const output = new Float32Array(this.x.memory.buffer, this.x.camo_output(), n).slice();
       const bytes = new Uint8Array(this.x.memory.buffer, this.x.camo_log(), this.x.camo_log_length());
       return { output, log: new TextDecoder().decode(bytes).split("\n").filter(Boolean) };
@@ -117,6 +121,7 @@ export class Camo {
     return this.withInput(clip, (pointer, frames) => {
       const at = this.x.camo_analyze(pointer, clip.channels.length, frames, clip.sampleRate);
       const [tones, doppler, hum, flybys] = new Int32Array(this.x.memory.buffer, at, 4);
+      if (tones! < 0) throw new Error("the analyzer rejected this audio");
       return { tones: tones!, doppler: doppler!, hum: hum!, flybys: flybys! };
     });
   }
@@ -131,12 +136,16 @@ export class Camo {
       heap.set(p.values, 0);
       heap.set(p.times, n);
       const at = this.x.camo_flicker(pointer, p.frames, p.strips, p.rows, clean ? 1 : 0);
-      const v = new Float64Array(this.x.memory.buffer, at, 8);
+      const v = new Float64Array(this.x.memory.buffer, at, 9);
       const result: Flicker = {
-        detected: v[0] === 1, z: v[1]!, flickerHz: v[2]!, readoutMs: v[4]! * 1000,
+        checked: v[8] === 1, detected: v[0] === 1, z: v[1]!, flickerHz: v[2]!, readoutMs: v[4]! * 1000,
         after: { detected: v[5] === 1, z: v[6]! }, passesRemoved: v[7]!,
       };
-      if (clean) result.gains = new Float32Array(this.x.memory.buffer, this.x.camo_flicker_gains(), p.frames * p.rows).slice();
+      if (clean) {
+        const length = this.x.camo_flicker_gains_length();
+        if (length === p.frames * p.rows) result.gains = new Float32Array(this.x.memory.buffer, this.x.camo_flicker_gains(), length).slice();
+        else if (length !== 0 || result.checked) throw new Error("the flicker scan returned gains of the wrong size");
+      }
       return result;
     } finally {
       this.x.camo_free(pointer);
@@ -147,6 +156,7 @@ export class Camo {
   private withInput<T>(clip: Clip, body: (pointer: number, frames: number) => T): T {
     const frames = clip.channels[0]?.length ?? 0;
     if (!frames) throw new Error("empty clip");
+    if (clip.channels.some((ch) => ch.length !== frames)) throw new Error("channels differ in length");
     const pointer = this.x.camo_alloc(frames * clip.channels.length);
     try {
       // Re-read memory.buffer after every call: allocation can grow (and detach) it.

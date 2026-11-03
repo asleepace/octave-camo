@@ -3,6 +3,7 @@
  * Runs the Swift scrubber (WebAssembly) off the main thread. Audio never leaves the browser.
  */
 import { Camo, type Clip, type Flicker, type Profiles, type Samples, type Trace } from "./camo.ts";
+import { z } from "zod";
 import { Request, type ScrubRequest, type WorkerMessage } from "./protocol.ts";
 
 declare const self: DedicatedWorkerGlobalScope;
@@ -17,18 +18,27 @@ type Engine = {
 };
 
 let engine: Promise<Engine> | undefined;
+/** Compiled once: after a trap the instance is replaced from this, with no network (offline use). */
+let compiled: Promise<WebAssembly.Module | null> | undefined;
 
-async function loadEngine(): Promise<Engine> {
+async function compile(): Promise<WebAssembly.Module | null> {
   const url = new URL(`${import.meta.env.BASE_URL}octave-camo.wasm`, self.location.origin);
   const response = await fetch(url);
   const isWasm = response.ok && (response.headers.get("content-type") ?? "").includes("application/wasm");
   if (!isWasm) {
     // Local development without the Swift toolchain: a crude JS stand-in keeps the UI usable.
-    if (import.meta.env.DEV) return (await import("./stand-in.ts")).standIn;
+    if (import.meta.env.DEV) return null;
     const type = response.headers.get("content-type") ?? "no content type";
     throw new Error(`could not load the scrubber: octave-camo.wasm is missing or not WebAssembly (HTTP ${response.status}, ${type})`);
   }
-  const camo = await Camo.load(response);
+  return WebAssembly.compileStreaming(response);
+}
+
+async function loadEngine(): Promise<Engine> {
+  compiled ??= compile().catch((error) => { compiled = undefined; throw error; });
+  const module = await compiled;
+  if (!module) return (await import("./stand-in.ts")).standIn;
+  const camo = await Camo.load(module);
   return {
     kind: "wasm",
     analyze: (clip) => camo.analyze(clip),
@@ -50,7 +60,7 @@ self.onmessage = async (event: MessageEvent<unknown>) => {
     if (request.type === "flicker") {
       const { values, times, frames, strips, rows } = request;
       const f = e.flicker({ values, times, frames, strips, rows }, request.clean);
-      post({ type: "flicker", token, purpose: request.purpose, ...f }, f.gains ? [f.gains.buffer] : []);
+      post({ type: "flicker", token, purpose: request.purpose, seq: request.seq, ...f }, f.gains ? [f.gains.buffer] : []);
       return;
     }
     const clip: Clip = { sampleRate: request.sampleRate, channels: request.channels };
@@ -69,8 +79,13 @@ self.onmessage = async (event: MessageEvent<unknown>) => {
 
     post({ type: "result", token, output, log, after, ms, engine: e.kind }, [output.buffer]);
   } catch (error) {
-    engine = undefined;
-    post({ type: "error", token, scope: picture ? "picture" : "audio", message: error instanceof Error ? error.message : String(error) });
+    // A trap leaves the instance's memory in an unknown state: start a fresh one (from the
+    // compiled module, no download). Bad requests and load failures leave it alone.
+    if (error instanceof WebAssembly.RuntimeError) engine = undefined;
+    const message = error instanceof z.ZodError ? "the page sent the scrubber a malformed request"
+      : error instanceof WebAssembly.RuntimeError ? `the scrubber failed on this clip (${error.message})`
+      : error instanceof Error ? error.message : String(error);
+    post({ type: "error", token, scope: picture ? "picture" : "audio", message });
   }
 };
 

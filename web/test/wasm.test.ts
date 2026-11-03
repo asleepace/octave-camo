@@ -90,7 +90,53 @@ for (const [name, WASM] of BUILDS) describe.skipIf(!existsSync(WASM))(`octave-ca
     expect(flickering.gains!.length).toBe(600 * 120);
     const clean = camo.flicker(flickerProfiles(false), true);
     expect(clean.detected).toBe(false);
+    expect(clean.checked).toBe(true);
     expect(clean.gains!.every((g) => g === 1)).toBe(true);
+  }, 600_000);
+
+  test("a picture it can't judge is reported as not checked, never as clean", async () => {
+    const camo = await Camo.load(readFileSync(WASM));
+    const few = flickerProfiles(true);
+    // 5 frames: under the export's minimum; 60 frames: under one 4 s segment.
+    for (const frames of [5, 60]) {
+      const p = { ...few, frames, values: few.values.slice(0, frames * 6 * 120), times: few.times.slice(0, frames) };
+      const r = camo.flicker(p, true);
+      expect(r.checked).toBe(false);
+      expect(r.detected).toBe(false);
+      expect(r.gains === undefined || r.gains.every((g) => g === 1)).toBe(true);
+    }
+  });
+
+  test("bad input is refused, and refusing leaves no stale result behind", async () => {
+    const camo = await Camo.load(readFileSync(WASM));
+    const clip = flybyClip();
+    const short = { sampleRate: SR, channels: [clip.channels[0]!.slice(0, SR * 3)] };
+    expect(camo.scrub(short, { seed: 1 }).output.length).toBe(SR * 3);
+    expect(() => camo.scrub({ sampleRate: SR, channels: [new Float32Array(0)] })).toThrow();
+    expect(() => camo.scrub({ sampleRate: SR, channels: [new Float32Array(10), new Float32Array(9)] })).toThrow();
+    expect(() => camo.analyze({ sampleRate: 0, channels: [new Float32Array(10)] })).toThrow();
+    expect(() => camo.scrub({ sampleRate: 0, channels: [new Float32Array(10)] })).toThrow();
+  }, 600_000);
+
+  test("NaN, Inf and absurd samples are replaced, not spread", async () => {
+    const camo = await Camo.load(readFileSync(WASM));
+    const x = flybyClip().channels[0]!.slice(0, SR * 5);
+    x[10] = Number.NaN; x[1000] = Number.POSITIVE_INFINITY; x[2000] = 1e12;
+    const { output, log } = camo.scrub({ sampleRate: SR, channels: [x] }, { seed: 3 });
+    expect(output.every(Number.isFinite)).toBe(true);
+    expect(Math.max(...output.map(Math.abs))).toBeGreaterThan(0.01);
+    expect(log[0]).toContain("replaced 3");
+  }, 600_000);
+
+  test("every sample rate the page can send cloaks to the same length", async () => {
+    const camo = await Camo.load(readFileSync(WASM));
+    for (const sampleRate of [8_000, 22_050, 44_100, 48_000]) {
+      const n = sampleRate * 3, x = new Float32Array(n);
+      for (let i = 0; i < n; i++) x[i] = 0.05 * Math.sin((2 * Math.PI * 60 * i) / sampleRate) + 0.01 * Math.sin(i * 1.7);
+      const { output } = camo.scrub({ sampleRate, channels: [x] }, { seed: 9 });
+      expect(output.length).toBe(n);
+      expect(output.every(Number.isFinite)).toBe(true);
+    }
   }, 600_000);
 
   test("a seed makes the output deterministic", async () => {

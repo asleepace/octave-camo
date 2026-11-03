@@ -9,8 +9,10 @@ import WASILibc
 #endif
 
 /// Voice pitch tracking (YIN, de Cheveigné & Kawahara 2002), used to keep voice harmonics while
-/// the rest of the low band is regenerated. Engines are periodic too, so voiced runs that hold a
-/// nearly constant pitch for too long are rejected: speech moves, machines don't.
+/// the rest of the low band is regenerated. Engines are periodic too, so two kinds of voiced run
+/// are rejected: a nearly constant pitch held too long (machines don't move), and any unbroken run
+/// longer than speech produces (a passing engine glides for many seconds without a break, and
+/// keeping its pitch curve would hand the attacker the Doppler curve).
 public struct PitchTracker {
     public var minHz = 70.0
     public var maxHz = 400.0
@@ -20,6 +22,10 @@ public struct PitchTracker {
     /// Voiced runs longer than this with less than `steadyCents` of movement are not voice.
     public var maxSteadySeconds = 1.5
     public var steadyCents = 30.0
+    /// Unbroken voiced runs longer than this are not speech, however they move. Speech breaks
+    /// for consonants and pauses every second or so; a long sung note loses only its kept
+    /// low-band detail (it's regenerated like everything else).
+    public var maxRunSeconds = 2.0
 
     public init() {}
 
@@ -78,12 +84,13 @@ public struct PitchTracker {
             if f0[start] == 0 { start += 1; continue }
             var end = start
             while end + 1 < f0.count && f0[end + 1] > 0 && abs(cents(f0[end + 1], f0[end])) < 100 { end += 1 }
-            if times[end] - times[start] > maxSteadySeconds {
+            let length = times[end] - times[start]
+            var reject = length > maxRunSeconds
+            if !reject && length > maxSteadySeconds {
                 let run = f0[start...end]
-                if cents(run.max()!, run.min()!) < steadyCents {
-                    for i in start...end { f0[i] = 0 }
-                }
+                reject = cents(run.max()!, run.min()!) < steadyCents
             }
+            if reject { for i in start...end { f0[i] = 0 } }
             start = end + 1
         }
     }

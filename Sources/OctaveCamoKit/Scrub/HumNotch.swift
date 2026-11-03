@@ -23,36 +23,53 @@ public struct HumNotch: ScrubStage {
     /// Mains frequencies whose harmonics are notched (60 Hz in the Americas, 50 Hz in most of the
     /// rest of the world). Empty disables the stage.
     public var mains: [Double] = [50, 60]
-    /// Harmonics are notched below this frequency.
-    public var maxFrequency = 400.0
+    /// Harmonics are notched below this frequency. ENF can be read from any harmonic a microphone
+    /// picks up; `lowband` regenerates everything below 300 Hz as well, but above that only these
+    /// notches remove it.
+    public var maxFrequency = 1_000.0
+    /// Q of the notches below `wideBelow` (1.7 Hz wide at 50 Hz, 12 Hz at 360 Hz).
     public var q = 30.0
+    /// Above this, notches have a fixed width (`narrowWidthHz`) instead: at Q 30 they would merge
+    /// and remove most of the voice band between 400 Hz and 1 kHz.
+    public var wideBelow = 400.0
+    /// Width of the notches from `wideBelow` up. Wide enough for the grid's wander, which grows
+    /// with the harmonic number (±0.05 Hz at the fundamental is ±0.8 Hz at 960 Hz).
+    public var narrowWidthHz = 3.0
     /// Refill each notch with noise at the neighbouring bands' level (no dips left behind).
     public var refill = true
     public var seed: UInt64 = .random(in: 1...UInt64.max)
 
     public init() {}
 
-    /// Notch frequencies: every harmonic of every mains frequency below `maxFrequency`, shared
-    /// harmonics (300 Hz) once, ascending.
-    var harmonics: [Double] {
+    /// Mains frequencies actually used: grids run at 50 or 60 Hz; anything under 10 Hz would mean
+    /// thousands of notches.
+    var families: [Double] { mains.filter { $0 >= 10 && $0.isFinite } }
+
+    /// Notch frequencies: every harmonic of every mains frequency below `maxFrequency` (and safely
+    /// below Nyquist), shared harmonics (300 Hz) once, ascending.
+    func harmonics(sampleRate: Int) -> [Double] {
+        let top = min(maxFrequency, 0.45 * Double(sampleRate))
         var out: [Double] = []
-        for base in mains where base > 0 {
-            for f in stride(from: base, to: maxFrequency, by: base) where !out.contains(where: { abs($0 - f) < 0.5 }) {
+        for base in families {
+            for f in stride(from: base, to: top, by: base) where !out.contains(where: { abs($0 - f) < 0.5 }) {
                 out.append(f)
             }
         }
         return out.sorted()
     }
 
+    /// Q of the notch at `f`.
+    func q(at f: Double) -> Double { f < wideBelow ? q : max(q, f / narrowWidthHz) }
+
+    func notch(_ f: Double, _ sampleRate: Int) -> Biquad { Biquad.notch(frequency: f, q: q(at: f), sampleRate: sampleRate) }
+
     public func process(_ x: [Double], sampleRate: Int) -> (output: [Double], summary: String) {
-        let freqs = harmonics
-        var y = freqs.reduce(x) { signal, f in
-            Biquad.notch(frequency: f, q: q, sampleRate: sampleRate).applyZeroPhase(signal)
-        }
+        let freqs = harmonics(sampleRate: sampleRate)
+        var y = freqs.reduce(x) { signal, f in notch(f, sampleRate).applyZeroPhase(signal) }
         if refill && !freqs.isEmpty { y = refilled(y, freqs, sampleRate: sampleRate) }
-        let families = mains.filter { $0 > 0 }.map { String(Int($0)) }.joined(separator: " and ")
+        let names = self.families.map { String(Int($0)) }.joined(separator: " and ")
         let what = refill ? "notched and refilled" : "notched"
-        return (y, "hum: \(what) \(freqs.count) harmonics of \(families.isEmpty ? "nothing" : families + " Hz")")
+        return (y, "hum: \(what) \(freqs.count) harmonics of \(names.isEmpty ? "nothing" : names + " Hz")")
     }
 
     /// Adds, for each notch, a narrow band of noise (white noise minus its own notch) at the median
@@ -63,25 +80,27 @@ public struct HumNotch: ScrubStage {
         var rng = SeededRNG(seed: seed ^ 0x5eed)
         let white = rng.normals(n)
         var out = y
+        let nyquistGuard = 0.45 * Double(sampleRate)
         for f in freqs {
-            let bandwidth = f / q
+            let bandwidth = f / q(at: f)
             var sides: [Double] = []
-            for g in [f - 2 * bandwidth, f + 2 * bandwidth] where g > 0 {
-                if !freqs.contains(where: { abs($0 - g) < 1.5 * $0 / q }) { sides.append(g) }
+            for g in [f - 2 * bandwidth, f + 2 * bandwidth] where g > 0 && g < nyquistGuard {
+                if !freqs.contains(where: { abs($0 - g) < 1.5 * $0 / q(at: $0) }) { sides.append(g) }
             }
             if sides.isEmpty { continue }
             var level = 0.0
             for g in sides {
-                let notched = Biquad.notch(frequency: g, q: q, sampleRate: sampleRate).applyZeroPhase(y)
+                let notched = Biquad.notch(frequency: g, q: q(at: f), sampleRate: sampleRate).applyZeroPhase(y)
                 var band = [Double](repeating: 0, count: n)
                 for i in 0..<n { band[i] = y[i] - notched[i] }
                 let e = Self.envelope(band, length: length)
                 var powers: [Double] = []
                 var i = 0
                 while i < n { powers.append(e[i] * e[i]); i += length }
-                level += DSP.median(powers[...]) * (f / g) / Double(sides.count)   // bandwidth grows with f
+                // A side band measured at the notch's own Q is f/g times narrower or wider than the notch.
+                level += DSP.median(powers[...]) * (f / g) / Double(sides.count)
             }
-            let whiteNotched = Biquad.notch(frequency: f, q: q, sampleRate: sampleRate).applyZeroPhase(white)
+            let whiteNotched = notch(f, sampleRate).applyZeroPhase(white)
             var fill = [Double](repeating: 0, count: n)
             var own = 0.0
             for i in 0..<n { fill[i] = white[i] - whiteNotched[i]; own += fill[i] * fill[i] }

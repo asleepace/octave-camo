@@ -36,6 +36,9 @@ public struct LowBandRegeneration: ScrubStage {
     /// Width, in ERBs, over which the noise's spectral shape is smoothed. Anything narrower (a
     /// notch left by `hum`, a steady motor tone) would otherwise be copied into the new noise.
     public var profileSmoothingERB = 1.0
+    /// Half-width kept around each voice harmonic, Hz (in Hz, not bins, so it's the same at
+    /// every sample rate).
+    public var voiceHalfWidthHz = 9.0
     public var pitch = PitchTracker()
     public var seed: UInt64 = .random(in: 1...UInt64.max)
 
@@ -44,6 +47,9 @@ public struct LowBandRegeneration: ScrubStage {
     public func process(_ x: [Double], sampleRate: Int) -> (output: [Double], summary: String) {
         let sr = Double(sampleRate), size = fftSize, hop = size / 4
         let binHz = sr / Double(size)
+        // Keep the crossover inside (40 Hz, 0.45 × sample rate): a cutoff outside it would leave
+        // no bands (and trap) or reach past Nyquist.
+        let cutoff = min(max(self.cutoff.isFinite ? self.cutoff : 300, 40), 0.45 * sr / (1 + crossover))
         let top = cutoff * (1 + crossover), bottom = cutoff * (1 - crossover)
         let K = min(Int((top / binHz).rounded(.up)) + 2, size / 2)
         let stft = LowBandSTFT(x, size: size, hop: hop, bins: K)
@@ -83,8 +89,8 @@ public struct LowBandRegeneration: ScrubStage {
                 voicedFrames += 1
                 var h = 1.0
                 while h * f0[m] < top {
-                    let c = h * f0[m] / binHz
-                    let lo = max(0, Int((c - 1.5).rounded(.down))), hi = min(K - 1, Int((c + 1.5).rounded(.up)))
+                    let c = h * f0[m] / binHz, half = voiceHalfWidthHz / binHz
+                    let lo = max(0, Int((c - half).rounded(.down))), hi = min(K - 1, Int((c + half).rounded(.up)))
                     if lo <= hi { for k in lo...hi { keep[m * K + k] = true } }
                     h += 1
                 }
