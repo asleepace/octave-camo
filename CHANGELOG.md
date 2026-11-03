@@ -9,6 +9,29 @@ are grouped by milestone, newest first, with the commits that made them.
 
 ## [Unreleased]
 
+### Tests
+
+- **Behavior snapshots** (`Tests/OctaveCamoKitTests/Snapshots/behavior.json`): 13 synthetic scenes,
+  from planes and hum to sounds that carry no clue (speech, singing, whistling, birdsong, held
+  notes, footsteps, silence) and tones above 1 kHz. Each records the attacker's counts before and
+  after, how much sound above the low band is kept, and the level change per octave; a change
+  beyond the tolerances fails, and re-recording shows the diff. Identical on Linux and macOS.
+- **Clue invariants**: the check behind the page's counts covers every frequency the cloak
+  changes; cloaking never adds a Doppler track, hum line or flyby; a second cloak finds nothing
+  new; level and sample rate don't change what's found; ordinary sound keeps its level above the
+  low band.
+- **Web**: 5,000 hostile worker messages are rejected without throwing; heatmap levels are relative
+  and put a tone in the same row at any sample rate.
+
+### Known issues (found by the new tests, targets written and skipped)
+
+- **Tones above 1 kHz are neither counted nor removed** (the tone tracker covers 40 Hz–1 kHz), so
+  "long tones → 0" can hide one. A jet's fan whine can be up there.
+- **Cloaked speech can show a "long tone" at the voice's own pitch** (with about half the seeds):
+  not a location clue, but the page would show "long tones 0 → 1".
+- **Held musical notes are removed** like engine tones (the snapshot keeps 8% of a chord scene's
+  shape and takes 10–13 dB off 250–500 Hz).
+
 ### Spectrogram
 
 - A full-width 2D spectrogram (frequency over time) under the detected levels, with a
