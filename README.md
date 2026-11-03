@@ -50,14 +50,15 @@ You shouldn't have to take a privacy tool's word for it.
   other origin. A CSP can't stop everything (it doesn't cover navigating the page away or WebRTC),
   so check for yourself: watch the Network tab in your browser's developer tools while you cloak a
   file, or load the page, go offline, and use it.
-- **The picture is untouched.** Compare the video packets of the original and the cloaked file.
-  For H.264, drop the original's SEI first (`remove_types=39|40` for HEVC; nothing for VP9/AV1),
-  since the cloak removes it:
+- **The picture is untouched.** Both files decode to exactly the same frames (the cloak copies
+  the video packets, removing only SEI, which decoders don't need):
 
   ```sh
-  ffmpeg -v error -i original.mov -map 0:v:0 -c copy -bsf:v filter_units=remove_types=6 -f streamhash -hash sha256 -
-  ffmpeg -v error -i camo-xxxxxx.mp4 -map 0:v:0 -c copy -f streamhash -hash sha256 -
+  ffmpeg -v error -noautorotate -i original.mov -map 0:v:0 -f hash -hash sha256 -
+  ffmpeg -v error -noautorotate -i camo-xxxxxx.mp4 -map 0:v:0 -f hash -hash sha256 -
   ```
+
+  For VP9 and AV1 even the packets are identical (`-c copy -f streamhash` instead of `-f hash`).
 
 - **The metadata is gone.** `ffprobe -show_format -show_streams original.camo.mp4` (or `exiftool`)
   shows no location, device or creation time.

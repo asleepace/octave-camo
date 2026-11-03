@@ -13,7 +13,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { type Browser, chromium } from "playwright";
-import { expectClean, FAKE_GPS, ffmpeg, flybyWav, probe, row, Session, URL_, videoHash, workDir } from "./helpers.ts";
+import { expectClean, FAKE_GPS, ffmpeg, flybyWav, pictureHash, probe, row, Session, URL_, videoHash, workDir } from "./helpers.ts";
 
 const dir = workDir();
 
@@ -116,10 +116,11 @@ describe.skipIf(!URL_)("cloak in the browser", () => {
       const info = expectClean(out, { video: true });
       const rotation = info.streams.find((st) => st.codec_type === "video")?.side_data_list?.find((d) => d.rotation !== undefined)?.rotation;
       expect(Math.abs(rotation ?? 0)).toBe(90);
-      // The picture is copied packet for packet, minus SEI: x264 writes its version and settings there.
+      // The picture is copied packet for packet, minus SEI (x264 writes its version and settings
+      // there), so it decodes to exactly the same frames.
       expect(readFileSync(input).includes("x264 - core")).toBe(true);
       expect(readFileSync(out).includes("x264")).toBe(false);
-      expect(videoHash(out)).toBe(videoHash(input, { withoutSei: "h264" }));
+      expect(pictureHash(out)).toBe(pictureHash(input));
       expect(s.problems).toEqual([]);
       await s.close();
     }, 900_000);
@@ -134,7 +135,7 @@ describe.skipIf(!URL_)("cloak in the browser", () => {
       const out = await s.cloakAndSave();
       expectClean(out, { video: true });
       expect(readFileSync(out).includes("GPS_37.7749")).toBe(false);
-      expect(videoHash(out)).toBe(videoHash(input, { withoutSei: "h264" }));
+      expect(pictureHash(out)).toBe(pictureHash(input));
       expect(s.problems).toEqual([]);
       await s.close();
     }, 900_000);

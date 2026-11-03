@@ -68,15 +68,20 @@ export class ProfileProbe {
 export async function measureProfiles(video: InputVideoTrack, duration: number,
                                       onProgress: (fraction: number) => void = () => {}): Promise<Profiles> {
   const probe = new ProfileProbe();
+  // Times relative to the first frame: a stream can start hours in, and float32 times that far
+  // out lose the precision the scan's phase search needs.
+  let first: number | null = null;
   for await (const sample of new VideoSampleSink(video).samples()) {
+    first ??= sample.timestamp;
+    const t = sample.timestamp - first;
     const frame = sample.toVideoFrame();
     try {
-      probe.add(frame, sample.timestamp);
+      probe.add(frame, t);
     } finally {
       frame.close();
       sample.close();
     }
-    if (probe.frames % 15 === 0) onProgress(Math.min(1, sample.timestamp / Math.max(duration, 1e-9)));
+    if (probe.frames % 15 === 0) onProgress(Math.min(1, t / Math.max(duration, 1e-9)));
   }
   onProgress(1);
   return probe.result();

@@ -222,7 +222,7 @@ async function verifyPicture(blob: Blob, token: number, seq: number) {
     const input = new Input({ source: new BlobSource(blob), formats: ALL_FORMATS });
     const video = await input.getPrimaryVideoTrack();
     if (!video) throw new Error("the saved file has no picture");
-    const profiles = await measureProfiles(video, await video.computeDuration());
+    const profiles = await measureProfiles(video, (await video.computeDuration()) - (await video.getFirstTimestamp()));
     if (token !== fileToken || seq !== saveSeq) return;
     send({ type: "flicker", token, ...profiles, clean: false, purpose: "verify", seq }, [profiles.values.buffer, profiles.times.buffer]);
   } catch (error) {

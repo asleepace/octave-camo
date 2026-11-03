@@ -20,16 +20,18 @@ export type Probe = { streams: Stream[]; format: { tags?: Record<string, string>
 export const probe = (file: string): Probe =>
   JSON.parse(execFileSync("ffprobe", ["-v", "error", "-show_streams", "-show_format", "-of", "json", file], { encoding: "utf8" }));
 
-/**
- * SHA-256 of the first video stream's packets (identical means the picture was copied, not
- * re-encoded). With `withoutSei`, of the H.264/HEVC stream with SEI removed (the cloak removes it).
- */
-export function videoHash(file: string, opts: { withoutSei?: "h264" | "hevc" } = {}) {
-  const bsf = opts.withoutSei === "h264" ? ["-bsf:v", "filter_units=remove_types=6"]
-    : opts.withoutSei === "hevc" ? ["-bsf:v", "filter_units=remove_types=39|40"] : [];
-  return execFileSync("ffmpeg", ["-v", "error", "-i", file, "-map", "0:v:0", "-c", "copy", ...bsf, "-f", "streamhash", "-hash", "sha256", "-"],
+/** SHA-256 of the first video stream's packets (identical means the picture was copied, not re-encoded). */
+export const videoHash = (file: string) =>
+  execFileSync("ffmpeg", ["-v", "error", "-i", file, "-map", "0:v:0", "-c", "copy", "-f", "streamhash", "-hash", "sha256", "-"],
     { encoding: "utf8" }).trim();
-}
+
+/**
+ * SHA-256 of every decoded frame of the first video stream (no auto-rotation). Equal means the
+ * picture is the same pixel for pixel, e.g. when only SEI (which decoders don't need) was removed.
+ */
+export const pictureHash = (file: string) =>
+  execFileSync("ffmpeg", ["-v", "error", "-noautorotate", "-i", file, "-map", "0:v:0", "-f", "hash", "-hash", "sha256", "-"],
+    { encoding: "utf8" }).trim();
 
 /** Decoded length of the first audio stream, s, by counting samples (container durations can be missing or wrong). */
 export function decodedAudioSeconds(file: string): number {
@@ -156,7 +158,12 @@ export class Session {
   }
 
   async save(): Promise<string> {
-    const [download] = await Promise.all([this.page.waitForEvent("download", { timeout: 600_000 }), this.page.click("#cloak")]);
+    // Whichever comes first: the download, or an error on the page (reported as the failure).
+    const failed = this.page.waitForSelector("#status .text-red-400", { timeout: 600_000 })
+      .then(async (el) => { throw new Error(`saving failed on the page: ${await el?.textContent()}`); });
+    failed.catch(() => {});
+    const [download] = await Promise.all([Promise.race([this.page.waitForEvent("download", { timeout: 600_000 }), failed]),
+      this.page.click("#cloak")]);
     expect(download.suggestedFilename()).toMatch(/^camo-[a-z2-9]{6}\.(mp4|m4a)$/);   // nothing from the original name
     const out = join(this.dir, download.suggestedFilename());
     await download.saveAs(out);

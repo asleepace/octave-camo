@@ -56,9 +56,12 @@ export async function load(file: File): Promise<Loaded> {
   if (!audio) throw new MediaError(`this browser can't decode ${tracks[0]!.codec ?? "this"} audio`);
   const video = await input.getPrimaryVideoTrack();
 
-  const duration = await audio.computeDuration();
+  // computeDuration() is the end timestamp, not the length: a TS stream (a camcorder's .MTS) can
+  // start hours in.
+  const audioStart = await audio.getFirstTimestamp(), videoStart = video ? await video.getFirstTimestamp() : 0;
+  const duration = (await audio.computeDuration()) - audioStart;
   if (duration > MAX_SECONDS) throw new MediaError(`clip is ${Math.round(duration)} s; the limit is ${MAX_SECONDS} s`);
-  const videoDuration = video ? await video.computeDuration() : 0;
+  const videoDuration = video ? (await video.computeDuration()) - videoStart : 0;
   if (videoDuration > MAX_SECONDS + 1) throw new MediaError(`the picture runs ${Math.round(videoDuration)} s; the limit is ${MAX_SECONDS} s`);
   const channelCount = audio.numberOfChannels;
   if (!(channelCount >= 1 && channelCount <= MAX_CHANNELS)) throw new MediaError(`unsupported channel count (${channelCount})`);
@@ -107,8 +110,7 @@ export async function load(file: File): Promise<Loaded> {
   }
   return {
     name: file.name, clip: { sampleRate, channels: [samples] }, sourceChannels: channelCount,
-    duration: samples.length / sampleRate, audioStart: await audio.getFirstTimestamp(), audio, video,
-    videoDuration, videoStart: video ? await video.getFirstTimestamp() : 0,
+    duration: samples.length / sampleRate, audioStart, audio, video, videoDuration, videoStart,
   };
 }
 
@@ -322,7 +324,6 @@ export async function save(loaded: Loaded, mono: Float32Array, sampleRate: numbe
   }
 }
 
+/** Bytes of a BufferSource (SharedArrayBuffer isn't defined unless the page is cross-origin isolated). */
 const toBytes = (source: AllowSharedBufferSource): Uint8Array =>
-  source instanceof ArrayBuffer || source instanceof SharedArrayBuffer
-    ? new Uint8Array(source)
-    : new Uint8Array(source.buffer, source.byteOffset, source.byteLength);
+  ArrayBuffer.isView(source) ? new Uint8Array(source.buffer, source.byteOffset, source.byteLength) : new Uint8Array(source);
