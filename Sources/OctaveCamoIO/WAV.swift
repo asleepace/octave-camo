@@ -1,4 +1,5 @@
 import Foundation
+import OctaveCamoKit
 
 public enum WAVError: Error, CustomStringConvertible {
     case invalid(String)

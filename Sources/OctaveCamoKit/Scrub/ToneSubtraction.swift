@@ -1,4 +1,12 @@
-import Foundation
+#if canImport(Darwin)
+import Darwin
+#elseif canImport(Glibc)
+import Glibc
+#elseif canImport(Musl)
+import Musl
+#elseif canImport(WASILibc)
+import WASILibc
+#endif
 
 /// Track-following cancellation: for each long tone, heterodyne to DC with the tracked phase,
 /// low-pass to get its complex amplitude A(t), resynthesize 2·Re(A·e^{iφ}) and subtract it.

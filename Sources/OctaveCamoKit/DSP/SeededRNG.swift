@@ -1,4 +1,12 @@
-import Foundation
+#if canImport(Darwin)
+import Darwin
+#elseif canImport(Glibc)
+import Glibc
+#elseif canImport(Musl)
+import Musl
+#elseif canImport(WASILibc)
+import WASILibc
+#endif
 
 /// Deterministic SplitMix64 generator so synth clips and wobble patterns are reproducible.
 struct SeededRNG: RandomNumberGenerator {

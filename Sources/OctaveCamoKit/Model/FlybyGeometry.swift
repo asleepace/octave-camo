@@ -1,4 +1,12 @@
-import Foundation
+#if canImport(Darwin)
+import Darwin
+#elseif canImport(Glibc)
+import Glibc
+#elseif canImport(Musl)
+import Musl
+#elseif canImport(WASILibc)
+import WASILibc
+#endif
 
 /// A straight-line, constant-speed flyby past a stationary microphone.
 /// Shared by the synthesizer (what to render) and the fitter (what it estimated).

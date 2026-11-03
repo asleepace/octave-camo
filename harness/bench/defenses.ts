@@ -9,6 +9,7 @@
  *   distant  quiet 90 s ambience, jet at 5.8 km slant, tone -25 dB below the noise
  *   speech   the same with speech-like syllables for the first 45 s
  *   close    60 s, close flyby at 1.5 km (the original blind-attack case)
+ *   train-close, train-distant, ship   other sources with public tracks (see THREAT_MODEL.md)
  */
 import { parseArgs } from "node:util";
 import { mkdtemp } from "node:fs/promises";
@@ -49,13 +50,35 @@ const decoys = [
 ];
 
 type Clip = { name: string; wav: string; voice?: string; durationS: number; plane: FlightTrack; truthD: number };
+
+/** Moving sources on straight tracks, rendered by reference/synth_source.py (ground level unless noted). */
+const SOURCES: Record<string, { f0: number; speed: number; northM: number; heightM: number; t0: number; duration: number; toneDb: number; harmonics: number }> = {
+  // Traction-inverter whine of a passing train: close, slow, well above lowband's 300 Hz cutoff.
+  "train-close":   { f0: 600, speed: 25, northM: 120, heightM: 0, t0: 30, duration: 60, toneDb: -10, harmonics: 2 },
+  // The same train across the neighborhood: faint, still above the cutoff.
+  "train-distant": { f0: 600, speed: 30, northM: 900, heightM: 0, t0: 30, duration: 60, toneDb: -22, harmonics: 2 },
+  // A ship's engine on the Bay: low, very slow (small Doppler), far.
+  "ship":          { f0: 70, speed: 6, northM: 400, heightM: 0, t0: 45, duration: 90, toneDb: -15, harmonics: 3 },
+};
+
 async function makeClip(name: string): Promise<Clip> {
   const wav = join(dir, `${name}.wav`);
+  const source = SOURCES[name];
+  if (source) {
+    const d = Math.hypot(source.northM, source.heightM);
+    await run(["python3", ref("synth_source.py"), wav, "--f0", String(source.f0), "--speed", String(source.speed),
+               "--distance", String(d), "--t0", String(source.t0), "--duration", String(source.duration),
+               "--tone-db", String(source.toneDb), "--harmonics", String(source.harmonics)]);
+    return { name, wav, durationS: source.duration, truthD: d,
+             plane: { ...straightTrack({ offsetNorthM: source.northM, heightM: source.heightM, speed: source.speed, t0: source.t0 }),
+                      id: "plane", callsign: "REAL" } };
+  }
   if (name === "close") {
     await run(["python3", ref("proto.py"), "synth", wav]);
     return { name, wav, durationS: 60, truthD: 1500,
              plane: { ...straightTrack({ offsetNorthM: 900, heightM: 1200, speed: 75, t0: 30 }), id: "plane", callsign: "REAL" } };
   }
+  if (name !== "distant" && name !== "speech") throw new Error(`unknown clip ${name}`);
   await run(["python3", ref("synth_background.py"), wav, "--tone-db", "-25", ...(name === "speech" ? ["--speech", "45"] : [])]);
   return { name, wav, voice: name === "speech" ? wav.replace(".wav", ".speech.wav") : undefined, durationS: 90,
            truthD: 5831, plane: { ...straightTrack({ offsetNorthM: 5_000, heightM: 3_000, speed: 150, t0: 45 }), id: "plane", callsign: "REAL" } };

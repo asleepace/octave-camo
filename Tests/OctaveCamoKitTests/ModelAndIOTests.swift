@@ -1,6 +1,7 @@
 import Foundation
 import XCTest
 @testable import OctaveCamoKit
+import OctaveCamoIO
 
 final class ModelAndIOTests: XCTestCase {
     let flyby = FlybyGeometry(f0: 120, speed: 75, t0: 30, distance: 1_500)
@@ -40,6 +41,6 @@ final class ModelAndIOTests: XCTestCase {
     }
 
     func testScrubStepNamesMatchCLI() {
-        XCTAssertEqual(ScrubStep.allCases.map(\.rawValue), ["mono", "hum", "subtract", "wobble"])
+        XCTAssertEqual(ScrubStep.allCases.map(\.rawValue), ["mono", "hum", "subtract", "lowband", "wobble"])
     }
 }

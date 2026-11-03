@@ -1,4 +1,12 @@
-import Foundation
+#if canImport(Darwin)
+import Darwin
+#elseif canImport(Glibc)
+import Glibc
+#elseif canImport(Musl)
+import Musl
+#elseif canImport(WASILibc)
+import WASILibc
+#endif
 
 /// Generates a known-truth test clip: one flyby (tone + 2 harmonics), mains hum with ENF wander,
 /// pink noise and speech-like syllables, as fake stereo.

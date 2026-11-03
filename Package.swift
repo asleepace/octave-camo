@@ -7,11 +7,15 @@ let package = Package(
     products: [
         // The library is what the iOS app imports; the CLI is a thin wrapper around it.
         .library(name: "OctaveCamoKit", targets: ["OctaveCamoKit"]),
+        .library(name: "OctaveCamoIO", targets: ["OctaveCamoIO"]),
         .executable(name: "octave-camo", targets: ["octave-camo"]),
     ],
     targets: [
+        // Pure DSP, no Foundation (libc math only): builds for iOS, macOS, Linux and WebAssembly.
         .target(name: "OctaveCamoKit"),
-        .executableTarget(name: "octave-camo", dependencies: ["OctaveCamoKit"]),
-        .testTarget(name: "OctaveCamoKitTests", dependencies: ["OctaveCamoKit"]),
+        // File I/O (WAV) on Foundation, for the CLI and tests.
+        .target(name: "OctaveCamoIO", dependencies: ["OctaveCamoKit"]),
+        .executableTarget(name: "octave-camo", dependencies: ["OctaveCamoKit", "OctaveCamoIO"]),
+        .testTarget(name: "OctaveCamoKitTests", dependencies: ["OctaveCamoKit", "OctaveCamoIO"]),
     ]
 )

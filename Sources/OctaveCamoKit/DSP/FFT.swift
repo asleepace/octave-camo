@@ -1,4 +1,12 @@
-import Foundation
+#if canImport(Darwin)
+import Darwin
+#elseif canImport(Glibc)
+import Glibc
+#elseif canImport(Musl)
+import Musl
+#elseif canImport(WASILibc)
+import WASILibc
+#endif
 
 /// Iterative radix-2 complex FFT on split real/imaginary arrays.
 /// Portable (no Accelerate) so the package builds on macOS, iOS and Linux.

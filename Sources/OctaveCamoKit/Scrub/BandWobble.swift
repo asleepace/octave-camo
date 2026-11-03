@@ -1,4 +1,12 @@
-import Foundation
+#if canImport(Darwin)
+import Darwin
+#elseif canImport(Glibc)
+import Glibc
+#elseif canImport(Musl)
+import Musl
+#elseif canImport(WASILibc)
+import WASILibc
+#endif
 
 /// Splits the low end into bands (raised-cosine crossovers that sum to 1) and gives each band
 /// its own slow random frequency drift. Harmonics of one aircraft land in different bands, so

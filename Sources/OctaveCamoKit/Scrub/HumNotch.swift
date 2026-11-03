@@ -1,4 +1,12 @@
-import Foundation
+#if canImport(Darwin)
+import Darwin
+#elseif canImport(Glibc)
+import Glibc
+#elseif canImport(Musl)
+import Musl
+#elseif canImport(WASILibc)
+import WASILibc
+#endif
 
 /// Narrow zero-phase notches at mains harmonics. Removes the electrical-network-frequency
 /// fluctuations that can timestamp a recording against grid logs.

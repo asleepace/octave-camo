@@ -1,4 +1,5 @@
 import OctaveCamoKit
+import OctaveCamoIO
 
 struct Command {
     let name: String
@@ -11,8 +12,8 @@ let commands = [
     Command(name: "synth", options: ["f0", "speed", "distance", "t0", "duration", "seed"],
             flags: ["hard"], run: synth),
     Command(name: "analyze", options: ["threshold"], flags: ["json"], run: analyze),
-    Command(name: "scrub", options: ["steps", "mains", "passes", "depth", "wobble-top", "seed"],
-            flags: [], run: scrub),
+    Command(name: "scrub", options: ["steps", "mains", "passes", "cutoff", "lowband-mode", "depth", "wobble-top", "seed"],
+            flags: ["no-keep-voice"], run: scrub),
 ]
 
 let usage = """
@@ -22,8 +23,9 @@ USAGE
   octave-camo synth   <out.wav> [--hard] [--f0 120] [--speed 75] [--distance 1500]
                         [--t0 30] [--duration 60] [--seed 1]
   octave-camo analyze <in.wav>  [--threshold 10] [--json]
-  octave-camo scrub   <in.wav> <out.wav> [--steps mono,hum,subtract,wobble]
-                        [--mains 60] [--passes 3] [--depth 0.015] [--wobble-top 600] [--seed N]
+  octave-camo scrub   <in.wav> <out.wav> [--steps mono,hum,subtract,lowband[,wobble]]
+                        [--mains 60] [--passes 3] [--cutoff 300] [--lowband-mode regenerate|highpass]
+                        [--no-keep-voice] [--depth 0.015] [--wobble-top 600] [--seed N]
 
 COMMANDS
   synth    Write a known-truth test clip (one flyby, hum, noise, speech-like syllables).
@@ -79,12 +81,22 @@ func scrub(_ args: Arguments) throws {
     }
     pipeline.hum.mains = try args.value("mains", default: pipeline.hum.mains)
     pipeline.subtraction.passes = try args.value("passes", default: pipeline.subtraction.passes)
+    pipeline.lowband.cutoff = try args.value("cutoff", default: pipeline.lowband.cutoff)
+    if let raw = args.string("lowband-mode") {
+        guard let mode = LowBandRegeneration.Mode(rawValue: raw) else {
+            throw UsageError("--lowband-mode must be \(LowBandRegeneration.Mode.allCases.map(\.rawValue).joined(separator: " or "))")
+        }
+        pipeline.lowband.mode = mode
+    }
+    pipeline.lowband.keepVoice = !args.flag("no-keep-voice")
     pipeline.wobble.depth = try args.value("depth", default: pipeline.wobble.depth)
     pipeline.wobble.top = try args.value("wobble-top", default: pipeline.wobble.top)
     pipeline.wobble.seed = try args.value("seed", default: pipeline.wobble.seed)
+    pipeline.lowband.seed = pipeline.wobble.seed
     try require(pipeline.hum.mains >= 0 && pipeline.hum.mains.isFinite, "--mains must be 50, 60, or 0 to disable")
     try require(pipeline.subtraction.passes >= 0, "--passes must be 0 or more")
     try require(pipeline.wobble.depth >= 0 && pipeline.wobble.depth <= 0.1, "--depth must be between 0 and 0.1")
+    try require(pipeline.lowband.cutoff > 20 && pipeline.lowband.cutoff.isFinite, "--cutoff must be above 20 Hz")
 
     let clock = Stopwatch()
     let audio = try WAV.read(from: input)

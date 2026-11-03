@@ -1,4 +1,12 @@
-import Foundation
+#if canImport(Darwin)
+import Darwin
+#elseif canImport(Glibc)
+import Glibc
+#elseif canImport(Musl)
+import Musl
+#elseif canImport(WASILibc)
+import WASILibc
+#endif
 
 /// Small numeric helpers shared across the package.
 enum DSP {
@@ -110,6 +118,47 @@ enum DSP {
             }
             return fp[lo] + (x - xp[lo]) / (xp[hi] - xp[lo]) * (fp[hi] - fp[lo])
         }
+    }
+
+    /// Centered moving average over `length` samples; edges average only the samples present.
+    static func smooth(_ x: [Double], length: Int) -> [Double] {
+        guard length > 1, !x.isEmpty else { return x }
+        let n = x.count, h = length / 2
+        var prefix = [Double](repeating: 0, count: n + 1)
+        for i in 0..<n { prefix[i + 1] = prefix[i] + x[i] }
+        return (0..<n).map { i in
+            let lo = max(0, i - h), hi = min(n, i + h + 1)
+            return (prefix[hi] - prefix[lo]) / Double(hi - lo)
+        }
+    }
+
+    /// Integer-factor decimation with a windowed-sinc low-pass. Returns the new rate too.
+    static func decimate(_ x: [Double], sampleRate: Double, to target: Double) -> (signal: [Double], rate: Double) {
+        let factor = max(1, Int((sampleRate / target).rounded()))
+        if factor == 1 { return (x, sampleRate) }
+        let taps = 16 * factor + 1, half = (taps - 1) / 2
+        let cutoff = 0.45 / Double(factor)
+        var h = [Double](repeating: 0, count: taps)
+        var sum = 0.0
+        for i in 0..<taps {
+            let k = Double(i - half)
+            let sinc = k == 0 ? 2 * cutoff : sin(2 * Double.pi * cutoff * k) / (Double.pi * k)
+            h[i] = sinc * (0.54 - 0.46 * cos(2 * Double.pi * Double(i) / Double(taps - 1)))
+            sum += h[i]
+        }
+        for i in 0..<taps { h[i] /= sum }
+        let n = x.count / factor
+        var out = [Double](repeating: 0, count: n)
+        for o in 0..<n {
+            let center = o * factor
+            var acc = 0.0
+            for i in 0..<taps {
+                let j = center + i - half
+                if j >= 0 && j < x.count { acc += h[i] * x[j] }
+            }
+            out[o] = acc
+        }
+        return (out, sampleRate / Double(factor))
     }
 
     /// Stretches control values spread evenly over `duration` onto the times `t`.

@@ -5,6 +5,8 @@ public enum ScrubStep: String, CaseIterable, Codable {
     case hum
     /// Track and cancel long tones.
     case subtract
+    /// Regenerate the band below the cutoff as information-free texture.
+    case lowband
     /// Per-band random pitch drift on whatever is left.
     case wobble
 }
@@ -23,11 +25,16 @@ public struct ScrubResult {
     public let log: [String]
 }
 
-/// mono → hum → subtract → wobble. Each stage is configurable and can be switched off.
+/// mono → hum → subtract → lowband (→ wobble). Each stage is configurable and can be switched off.
+/// The default matches the harness's recommended chain `hum+subtract+lowband`; the pitch wobble
+/// is opt-in, since benchmarks showed it adds little once `lowband` runs.
 public struct ScrubPipeline {
-    public var steps: Set<ScrubStep> = Set(ScrubStep.allCases)
+    public static let defaultSteps: Set<ScrubStep> = [.mono, .hum, .subtract, .lowband]
+
+    public var steps: Set<ScrubStep> = ScrubPipeline.defaultSteps
     public var hum = HumNotch()
     public var subtraction = ToneSubtraction()
+    public var lowband = LowBandRegeneration()
     public var wobble = BandWobble()
     /// Output is scaled down if it would exceed this peak.
     public var peakCeiling = 0.99
@@ -45,7 +52,7 @@ public struct ScrubPipeline {
             if input.channels.count > 1 { log.append("mono: off, kept channel 0 of \(input.channels.count)") }
         }
 
-        let stages: [any ScrubStage] = [hum, subtraction, wobble]
+        let stages: [any ScrubStage] = [hum, subtraction, lowband, wobble]
         for stage in stages where steps.contains(stage.step) {
             let result = stage.process(y, sampleRate: input.sampleRate)
             y = result.output
