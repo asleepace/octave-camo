@@ -47,6 +47,18 @@ public struct ScrubPipeline {
 
     public func run(_ input: Audio) -> ScrubResult {
         var log: [String] = []
+        // One NaN or Inf would spread through every filter and FFT and silence (or blow up) the
+        // whole output; a corrupt decode can produce them.
+        var input = input
+        var replaced = 0
+        for c in input.channels.indices where !input.channels[c].allSatisfy(\.isFinite) {
+            for i in input.channels[c].indices where !input.channels[c][i].isFinite {
+                input.channels[c][i] = 0
+                replaced += 1
+            }
+        }
+        if replaced > 0 { log.append("input: replaced \(replaced) non-finite sample(s) with silence") }
+
         var y: [Double]
         if steps.contains(.mono) {
             y = input.mono

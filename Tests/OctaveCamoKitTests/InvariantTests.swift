@@ -1,0 +1,249 @@
+import XCTest
+@testable import OctaveCamoKit
+
+/// Properties every cloak must have, whatever the input: right length, finite, bounded, seeded,
+/// and every stage doing its job at every sample rate a browser can hand us.
+final class InvariantTests: XCTestCase {
+    static let rates = [8_000, 11_025, 16_000, 22_050, 32_000, 44_100, 48_000, 88_200, 96_000]
+
+    private func seeded(_ steps: Set<ScrubStep> = ScrubPipeline.defaultSteps, seed: UInt64 = 11) -> ScrubPipeline {
+        var p = ScrubPipeline()
+        p.steps = steps
+        p.hum.seed = seed
+        p.lowband.seed = seed
+        p.wobble.seed = seed
+        return p
+    }
+
+    /// Noise, a voice-ish harmonic stack and mains hum (both families), per channel.
+    private func scene(rate: Int, seconds: Double, channels: Int = 1, mains: [Double] = [60], seed: UInt64 = 5) -> Audio {
+        let n = Int(Double(rate) * seconds)
+        var rng = SeededRNG(seed: seed)
+        var out: [[Double]] = []
+        for c in 0..<channels {
+            var x = rng.normals(n).map { 0.02 * $0 }
+            for i in 0..<n {
+                let t = Double(i) / Double(rate)
+                for base in mains {
+                    var h = base
+                    while h < min(400, Double(rate) / 2) {
+                        x[i] += 0.02 * sin(2 * .pi * (h * t + 0.01 * sin(2 * .pi * t / 3)) + Double(c))
+                        h += base
+                    }
+                }
+                x[i] += 0.05 * sin(2 * .pi * 220 * t) * (0.5 + 0.5 * sin(2 * .pi * 3 * t))
+            }
+            out.append(x)
+        }
+        return Audio(sampleRate: rate, channels: out)
+    }
+
+    private func assertSound(_ result: ScrubResult, frames: Int, ceiling: Double = 0.99,
+                             file: StaticString = #filePath, line: UInt = #line) {
+        XCTAssertEqual(result.audio.channels.count, 1, "output must be mono", file: file, line: line)
+        XCTAssertEqual(result.audio.frameCount, frames, "output length must match input", file: file, line: line)
+        let y = result.audio.channels[0]
+        XCTAssertTrue(y.allSatisfy(\.isFinite), "non-finite sample in output", file: file, line: line)
+        XCTAssertLessThanOrEqual(DSP.peakMagnitude(y), ceiling + 1e-12, file: file, line: line)
+    }
+
+    /// Power at `f` (one DFT bin over the whole signal) relative to the median of bins 3–8 Hz away.
+    private func lineToNeighboursDB(_ x: [Double], _ f: Double, rate: Int) -> Double {
+        func power(_ g: Double) -> Double {
+            var re = 0.0, im = 0.0
+            let w = 2 * Double.pi * g / Double(rate)
+            for (i, v) in x.enumerated() { re += v * cos(w * Double(i)); im -= v * sin(w * Double(i)) }
+            return re * re + im * im
+        }
+        var side: [Double] = []
+        for d in stride(from: 3.0, through: 8.0, by: 1.0) { side.append(power(f - d)); side.append(power(f + d)) }
+        return 10 * log10(power(f) / max(DSP.median(side[...]), 1e-30))
+    }
+
+    // MARK: Shape and range
+
+    func testEverySampleRateAndChannelCountGivesMonoFiniteSameLengthOutput() {
+        for rate in Self.rates {
+            for channels in [1, 2, 6] {
+                let audio = scene(rate: rate, seconds: 2, channels: channels)
+                let result = seeded().run(audio)
+                assertSound(result, frames: audio.frameCount)
+                XCTAssertEqual(result.log.count, ScrubPipeline.defaultSteps.count, "\(rate) Hz × \(channels): \(result.log)")
+            }
+        }
+    }
+
+    func testDegenerateLengthsDoNotCrash() {
+        for frames in [0, 1, 2, 7, 255, 1_000, 4_095, 8_193] {
+            var rng = SeededRNG(seed: UInt64(frames + 1))
+            let audio = Audio(sampleRate: 48_000, channels: [rng.normals(frames).map { 0.1 * $0 }])
+            assertSound(seeded().run(audio), frames: frames)
+        }
+    }
+
+    func testPathologicalSignals() {
+        let rate = 48_000, n = rate * 2
+        var rng = SeededRNG(seed: 2)
+        let cases: [(String, [Double])] = [
+            ("silence", [Double](repeating: 0, count: n)),
+            ("dc", [Double](repeating: 0.5, count: n)),
+            ("full-scale square", (0..<n).map { ($0 / 40) % 2 == 0 ? 1 : -1 }),
+            ("clipped noise", rng.normals(n).map { max(-1, min(1, 3 * $0)) }),
+            ("impulse", (0..<n).map { $0 == n / 2 ? 1 : 0 }),
+            ("nyquist", (0..<n).map { $0 % 2 == 0 ? 0.5 : -0.5 }),
+            ("denormal", [Double](repeating: 1e-310, count: n)),
+            ("over full scale", rng.normals(n).map { 8 * $0 }),
+        ]
+        for (name, x) in cases {
+            let result = seeded().run(Audio(sampleRate: rate, channels: [x]))
+            XCTAssertTrue(result.audio.channels[0].allSatisfy(\.isFinite), name)
+            assertSound(result, frames: n)
+        }
+    }
+
+    func testNonFiniteInputSamplesNeverReachTheOutput() {
+        let rate = 48_000, n = rate * 2
+        var rng = SeededRNG(seed: 4)
+        var x = rng.normals(n).map { 0.1 * $0 }
+        x[100] = .nan
+        x[n / 2] = .infinity
+        x[n - 3] = -.infinity
+        let result = seeded().run(Audio(sampleRate: rate, channels: [x, x]))
+        assertSound(result, frames: n)
+        XCTAssertTrue(result.log.contains { $0.contains("non-finite") }, "the log should say samples were replaced: \(result.log)")
+    }
+
+    func testSilenceStaysQuiet() {
+        let rate = 48_000
+        let result = seeded().run(Audio(sampleRate: rate, channels: [[Double](repeating: 0, count: rate * 2)]))
+        XCTAssertLessThan(DSP.peakMagnitude(result.audio.channels[0]), 1e-6, "the cloak invented sound from silence")
+    }
+
+    // MARK: Seeding
+
+    func testSameSeedSameOutputDifferentSeedDifferentOutput() {
+        let audio = scene(rate: 48_000, seconds: 3, channels: 2)
+        let a = seeded(seed: 21).run(audio).audio.channels[0]
+        let b = seeded(seed: 21).run(audio).audio.channels[0]
+        let c = seeded(seed: 22).run(audio).audio.channels[0]
+        XCTAssertEqual(a, b, "same seed must give the same output")
+        XCTAssertNotEqual(a, c, "a different seed must give different noise")
+    }
+
+    func testUnseededRunsDiffer() {
+        let audio = scene(rate: 48_000, seconds: 2)
+        XCTAssertNotEqual(ScrubPipeline().run(audio).audio.channels[0], ScrubPipeline().run(audio).audio.channels[0],
+                          "default seeds must be random, or every user's noise would be identical")
+    }
+
+    func testMonoIgnoresChannelOrder() {
+        let audio = scene(rate: 48_000, seconds: 2, channels: 3)
+        let swapped = Audio(sampleRate: 48_000, channels: audio.channels.reversed())
+        let a = seeded().run(audio).audio.channels[0], b = seeded().run(swapped).audio.channels[0]
+        let maxError = zip(a, b).map { abs($0 - $1) }.max() ?? 0
+        XCTAssertLessThan(maxError, 1e-9, "the output reveals channel order")
+    }
+
+    // MARK: Each stage works at every rate
+
+    func testHumIsRemovedAtEverySampleRate() {
+        for rate in Self.rates {
+            for base in [50.0, 60.0] {
+                let audio = scene(rate: rate, seconds: 6, mains: [base])
+                let y = seeded([.mono, .hum]).run(audio).audio.channels[0]
+                var h = base
+                while h < min(400, Double(rate) / 2 - 20) {
+                    let before = lineToNeighboursDB(audio.channels[0], h, rate: rate)
+                    let after = lineToNeighboursDB(y, h, rate: rate)
+                    XCTAssertGreaterThan(before, 15, "test scene lacks a \(h) Hz line at \(rate) Hz")
+                    XCTAssertLessThan(after, 4, "\(h) Hz hum survived at \(rate) Hz (\(after) dB)")
+                    h += base
+                }
+            }
+        }
+    }
+
+    func testLowbandRemovesASteadyLowToneAtEverySampleRate() {
+        for rate in Self.rates {
+            let n = rate * 6
+            var rng = SeededRNG(seed: 8)
+            var x = rng.normals(n).map { 0.02 * $0 }
+            for i in 0..<n { x[i] += 0.05 * sin(2 * .pi * 137.3 * Double(i) / Double(rate)) }
+            let y = seeded([.mono, .lowband]).run(Audio(sampleRate: rate, channels: [x])).audio.channels[0]
+            XCTAssertGreaterThan(lineToNeighboursDB(x, 137.3, rate: rate), 20)
+            XCTAssertLessThan(lineToNeighboursDB(y, 137.3, rate: rate), 6, "137 Hz tone survived lowband at \(rate) Hz")
+        }
+    }
+
+    func testCloakKeepsTheSoundAboveTheLowBand() {
+        let audio = scene(rate: 48_000, seconds: 4)
+        let y = seeded().run(audio).audio.channels[0]
+        XCTAssertGreaterThan(lineToNeighboursDB(y, 220, rate: 48_000), 15, "the voice-band tone should survive")
+    }
+
+    func testLowbandCutoffAboveNyquistStillGivesSound() {
+        var p = seeded()
+        p.lowband.cutoff = 6_000
+        let audio = scene(rate: 8_000, seconds: 2)
+        assertSound(p.run(audio), frames: audio.frameCount)
+    }
+
+    func testEveryStepCombinationIsSound() {
+        let audio = scene(rate: 22_050, seconds: 2, channels: 2)
+        let all = ScrubStep.allCases
+        for mask in 0..<(1 << all.count) {
+            let steps = Set(all.enumerated().filter { mask & (1 << $0.offset) != 0 }.map(\.element))
+            assertSound(seeded(steps).run(audio), frames: audio.frameCount)
+        }
+    }
+
+    // MARK: Flicker
+
+    private func flickerProfiles(frames K: Int, strips S: Int = 6, rows R: Int = 120, fill: (Int, Int, Int) -> Double) -> FlickerScan.Profiles {
+        var values = [Double](repeating: 0, count: K * S * R)
+        for k in 0..<K { for s in 0..<S { for r in 0..<R { values[(k * S + s) * R + r] = fill(k, s, r) } } }
+        return FlickerScan.Profiles(frames: K, strips: S, rows: R, values: values, times: (0..<K).map { Double($0) / 30 })
+    }
+
+    func testFlickerGainsAreFiniteBoundedAndShaped() {
+        var rng = SeededRNG(seed: 6)
+        let cases: [(String, FlickerScan.Profiles)] = [
+            ("flat", flickerProfiles(frames: 300) { _, _, _ in -1 }),
+            ("noise", flickerProfiles(frames: 300) { _, _, _ in rng.normal() }),
+            ("banded", flickerProfiles(frames: 600) { k, _, r in
+                -0.5 + 0.04 * cos(2 * .pi * 100 * (Double(k) / 30 + 0.5 / 30 * Double(r) / 120))
+            }),
+            ("short", flickerProfiles(frames: 8, strips: 1, rows: 8) { _, _, r in Double(r) }),
+        ]
+        let scan = FlickerScan()
+        for (name, p) in cases {
+            let cleaned = scan.clean(p)
+            XCTAssertEqual(cleaned.gains.count, p.frames * p.rows, name)
+            XCTAssertTrue(cleaned.gains.allSatisfy { $0.isFinite && $0 > 0 }, name)
+            // Gains are applied to linear brightness: never more than the depth cap per pass.
+            let bound = exp(scan.maxDepth * Double(scan.passes)) + 1e-9
+            XCTAssertTrue(cleaned.gains.allSatisfy { $0 <= bound && $0 >= 1 / bound }, "\(name): gain outside the depth cap")
+            XCTAssertTrue(cleaned.after.z.isFinite && cleaned.findings.allSatisfy { $0.z.isFinite }, name)
+        }
+    }
+
+    func testFlickerFlatOrNoisePicturesAreNotFlagged() {
+        var rng = SeededRNG(seed: 9)
+        XCTAssertFalse(FlickerScan().scan(flickerProfiles(frames: 300) { _, _, _ in -1 }).detected)
+        XCTAssertFalse(FlickerScan().scan(flickerProfiles(frames: 600) { _, _, _ in 0.01 * rng.normal() }).detected)
+    }
+
+    func testFlickerNoDetectionMeansUnitGains() {
+        let cleaned = FlickerScan().clean(flickerProfiles(frames: 300) { _, s, r in -1 + 0.01 * Double(s + r) })
+        XCTAssertTrue(cleaned.gains.allSatisfy { $0 == 1 }, "nothing found, so nothing may change")
+    }
+
+    func testFlickerSurvivesNonFiniteProfiles() {
+        var p = flickerProfiles(frames: 300) { k, _, r in -0.5 + 0.03 * cos(2 * .pi * (100 * Double(k) / 30 + Double(r) / 240)) }
+        p.values[17] = .nan
+        p.values[400] = -.infinity
+        let cleaned = FlickerScan().clean(p)
+        XCTAssertTrue(cleaned.gains.allSatisfy(\.isFinite))
+        XCTAssertTrue(cleaned.after.z.isFinite)
+    }
+}
