@@ -11,6 +11,7 @@
     "bench": "bun bench/distant.ts",
     "scrub": "bun src/scrub-cli.ts",
     "bench:defenses": "bun bench/defenses.ts",
+    "bench:gate": "bun bench/defenses.ts --gate --clips distant,speech,close,train-close,train-distant,ship --json bench-results.json",
     "test:e2e": "E2E=1 bun test test/e2e.test.ts"
   },
   "dependencies": {

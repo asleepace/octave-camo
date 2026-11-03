@@ -64,3 +64,6 @@ export function describeModules(): string {
     return `  ${m.name.padEnd(9)} [${m.tier}] ${m.summary}${opts.length ? `\n            options: ${opts.join(", ")}` : ""}`;
   }).join("\n");
 }
+
+/** The recommended offline chain, the same one the Swift pipeline and the web app run by default. */
+export const DEFAULT_CHAIN = "hum+subtract+scurve+lowband";

@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { extname, join } from "node:path";
 import { readClipInfo, run, type ClipInfo } from "./clip.ts";
-import { describeModules, needs, parseChain, runChain } from "./defense/index.ts";
+import { DEFAULT_CHAIN, describeModules, needs, parseChain, runChain } from "./defense/index.ts";
 import { readMono, writeMonoWav } from "./dsp.ts";
 import { loadTracks } from "./sources/file.ts";
 
@@ -27,7 +27,7 @@ ${describeModules()}`;
 const { values: opts, positionals } = parseArgs({
   allowPositionals: true,
   options: {
-    chain: { type: "string", default: "hum+subtract+scurve+lowband" },
+    chain: { type: "string", default: DEFAULT_CHAIN },
     track: { type: "string" },
     seed: { type: "string" },
     list: { type: "boolean", default: false },

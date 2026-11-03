@@ -19,6 +19,7 @@
   "devDependencies": {
     "@tailwindcss/vite": "4.3.4",
     "@types/bun": "^1.4.4",
+    "playwright": "1.63.0",
     "tailwindcss": "4.3.4",
     "typescript": "^5",
     "vite": "8.3.5"

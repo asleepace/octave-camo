@@ -82,7 +82,7 @@ jobs:
       - name: Typecheck
         run: bunx tsc --noEmit
       - name: Test (runs the real wasm build)
-        run: bun test --timeout 600000
+        run: bun test test/ --timeout 600000
       - name: Build
         run: bunx vite build
       - if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -90,9 +90,62 @@ jobs:
         with:
           path: web/dist
 
+  e2e:
+    name: Web end-to-end (Chromium, real wasm)
+    needs: wasm
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: octave-camo-wasm
+          path: web/public
+      - uses: oven-sh/setup-bun@v2
+      - name: System dependencies
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+      - run: bun install --frozen-lockfile
+      - name: Chromium
+        run: bunx playwright install --with-deps chromium
+      - name: Build (production, with the Content-Security-Policy)
+        run: BASE_PATH=/ bunx vite build
+      - name: Test
+        run: |
+          bunx vite preview --port 4173 --strictPort &
+          for i in $(seq 1 30); do curl -sf http://localhost:4173/ >/dev/null && break; sleep 1; done
+          E2E_URL=http://localhost:4173/ bun test e2e/ --timeout 900000
+
+  bench:
+    name: Benchmark gate (both attackers, 6 clips)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: harness
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: System and Python dependencies
+        run: |
+          sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+          pip install numpy scipy
+      - run: bun install --frozen-lockfile
+      - name: Default chain must not leak; uncloaked clips must
+        run: bun run bench:gate
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-results
+          path: harness/bench-results.json
+          if-no-files-found: ignore
+
   deploy:
     name: Deploy to GitHub Pages
-    needs: web
+    needs: [web, e2e]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:

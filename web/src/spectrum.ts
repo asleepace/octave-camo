@@ -11,7 +11,7 @@ export type Spectrogram = {
   centers: Float64Array;
   hop: number;
   frames: number;
-  /** frames × bands, dB re full-scale sine. */
+  /** frames × bands, dB (mean power per band, lightly smoothed over time; for display, not calibration). */
   db: Float32Array;
 };
 

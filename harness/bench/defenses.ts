@@ -17,7 +17,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Analyzer } from "../src/analyzer.ts";
 import { run } from "../src/clip.ts";
-import { parseChains, runChain } from "../src/defense/index.ts";
+import { DEFAULT_CHAIN, parseChains, runChain } from "../src/defense/index.ts";
 import { decimate } from "../src/defense/signal.ts";
 import { readMono, writeMonoWav } from "../src/dsp.ts";
 import { defaultMatchedConfig, matchedAttack, whitenedSpectrogram } from "../src/matched.ts";
@@ -35,8 +35,15 @@ const { values: opts } = parseArgs({
     chains: { type: "string", default: DEFAULT_CHAINS },
     clips: { type: "string", default: "distant,speech,close" },
     "no-aac": { type: "boolean", default: false },
+    /** CI gate: exit 1 if the default chain leaks on any clip, or if "none" stops leaking
+     *  (which would mean the attackers broke, making every defense look safe). */
+    gate: { type: "boolean", default: false },
+    json: { type: "string" },
   },
 });
+if (opts.gate) opts.chains = `none;${DEFAULT_CHAIN}`;
+type Row = { clip: string; chain: string; blind: string; matched: string; leak: boolean; lowDb: number; highDb: number; voice?: number };
+const rows: Row[] = [];
 
 const repo = join(import.meta.dir, "..", "..");
 const ref = (f: string) => join(repo, "reference", f);
@@ -132,8 +139,20 @@ for (const name of opts.clips!.split(",")) {
     const low300 = loudnessChange(original, processed, SR, 30, 300);
     const high = loudnessChange(original, processed, SR, 300, 4000);
     const v = voice ? voiceRetention(voice, processed, SR) : NaN;
+    rows.push({ clip: name, chain: label, blind: blindText, matched: matchedText, leak: located || blindText.startsWith("LEAK"),
+      lowDb: low300, highDb: high, voice: voice ? v : undefined });
     console.log(`  ${pad(label, 38)} ${pad(blindText, 16)} ${pad(matchedText, 34)} ${low300.toFixed(1).padStart(4)} dB ${high.toFixed(1).padStart(4)} dB` +
       `${voice ? `  ${(v * 100).toFixed(0).padStart(5)}%` : ""}  [${((performance.now() - t) / 1000).toFixed(0)}s]`);
   }
   console.log("");
+}
+
+if (opts.json) await Bun.write(opts.json, JSON.stringify(rows, null, 1));
+if (opts.gate) {
+  const failures = [
+    ...rows.filter((r) => r.chain === DEFAULT_CHAIN && r.leak).map((r) => `${r.clip}: default chain leaks (${r.blind}; ${r.matched})`),
+    ...rows.filter((r) => r.chain === "none" && !r.leak).map((r) => `${r.clip}: attackers no longer find the uncloaked clip`),
+  ];
+  console.log(failures.length ? `GATE FAILED\n  ${failures.join("\n  ")}` : "GATE PASSED: the default chain is safe on every clip, and the attackers still find every uncloaked one");
+  process.exitCode = failures.length ? 1 : 0;
 }
