@@ -155,12 +155,13 @@ for (const name of opts.clips!.split(",")) {
     const m = matchedAttack(whitenedSpectrogram(low, cfg), tracks, info, cfg);
     const real = m.aircraft.find((a) => a.id === "plane")!;
     const located = real.detected && real.peakZ > leakZ && (m.ambiguityAwareErrorM ?? Infinity) <= 1_000;
+    const nearTruth = real.detected && (m.ambiguityAwareErrorM ?? Infinity) <= 1_000;
     const matchedText = located
       ? `LEAK ${m.ambiguityAwareErrorM!.toFixed(0)} m (z ${real.peakZ.toFixed(0)})`
-      : m.errorM !== undefined
-        ? `wrong place ${(m.errorM / 1000).toFixed(1)} km off`
-        : real.detected && (m.ambiguityAwareErrorM ?? Infinity) <= 1_000
-          ? `at noise floor (z ${real.peakZ.toFixed(0)})`
+      : nearTruth
+        ? `at noise floor (z ${real.peakZ.toFixed(0)})`
+        : m.errorM !== undefined
+          ? `wrong place ${(m.errorM / 1000).toFixed(1)} km off`
           : `no detection (truth top ${(100 - real.truthPercentile).toFixed(0)}%)`;
 
     const low300 = loudnessChange(original, processed, SR, 30, 300);
