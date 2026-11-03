@@ -1,7 +1,7 @@
 name: Reproducibility
 
-# Builds the WebAssembly twice from clean (same path, then another path) and reports what
-# differs: object files, wasm sections, strings. Run by hand while working on reproducibility.
+# Builds the WebAssembly on two separate runners (same path) and at another path, then reports
+# what differs: wasm sections, data, disassembly. Run by hand while working on reproducibility.
 on:
   workflow_dispatch:
 
@@ -9,14 +9,15 @@ permissions:
   contents: read
 
 jobs:
-  diff:
-    name: Two clean builds, compared
+  build:
+    name: Build ${{ matrix.runner }}
+    strategy:
+      matrix:
+        runner: [one, two]
     runs-on: ubuntu-latest
     container: swift:6.4.2
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - name: Tools
-        run: apt-get update -qq && apt-get install -y -qq wabt binutils > /dev/null
       - name: Install the Swift SDK for WebAssembly
         run: |
           for attempt in 1 2 3; do
@@ -26,32 +27,49 @@ jobs:
             [ "$attempt" = 3 ] && exit 1
             sleep 10
           done
-      - name: Build A, B (same path, clean) and C (another path)
+      - name: Build (and, on runner one, again at another path)
         run: |
           git config --global --add safe.directory "$PWD"
-          scripts/build-wasm.sh /tmp/a.wasm && cp -r .build /tmp/build-a && rm -rf .build
-          scripts/build-wasm.sh /tmp/b.wasm && cp -r .build /tmp/build-b
-          mkdir -p /tmp/elsewhere && git archive HEAD | tar -x -C /tmp/elsewhere
-          (cd /tmp/elsewhere && scripts/build-wasm.sh /tmp/c.wasm)
-          sha256sum /tmp/a.wasm /tmp/b.wasm /tmp/c.wasm
-      - name: Which object files differ between A and B
+          nproc; uname -a; swift --version 2>&1 | head -2
+          mkdir -p out
+          scripts/build-wasm.sh "out/${{ matrix.runner }}.wasm"
+          if [ "${{ matrix.runner }}" = one ]; then
+            mkdir -p /tmp/elsewhere && git archive HEAD | tar -x -C /tmp/elsewhere
+            (cd /tmp/elsewhere && scripts/build-wasm.sh /tmp/other.wasm) && cp /tmp/other.wasm out/other.wasm
+          fi
+          sha256sum out/*.wasm
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: wasm-${{ matrix.runner }}
+          path: out/
+
+  compare:
+    name: What differs
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          path: w
+          merge-multiple: true
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq wabt > /dev/null
+      - name: Compare
         run: |
-          cd /tmp/build-a && find . -name '*.o' -o -name '*.swiftmodule' | sort | while read -r f; do
-            cmp -s "$f" "/tmp/build-b/$f" || echo "differs: $f"
-          done | head -40
-      - name: Which wasm sections differ (A vs B, A vs C)
-        run: |
-          for x in a b c; do wasm-objdump -h /tmp/$x.wasm | sed 's/start=0x[0-9a-f]* end=0x[0-9a-f]*//' > /tmp/$x.h; done
-          echo "--- A vs B headers"; diff /tmp/a.h /tmp/b.h || true
-          echo "--- A vs C headers"; diff /tmp/a.h /tmp/c.h || true
-          for x in a b; do
-            for s in Code Data Custom; do wasm-objdump -j "$s" -s /tmp/$x.wasm 2>/dev/null | sha256sum | sed "s|-|$x $s|"; done
-          done
-          echo "--- first differing bytes A vs B"; cmp -l /tmp/a.wasm /tmp/b.wasm | head -20 || true
-          echo "count: $(cmp -l /tmp/a.wasm /tmp/b.wasm | wc -l)"
-      - name: Strings that differ (paths, build ids, random names)
-        run: |
-          for x in a b c; do strings -n 8 /tmp/$x.wasm | sort -u > /tmp/$x.s; done
-          echo "--- A vs B"; diff /tmp/a.s /tmp/b.s | head -40 || true
-          echo "--- A vs C"; diff /tmp/a.s /tmp/c.s | head -40 || true
-          echo "--- path-like strings in A"; grep -E '^/|/__w/|/tmp/|\.swift' /tmp/a.s | head -20 || true
+          cd w && sha256sum *.wasm
+          report() {
+            a=$1; b=$2
+            echo "=================== $a vs $b"
+            if cmp -s "$a" "$b"; then echo identical; return; fi
+            echo "differing bytes: $(cmp -l "$a" "$b" | wc -l) of $(stat -c %s "$a")"
+            echo "--- section headers"
+            diff <(wasm-objdump -h "$a" | tail -n +3) <(wasm-objdump -h "$b" | tail -n +3) | head -20
+            echo "--- details (imports, exports, globals, data segments, names)"
+            diff <(wasm-objdump -x "$a" | tail -n +3) <(wasm-objdump -x "$b" | tail -n +3) | head -60
+            echo "--- functions whose code differs"
+            wasm-objdump -d "$a" | tail -n +3 > a.d; wasm-objdump -d "$b" | tail -n +3 > b.d
+            diff a.d b.d | head -80
+            echo "--- data section bytes that differ (offset a b)"
+            cmp -l "$a" "$b" | head -30
+          }
+          report one.wasm two.wasm
+          report one.wasm other.wasm
