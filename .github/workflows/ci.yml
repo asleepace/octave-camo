@@ -47,10 +47,17 @@ jobs:
           --checksum 83baca83553f8c443cda7b84800912e6e709c3acd2e7ebf277794ca5836c0da5
       - name: Build
         run: scripts/build-wasm.sh web/public/octave-camo.wasm
+      - name: Build (debug, for tests: its traps print a reason)
+        run: CONFIG=debug scripts/build-wasm.sh wasm-debug/octave-camo-debug.wasm
       - uses: actions/upload-artifact@v4
         with:
           name: octave-camo-wasm
           path: web/public/octave-camo.wasm
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: octave-camo-wasm-debug
+          path: wasm-debug/octave-camo-debug.wasm
           if-no-files-found: error
 
   web:
@@ -66,12 +73,16 @@ jobs:
         with:
           name: octave-camo-wasm
           path: web/public
+      - uses: actions/download-artifact@v4
+        with:
+          name: octave-camo-wasm-debug
+          path: web/test/wasm
       - uses: oven-sh/setup-bun@v2
       - run: bun install --frozen-lockfile
       - name: Typecheck
         run: bunx tsc --noEmit
       - name: Test (runs the real wasm build)
-        run: bun test
+        run: bun test --timeout 600000
       - name: Build
         run: bunx vite build
       - if: github.event_name == 'push' && github.ref == 'refs/heads/main'

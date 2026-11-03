@@ -1,3 +1,4 @@
 node_modules
 dist
 public/octave-camo.wasm
+test/wasm/

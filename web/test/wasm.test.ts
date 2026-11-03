@@ -6,7 +6,11 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { Camo, type Clip } from "../src/engine/camo.ts";
 
-const WASM = new URL("../public/octave-camo.wasm", import.meta.url).pathname;
+const BUILDS = [
+  ["release", new URL("../public/octave-camo.wasm", import.meta.url).pathname],
+  // CI also builds a debug variant: same code, but a Swift trap prints its reason.
+  ["debug", new URL("./wasm/octave-camo-debug.wasm", import.meta.url).pathname],
+] as const;
 const SR = 16_000;
 
 /** 40 s: a jet-like flyby (Doppler-shifted tone + harmonics), 60 Hz mains hum, noise. */
@@ -30,7 +34,7 @@ function flybyClip(): Clip {
   return { sampleRate: SR, channels: [x] };
 }
 
-describe.skipIf(!existsSync(WASM))("octave-camo.wasm", () => {
+for (const [name, WASM] of BUILDS) describe.skipIf(!existsSync(WASM))(`octave-camo.wasm (${name})`, () => {
   test("exposes the default steps", async () => {
     const camo = await Camo.load(readFileSync(WASM));
     expect(camo.defaultSteps).toEqual(["mono", "hum", "subtract", "scurve", "lowband"]);
@@ -51,7 +55,7 @@ describe.skipIf(!existsSync(WASM))("octave-camo.wasm", () => {
     const after = camo.analyze({ sampleRate: SR, channels: [output] });
     expect(after.doppler).toBe(0);
     expect(after.hum).toBe(0);
-  }, 120_000);
+  }, 600_000);
 
   test("a seed makes the output deterministic", async () => {
     const camo = await Camo.load(readFileSync(WASM));
@@ -59,5 +63,5 @@ describe.skipIf(!existsSync(WASM))("octave-camo.wasm", () => {
     const a = camo.scrub(clip, { steps: ["hum", "lowband"], seed: 5 }).output;
     const b = camo.scrub(clip, { steps: ["hum", "lowband"], seed: 5 }).output;
     expect(a).toEqual(b);
-  }, 120_000);
+  }, 600_000);
 });
