@@ -1,6 +1,12 @@
 import Foundation
+import OctaveCamoKit
 
 let argv = Array(CommandLine.arguments.dropFirst())
+
+if argv.first == "--version" {
+    print("octave-camo \(OctaveCamo.version)")
+    exit(0)
+}
 
 guard let name = argv.first, !["-h", "--help", "help"].contains(name) else {
     print(usage)

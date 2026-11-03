@@ -11,6 +11,40 @@ are grouped by milestone, newest first, with the commits that made them.
 
 Nothing yet.
 
+## [0.1.0] — 2026-11-03
+
+The first tagged release. octave-camo removes the location and time clues in a video's sound and
+picture: the Doppler curves of planes, trains and ships, mains hum and light flicker (the grid's
+clock), direction from multiple mics, metadata and data embedded in the video stream. It runs
+entirely in the browser ([asleepace.github.io/octave-camo](https://asleepace.github.io/octave-camo/)),
+from a Foundation-free Swift library compiled to WebAssembly.
+
+**Proof of concept: no guarantee of anonymity.** Every result so far is on synthetic clips; see
+[THREAT_MODEL.md](THREAT_MODEL.md) for what is covered, the evidence, and the known gaps.
+Review is very welcome: [SECURITY.md](SECURITY.md) says how to report privately.
+
+### New in this release
+
+- **Silent videos** are accepted: no audio stage, the picture is still checked for light flicker,
+  and the saved MP4 has only the picture, with metadata and embedded data removed.
+- **Verifiable builds.** The page footer shows the version, the commit, and the SHA-256 of the
+  wasm it actually loaded (computed in the browser). The site publishes `checksums.txt` for every
+  file; after each deploy CI re-downloads the live site and checks every file against its own
+  build; the web build is reproducible, and the release checks the wasm build is too.
+- A release workflow (tag → checked versions → builds → GitHub release with checksums), a Perf
+  workflow (browser timings up to the 5-minute limit, with a phone-like CPU slowdown), and
+  `octave-camo --version`.
+
+### Fixed
+
+- **The benchmark gate was nondeterministic.** The harness passed `subtract`'s stage list to the
+  Swift CLI in an environment variable only the NumPy reference reads, and no seed, so in CI the
+  harness chain ran the whole Swift pipeline, unseeded, in the middle: its results varied between
+  runs (the "flaky" ship). The Swift pipeline's own results, which the README reports, were
+  always seeded and unaffected.
+
+Everything before this release is listed below by milestone.
+
 ## Second review: invariants and media edge cases — 2026-11-03
 
 A second independent review (Swift core and web app), plus new invariant tests and a media
@@ -104,12 +138,12 @@ benchmark gate caught one change that made things worse (see "Known").
 - Mains harmonics above 400 Hz are removed only when `subtract` can follow them. Notching up to
   1 kHz was tried in this round and dropped: the benchmark gate caught the close train leaking
   (the notches carved its tones and broke `subtract`'s tracking). See the threat model.
-- Videos with no audio track are refused rather than having their metadata stripped.
+- ~~Videos with no audio track are refused~~ (fixed in 0.1.0).
 - A cloaked MP3 keeps the encoder's start and end padding (the browser's decoder doesn't trim it):
   a fraction of a second longer, audio-only files only.
 - AV1 metadata units are copied with the picture.
-- `scurve` cost grows with the square of the clip length (60 s of 48 kHz stereo takes 6–9 s
-  natively for the whole chain; a 5-minute clip several times that).
+- Speed: a 5-minute clip takes about a minute in the browser on a CI machine (Light: 12 s).
+  `subtract` dominates (its tracker runs full-rate FFTs), then `scurve` (quadratic in length).
 
 ## Hardening for review — 2026-11-03
 

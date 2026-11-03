@@ -34,6 +34,23 @@ Please include:
 issue. If a real clip is needed to reproduce, say so in the report and we'll arrange a private way
 to share it.
 
+## Supported versions
+
+The latest release and the live site (which deploys from `main`). The site's footer shows which
+version and commit you're using; please include it in reports.
+
+## Verifying what you run
+
+- The footer's engine hash is the SHA-256 of the WebAssembly your browser loaded, computed from
+  the bytes it runs. It should equal the `octave-camo.wasm` checksum in the matching
+  [release](https://github.com/asleepace/octave-camo/releases).
+- `checksums.txt` on the site lists every file it serves; CI checks the live site against its own
+  build after each deploy. The web build is reproducible, and each release records whether the
+  wasm build was (two clean builds in different directories, compared byte for byte).
+- A hash shown by a page can't vouch for that page: the comparison has to be against something
+  you got elsewhere (the release, or your own build). The site also works offline once loaded,
+  so you can check what it sends: nothing.
+
 ## What to expect
 
 - Acknowledgement within a few days.
@@ -42,4 +59,5 @@ to share it.
 - Coordinated disclosure: please give us a reasonable window (up to 90 days) before publishing.
   We're happy to publish sooner once a fix ships.
 
-There is no bug bounty.
+There is no bug bounty. Independent review of the threat model, the attackers in `harness/`, and
+the web app's privacy claims is the most useful contribution right now.

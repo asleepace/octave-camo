@@ -62,6 +62,21 @@ You shouldn't have to take a privacy tool's word for it.
 
 - **The metadata is gone.** `ffprobe -show_format -show_streams original.camo.mp4` (or `exiftool`)
   shows no location, device or creation time.
+- **The page is the code in this repository.** The footer shows the version, the commit, and the
+  SHA-256 of the WebAssembly the page actually loaded (computed in your browser from the bytes it
+  runs). Compare it with the `octave-camo.wasm` checksum in the
+  [release](https://github.com/asleepace/octave-camo/releases), or rebuild it yourself (the
+  release notes say how; the build is checked for reproducibility). The site's `checksums.txt`
+  lists every file it serves, and after each deploy CI re-downloads the live site and checks every
+  file against its own build:
+
+  ```sh
+  site=https://asleepace.github.io/octave-camo
+  curl -s $site/checksums.txt | while read -r hash file; do
+    [ "$(curl -s "$site/$file" | sha256sum | cut -d' ' -f1)" = "$hash" ] || echo "MISMATCH $file"
+  done
+  ```
+
 - **The numbers below are reproducible.** `cd harness && bun install && bun run bench:gate`
   renders the benchmark clips, runs both attackers before and after cloaking, and fails if the
   default chain leaks. CI runs it on every push.
@@ -128,13 +143,15 @@ and the saved file is decoded and scanned again to confirm.
 - Without de-flicker, the video packets are copied. SEI (where H.264/HEVC cameras and encoders
   put user data, timecode and telemetry) is removed; AV1 metadata units are copied as is (VP9 has
   none). The codec settings and resolution still say what kind of device recorded it.
-- Videos with no audio track are refused (there's nothing for the cloak to do, but it also means
-  their metadata isn't stripped here). Audio is cloaked as mono at up to 48 kHz.
+- Audio is cloaked as mono at up to 48 kHz. A video with no sound is saved with its picture only
+  (metadata and embedded data removed, flicker checked).
 - Slow-motion pictures (about 200 fps and up), or under 5 seconds, can't be checked for flicker; the page says "not
   checkable" rather than "none".
 - A cloaked file is recognisable as one (mono AAC audio, regenerated low band). That says the file
   was processed, not where it was recorded.
-- Clips are processed in memory; the web app takes up to 5 minutes.
+- Clips are processed in memory; the web app takes up to 5 minutes. A 5-minute clip takes about a
+  minute to cloak on a laptop (Light: about 12 s), likely a few minutes on a phone; most of it is
+  `subtract`'s tone tracking, then `scurve`, whose cost grows with the square of the length.
 
 ## Development
 

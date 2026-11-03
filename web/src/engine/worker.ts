@@ -27,17 +27,26 @@ let engine: Promise<Engine> | undefined;
 /** Compiled once: after a trap the instance is replaced from this, with no network (offline use). */
 let compiled: Promise<WebAssembly.Module | null> | undefined;
 
+const hex = (buffer: ArrayBuffer) => Array.from(new Uint8Array(buffer), (b) => b.toString(16).padStart(2, "0")).join("");
+
 async function compile(): Promise<WebAssembly.Module | null> {
   const url = new URL(`${import.meta.env.BASE_URL}octave-camo.wasm`, self.location.origin);
   const response = await fetch(url);
   const isWasm = response.ok && (response.headers.get("content-type") ?? "").includes("application/wasm");
   if (!isWasm) {
     // Local development without the Swift toolchain: a crude JS stand-in keeps the UI usable.
-    if (import.meta.env.DEV) return null;
+    if (import.meta.env.DEV) {
+      post({ type: "engine", token: 0, kind: "stand-in", sha256: "" });
+      return null;
+    }
     const type = response.headers.get("content-type") ?? "no content type";
     throw new Error(`could not load the scrubber: octave-camo.wasm is missing or not WebAssembly (HTTP ${response.status}, ${type})`);
   }
-  return WebAssembly.compileStreaming(response);
+  // Hash the bytes that get compiled (not a number baked into the page): what the page shows is
+  // what is actually running, to compare against the release's checksums.
+  const bytes = await response.arrayBuffer();
+  post({ type: "engine", token: 0, kind: "wasm", sha256: hex(await crypto.subtle.digest("SHA-256", bytes)) });
+  return WebAssembly.compile(bytes);
 }
 
 async function loadEngine(): Promise<Engine> {

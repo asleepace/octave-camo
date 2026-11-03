@@ -10,6 +10,7 @@
  * Media edge cases (containers, codecs, rates, broken files) are in media.test.ts.
  */
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { createHash } from "node:crypto";
 import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { type Browser, chromium } from "playwright";
@@ -91,6 +92,25 @@ describe.skipIf(!URL_)("cloak in the browser", () => {
     const page = await fresh().open(webm("short", { seconds: 3 }));
     expect(await row(page, "light flicker")).toStartWith("too short");
     expect(await session.status()).toContain("too short");
+    expect(session.problems).toEqual([]);
+    await session.close();
+  }, 300_000);
+
+  test("the page shows its version, commit and the hash of the wasm it runs, and checksums.txt matches what's served", async () => {
+    const page = await fresh().start();
+    await page.waitForSelector("#engine-hash", { timeout: 60_000 });
+    const shown = (await page.textContent("#engine-hash"))!.trim();
+    expect(shown).toMatch(/^[0-9a-f]{64}$/);
+    expect(await page.textContent("#engine")).toMatch(/^v\d+\.\d+\.\d+ · [0-9a-f]{7} · /);
+    const sha256 = (bytes: Buffer) => createHash("sha256").update(bytes).digest("hex");
+    const get = async (path: string) => Buffer.from(await (await page.request.get(new URL(path, URL_).href)).body());
+    const listed = Object.fromEntries((await get("checksums.txt")).toString().trim().split("\n").map((line) => {
+      const [hash, file] = line.split(/\s+/);
+      return [file!, hash!];
+    }));
+    expect(listed["octave-camo.wasm"]).toBe(shown);                       // the hash the page computed at runtime
+    expect(listed["index.html"]).toBeDefined();
+    for (const [file, hash] of Object.entries(listed)) expect(sha256(await get(file))).toBe(hash);
     expect(session.problems).toEqual([]);
     await session.close();
   }, 300_000);

@@ -74,6 +74,8 @@ const state = {
 };
 /** Bumped per opened file, so a slow picture scan can't land on the next clip. */
 let fileToken = 0;
+/** SHA-256 of the wasm the worker compiled ("" for the dev stand-in, null until loaded). */
+let engineHash: string | null = null;
 /** Bumped per save, so a slow check of an earlier save can't describe a later one. */
 let saveSeq = 0;
 
@@ -106,6 +108,10 @@ worker.onmessage = (event) => {
   const parsed = WorkerMessage.safeParse(event.data);
   if (!parsed.success) return fail("unexpected message from the scrubber");
   const m = parsed.data;
+  if (m.type === "engine") {
+    engineHash = m.sha256;
+    return renderEngine();
+  }
   if (m.token !== fileToken) return;          // a reply about a file that's no longer open
   switch (m.type) {
     case "stage":
@@ -453,6 +459,18 @@ function renderSteps() {
   ).join("") + `<li class="${state.loaded && !state.loaded.video ? "opacity-40" : ""}"><span class="text-neutral-200">${Object.keys(STEP_TEXT).length + 1}. Remove light flicker (picture).</span> When the scan finds mains-light bands, each row is divided by its estimated band, which takes the grid clock out of the picture. Optional, because it re-encodes the video.</li>`;
 }
 
+const REPO = "https://github.com/asleepace/octave-camo";
+
+/** Footer: version, commit, and the hash of the wasm actually running (compare with the release). */
+function renderEngine() {
+  const commit = __COMMIT__, short = commit.slice(0, 7);
+  const commitLink = /^[0-9a-f]{40}$/.test(commit) ? `<a class="underline decoration-neutral-700 hover:text-neutral-300" href="${REPO}/commit/${commit}">${short}</a>` : esc(short);
+  const engine = state.engine === "stand-in" || engineHash === "" ? "engine: dev stand-in (not a defense)"
+    : engineHash ? `engine sha256 <span id="engine-hash" class="inline-block max-w-[14ch] truncate select-all align-bottom" title="${engineHash}">${engineHash}</span>`
+    : "engine: loading";
+  $("engine").innerHTML = `v${esc(__VERSION__)} · ${commitLink} · ${engine} · <a class="underline decoration-neutral-700 hover:text-neutral-300" href="checksums.txt">checksums</a>`;
+}
+
 function render() {
   renderPrimary();
   renderPicture();
@@ -460,7 +478,7 @@ function render() {
   renderTransport();
   renderBands();
   renderSteps();
-  $("engine").textContent = state.engine === "stand-in" ? "engine: dev stand-in (not a defense)" : "engine: swift → wasm";
+  renderEngine();
   terrain.input = state.input ?? demoData.input;
   terrain.output = state.loaded ? state.output : demoData.output;
   const scale = state.input ?? demoData.input;
