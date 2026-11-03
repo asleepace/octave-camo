@@ -16,6 +16,14 @@
 
 #if arch(wasm32)
 import OctaveCamoKit
+import WASILibc
+
+/// Debug builds trace the analyzer to stderr (unbuffered, so lines survive a trap).
+func trace(_ message: @autoclosure () -> String) {
+    #if DEBUG
+    fputs(message() + "\n", stderr)
+    #endif
+}
 
 nonisolated(unsafe) var output: [Float] = []
 nonisolated(unsafe) var logBytes: [UInt8] = []
@@ -88,6 +96,20 @@ func camoAnalyze(_ input: UnsafePointer<Float>, _ channelCount: Int32, _ frames:
                  _ sampleRate: Int32) -> UnsafePointer<Int32>? {
     for i in 0..<stats.count { stats[i] = 0 }
     if let clip = audio(input, channelCount, frames, sampleRate) {
+        #if DEBUG
+        let analyzer = FlybyAnalyzer()
+        trace("analyze: \(clip.frameCount) frames @ \(clip.sampleRate) Hz")
+        let found = analyzer.tracker.tracks(in: clip.mono, sampleRate: clip.sampleRate)
+        trace("analyze: \(found.count) tracks")
+        for (i, track) in found.enumerated() {
+            trace("analyze: track \(i): n=\(track.times.count) t=\(track.times.first ?? -1)…\(track.times.last ?? -1) f=\(track.minFrequency)…\(track.maxFrequency)")
+            trace("analyze:   times \(track.times)")
+            trace("analyze:   freqs \(track.frequencies)")
+            _ = analyzer.classify(track)
+            trace("analyze:   classified")
+        }
+        trace("analyze: classified")
+        #endif
         let analysis = FlybyAnalyzer().analyze(clip)
         stats[0] = Int32(analysis.tracks.count)
         stats[1] = Int32(analysis.flybys.count)
