@@ -1,5 +1,7 @@
 # octave-camo
 
+[![CI](https://github.com/asleepace/octave-camo/actions/workflows/ci.yml/badge.svg)](https://github.com/asleepace/octave-camo/actions/workflows/ci.yml)
+
 **Active camouflage for the sound in your videos.**
 
 A video's soundtrack can give away where it was recorded. Aircraft, and anything else with a
