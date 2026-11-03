@@ -1,7 +1,9 @@
 /**
  * Voice pitch tracking (YIN, de Cheveigné & Kawahara 2002) used to keep voice harmonics while the
- * rest of the low band is regenerated. Machine tones are periodic too, so voiced runs that hold a
- * nearly constant pitch for too long are rejected: speech moves, engines don't.
+ * rest of the low band is regenerated. Machine tones are periodic too, so stretches that a voice
+ * wouldn't produce are rejected (same rules as Swift's PitchTracker): an unbroken run longer than
+ * speech makes, or a stretch joined across short gaps whose smoothed pitch is steady or moves one
+ * way throughout (a Doppler glide).
  */
 import { decimate } from "./signal.ts";
 
@@ -15,12 +17,19 @@ export type PitchOptions = {
   maxHz: number;
   /** YIN aperiodicity threshold (lower = stricter). */
   threshold: number;
-  /** Voiced runs longer than this with < `steadyCents` of pitch movement are not voice. */
+  /** Machine-like (steady or one-way) stretches longer than this are rejected. */
   maxSteadyS: number;
+  /** "Steady": the smoothed pitch moves less than this over the stretch. */
   steadyCents: number;
+  /** Unvoiced gaps up to this (or 2.5 query spacings) don't end a stretch. */
+  maxGapS: number;
+  /** Unbroken voiced runs longer than this are not speech. */
+  maxRunS: number;
 };
 
-export const defaultPitchOptions: PitchOptions = { minHz: 70, maxHz: 400, threshold: 0.3, maxSteadyS: 1.5, steadyCents: 30 };
+export const defaultPitchOptions: PitchOptions = {
+  minHz: 70, maxHz: 400, threshold: 0.3, maxSteadyS: 1.5, steadyCents: 50, maxGapS: 0.3, maxRunS: 2,
+};
 
 export function trackPitch(x: Float32Array, sampleRate: number, times: Float64Array,
                            o: PitchOptions = defaultPitchOptions): PitchTrack {
@@ -63,19 +72,45 @@ export function trackPitch(x: Float32Array, sampleRate: number, times: Float64Ar
   return { f0 };
 }
 
-/** Clears voiced runs whose pitch barely moves for longer than maxSteadyS (machines, not people). */
+const cents = (a: number, b: number) => 1200 * Math.log2(a / b);
+const median = (v: number[]) => { const s = [...v].sort((a, b) => a - b); const m = s.length >> 1; return s.length % 2 ? s[m]! : (s[m - 1]! + s[m]!) / 2; };
+
+/** Clears voiced stretches a voice wouldn't produce (see the module comment). */
 function rejectSteadyRuns(f0: Float64Array, times: Float64Array, o: PitchOptions) {
-  let start = 0;
-  while (start < f0.length) {
+  const reject = new Uint8Array(f0.length);
+  // Unbroken runs.
+  for (let start = 0; start < f0.length;) {
     if (f0[start] === 0) { start++; continue; }
     let end = start;
-    while (end + 1 < f0.length && f0[end + 1]! > 0 && Math.abs(1200 * Math.log2(f0[end + 1]! / f0[end]!)) < 100) end++;
-    const span = times[end]! - times[start]!;
-    if (span > o.maxSteadyS) {
-      let lo = Infinity, hi = -Infinity;
-      for (let i = start; i <= end; i++) { lo = Math.min(lo, f0[i]!); hi = Math.max(hi, f0[i]!); }
-      if (1200 * Math.log2(hi / lo) < o.steadyCents) for (let i = start; i <= end; i++) f0[i] = 0;
-    }
+    while (end + 1 < f0.length && f0[end + 1]! > 0 && Math.abs(cents(f0[end + 1]!, f0[end]!)) < 100) end++;
+    if (times[end]! - times[start]! > o.maxRunS) reject.fill(1, start, end + 1);
     start = end + 1;
   }
+  // Stretches joined across short gaps (relative to the query spacing too), judged on the pitch
+  // smoothed by a ~0.25 s running median (the estimator's jitter would hide a machine).
+  const spacings: number[] = [];
+  for (let i = 1; i < times.length; i++) if (times[i]! > times[i - 1]!) spacings.push(times[i]! - times[i - 1]!);
+  const spacing = spacings.length ? median(spacings) : 0.05, maxGap = Math.max(o.maxGapS, 2.5 * spacing);
+  const window = Math.max(3, Math.round(0.25 / spacing) | 1);
+  let group: number[] = [];
+  const judge = () => {
+    const g = group;
+    group = [];
+    if (g.length < 5 || times[g.at(-1)!]! - times[g[0]!]! <= o.maxSteadyS) return;
+    const raw = g.map((i) => cents(f0[i]!, f0[g[0]!]!));
+    const track = raw.map((_, k) => median(raw.slice(Math.max(0, k - (window >> 1)), Math.min(raw.length, k + (window >> 1) + 1))));
+    const range = Math.max(...track) - Math.min(...track);
+    let up = 0, down = 0;
+    for (let k = 1; k < track.length; k++) { const step = track[k]! - track[k - 1]!; if (step > 1) up++; else if (step < -1) down++; }
+    const oneWay = up + down >= 3 && Math.max(up, down) >= 0.9 * (up + down);
+    if (range < o.steadyCents || oneWay) reject.fill(1, g[0]!, g.at(-1)! + 1);
+  };
+  for (let i = 0; i < f0.length; i++) {
+    if (f0[i] === 0) continue;
+    const previous = group.at(-1);
+    if (previous !== undefined && (times[i]! - times[previous]! > maxGap || Math.abs(cents(f0[i]!, f0[previous]!)) >= 100)) judge();
+    group.push(i);
+  }
+  judge();
+  for (let i = 0; i < f0.length; i++) if (reject[i]) f0[i] = 0;
 }

@@ -21,8 +21,8 @@ public struct PitchTracker {
     public var threshold = 0.3
     /// Smooth (machine-like) stretches longer than this are rejected.
     public var maxSteadySeconds = 1.5
-    /// "Smooth": the median frame-to-frame change in pitch slope is under this.
-    public var smoothCents = 10.0
+    /// "Steady": the smoothed pitch moves less than this over the stretch.
+    public var steadyCents = 50.0
     /// Unvoiced gaps up to this long (or 2.5 query spacings, if longer) don't end a stretch.
     public var maxGapSeconds = 0.3
     /// Unbroken voiced runs longer than this are not speech, however they move. Speech breaks
@@ -85,8 +85,8 @@ public struct PitchTracker {
     /// - an unbroken run longer than `maxRunSeconds` (speech breaks every second or so);
     /// - a stretch longer than `maxSteadySeconds`, joined across short unvoiced gaps (noise makes
     ///   a machine's voicing flicker, which would otherwise chop it into speech-length pieces),
-    ///   whose pitch follows a smooth curve: steady or gliding like a Doppler pass. Speech pitch
-    ///   jitters from frame to frame; a machine's doesn't.
+    ///   whose smoothed pitch is steady or moves one way throughout, like a Doppler pass. Speech
+    ///   pitch rises and falls.
     private func rejectSteadyRuns(_ f0: inout [Double], times: [Double]) {
         var reject = [Bool](repeating: false, count: f0.count)
         // Unbroken runs.
@@ -102,18 +102,32 @@ public struct PitchTracker {
         // query spacing too: with queries 0.25 s apart, one unvoiced query is already a 0.5 s gap.
         var spacings: [Double] = []
         for i in 1..<max(times.count, 1) where times[i] > times[i - 1] { spacings.append(times[i] - times[i - 1]) }
-        let maxGap = max(maxGapSeconds, 2.5 * (spacings.isEmpty ? 0 : DSP.median(spacings[...])))
+        let spacing = spacings.isEmpty ? 0.05 : DSP.median(spacings[...])
+        let maxGap = max(maxGapSeconds, 2.5 * spacing)
         var group: [Int] = []
+        // Smoothing (a running median over ~0.25 s) takes out the estimator's own jitter, which
+        // in noise is tens of cents and would make any machine look as lively as a voice.
+        let window = max(3, Int((0.25 / spacing).rounded()) | 1)
         func judge() {
             defer { group.removeAll() }
             guard group.count >= 5, let first = group.first, let last = group.last,
                   times[last] - times[first] > maxSteadySeconds else { return }
-            var curvature: [Double] = []
-            for k in 2..<group.count {
-                let a = cents(f0[group[k - 1]], f0[group[k - 2]]), b = cents(f0[group[k]], f0[group[k - 1]])
-                curvature.append(abs(b - a))
+            let raw = group.map { cents(f0[$0], f0[first]) }
+            var track = raw
+            for k in raw.indices {
+                let lo = max(0, k - window / 2), hi = min(raw.count - 1, k + window / 2)
+                track[k] = DSP.median(raw[lo...hi])
             }
-            if DSP.median(curvature[...]) < smoothCents { for i in first...last { reject[i] = true } }
+            // Steady: the smoothed pitch barely moves.
+            let range = (track.max() ?? 0) - (track.min() ?? 0)
+            // Gliding: the smoothed pitch moves one way throughout, as a passing source's does.
+            var up = 0, down = 0
+            for k in 1..<track.count {
+                let step = track[k] - track[k - 1]
+                if step > 1 { up += 1 } else if step < -1 { down += 1 }
+            }
+            let oneWay = up + down >= 3 && Double(max(up, down)) >= 0.9 * Double(up + down)
+            if range < steadyCents || oneWay { for i in first...last { reject[i] = true } }
         }
         for i in f0.indices where f0[i] > 0 {
             if let previous = group.last,

@@ -23,10 +23,14 @@ edge-case suite. Several of the fixes below were found by the new tests themselv
   filter passes now run in from inside the clip, already settled. Found by the invariant tests.
 - **Hum harmonics up to 1 kHz** are notched and refilled (was 400 Hz); above 400 Hz the notches
   are 3 Hz wide so the voice band survives. Same change in the harness.
-- **A passing engine was kept as "voice"** by `lowband`: the voice tracker only rejected steady
-  pitches, and a Doppler glide moves. Unbroken voiced runs longer than 2 s are now rejected; the
-  voice keep-width is in Hz, not FFT bins (it grew with the sample rate, keeping up to 88 % of
-  the band at 192 kHz).
+- **A passing engine could be kept as "voice"** by `lowband` (and so survive the Light preset):
+  the voice tracker only rejected unbroken runs of steady pitch, but a Doppler glide moves, and in
+  noise a machine's voicing flickers, which chopped even a steady tone into speech-length pieces
+  (a 137 Hz tone at 8 kHz was kept in 82 % of frames). Now unbroken runs over 2 s are rejected,
+  and stretches joined across short gaps are rejected when their smoothed pitch is steady or moves
+  one way throughout. Speech rises and falls (voice retention on the benchmark's speech clip is
+  unchanged at 65 %). Same rules in the harness. The voice keep-width is in Hz, not FFT bins (it
+  grew with the sample rate, keeping up to 88 % of the band at 192 kHz).
 - **Data embedded in H.264/HEVC packets (SEI) is removed** when the picture is copied: x264's
   version and settings, camcorder date and GPS, drone telemetry. Also removed from HEVC
   configurations. The UI's "metadata dropped" is now true for the picture too.
@@ -89,6 +93,8 @@ edge-case suite. Several of the fixes below were found by the new tests themselv
 ### Known, not yet fixed
 
 - Videos with no audio track are refused rather than having their metadata stripped.
+- A cloaked MP3 keeps the encoder's start and end padding (the browser's decoder doesn't trim it):
+  a fraction of a second longer, audio-only files only.
 - AV1 metadata units are copied with the picture.
 - `scurve` cost grows with the square of the clip length, and spectrograms for the display are
   computed on the main thread.
