@@ -23,7 +23,7 @@ public struct PitchTracker {
     public var maxSteadySeconds = 1.5
     /// "Smooth": the median frame-to-frame change in pitch slope is under this.
     public var smoothCents = 10.0
-    /// Unvoiced gaps up to this long don't end a stretch.
+    /// Unvoiced gaps up to this long (or 2.5 query spacings, if longer) don't end a stretch.
     public var maxGapSeconds = 0.3
     /// Unbroken voiced runs longer than this are not speech, however they move. Speech breaks
     /// for consonants and pauses every second or so; a long sung note loses only its kept
@@ -98,7 +98,11 @@ public struct PitchTracker {
             if times[end] - times[start] > maxRunSeconds { for i in start...end { reject[i] = true } }
             start = end + 1
         }
-        // Stretches joined across short gaps, judged by smoothness.
+        // Stretches joined across short gaps, judged by smoothness. A gap is short relative to the
+        // query spacing too: with queries 0.25 s apart, one unvoiced query is already a 0.5 s gap.
+        var spacings: [Double] = []
+        for i in 1..<max(times.count, 1) where times[i] > times[i - 1] { spacings.append(times[i] - times[i - 1]) }
+        let maxGap = max(maxGapSeconds, 2.5 * (spacings.isEmpty ? 0 : DSP.median(spacings[...])))
         var group: [Int] = []
         func judge() {
             defer { group.removeAll() }
@@ -113,7 +117,7 @@ public struct PitchTracker {
         }
         for i in f0.indices where f0[i] > 0 {
             if let previous = group.last,
-               times[i] - times[previous] > maxGapSeconds || abs(cents(f0[i], f0[previous])) >= 100 { judge() }
+               times[i] - times[previous] > maxGap || abs(cents(f0[i], f0[previous])) >= 100 { judge() }
             group.append(i)
         }
         judge()
