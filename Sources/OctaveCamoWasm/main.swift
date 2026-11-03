@@ -25,14 +25,37 @@
 #if arch(wasm32)
 import OctaveCamoKit
 
+/// A result buffer JavaScript reads from wasm memory. It owns its allocation, so the address it
+/// hands out stays valid until the next `set` (a pointer escaping `withUnsafeBufferPointer` would
+/// not be).
+final class Outbox<T> {
+    private(set) var pointer: UnsafeMutablePointer<T>
+    private(set) var count = 0
+    private var capacity = 1
+
+    init() { pointer = .allocate(capacity: 1) }
+
+    func set(_ values: [T]) {
+        if values.count > capacity {
+            pointer.deallocate()
+            capacity = values.count
+            pointer = .allocate(capacity: capacity)
+        }
+        values.withUnsafeBufferPointer { source in
+            if let base = source.baseAddress { pointer.update(from: base, count: values.count) }
+        }
+        count = values.count
+    }
+}
+
 /// Results handed back to JavaScript. Static, not top-level: top-level variables in main.swift
 /// are initialized by main(), which a WASI reactor never runs (they'd stay zeroed, i.e. empty).
 enum Shared {
-    nonisolated(unsafe) static var output: [Float] = []
-    nonisolated(unsafe) static var logBytes: [UInt8] = []
-    nonisolated(unsafe) static var stats = [Int32](repeating: 0, count: 4)
-    nonisolated(unsafe) static var flicker = [Double](repeating: 0, count: 8)
-    nonisolated(unsafe) static var gains: [Float] = []
+    nonisolated(unsafe) static let output = Outbox<Float>()
+    nonisolated(unsafe) static let logBytes = Outbox<UInt8>()
+    nonisolated(unsafe) static let stats = Outbox<Int32>()
+    nonisolated(unsafe) static let flicker = Outbox<Double>()
+    nonisolated(unsafe) static let gains = Outbox<Float>()
 }
 
 func audio(_ input: UnsafePointer<Float>, _ channelCount: Int32, _ frames: Int32, _ sampleRate: Int32) -> Audio? {
@@ -90,36 +113,36 @@ func camoScrub(_ input: UnsafePointer<Float>, _ channelCount: Int32, _ frames: I
     }
 
     let result = pipeline.run(clip)
-    let mono = result.audio.channels[0]
-    Shared.output = [Float](repeating: 0, count: mono.count)
-    for i in 0..<mono.count { Shared.output[i] = Float(mono[i]) }
-    Shared.logBytes = Array(result.log.joined(separator: "\n").utf8)
+    Shared.output.set(result.audio.channels[0].map { Float($0) })
+    Shared.logBytes.set(Array(result.log.joined(separator: "\n").utf8))
     return Int32(Shared.output.count)
 }
 
 @_expose(wasm, "camo_analyze")
 @_cdecl("camo_analyze")
 func camoAnalyze(_ input: UnsafePointer<Float>, _ channelCount: Int32, _ frames: Int32,
-                 _ sampleRate: Int32) -> UnsafePointer<Int32>? {
-    for i in 0..<Shared.stats.count { Shared.stats[i] = 0 }
+                 _ sampleRate: Int32) -> UnsafePointer<Int32> {
+    var stats = [Int32](repeating: 0, count: 4)
     if let clip = audio(input, channelCount, frames, sampleRate) {
         let analysis = FlybyAnalyzer().analyze(clip)
-        Shared.stats[0] = Int32(analysis.tracks.count)
-        Shared.stats[1] = Int32(analysis.flybys.count)
-        Shared.stats[2] = Int32(analysis.hum.count)
-        Shared.stats[3] = Int32(analysis.flybys.filter { $0.fit != nil }.count)
+        stats = [Int32(analysis.tracks.count), Int32(analysis.flybys.count), Int32(analysis.hum.count),
+                 Int32(analysis.flybys.filter { $0.fit != nil }.count)]
     }
-    return Shared.stats.withUnsafeBufferPointer { $0.baseAddress }
+    Shared.stats.set(stats)
+    return UnsafePointer(Shared.stats.pointer)
 }
 
 @_expose(wasm, "camo_flicker")
 @_cdecl("camo_flicker")
 func camoFlicker(_ input: UnsafePointer<Float>, _ frames: Int32, _ strips: Int32, _ rows: Int32,
-                 _ clean: Int32) -> UnsafePointer<Double>? {
-    for i in 0..<Shared.flicker.count { Shared.flicker[i] = 0 }
-    Shared.gains = []
+                 _ clean: Int32) -> UnsafePointer<Double> {
+    var summary = [Double](repeating: 0, count: 8)
+    Shared.gains.set([])
     let K = Int(frames), S = Int(strips), R = Int(rows)
-    guard K >= 8, S >= 1, R >= 8 else { return Shared.flicker.withUnsafeBufferPointer { $0.baseAddress } }
+    guard K >= 8, S >= 1, R >= 8 else {
+        Shared.flicker.set(summary)
+        return UnsafePointer(Shared.flicker.pointer)
+    }
     var values = [Double](repeating: 0, count: K * S * R)
     for i in 0..<(K * S * R) { values[i] = Double(input[i]) }
     var times = [Double](repeating: 0, count: K)
@@ -129,46 +152,47 @@ func camoFlicker(_ input: UnsafePointer<Float>, _ frames: Int32, _ strips: Int32
 
     func store(_ f: FlickerScan.Finding, at offset: Int) {
         if offset == 0 {
-            Shared.flicker[0] = f.detected ? 1 : 0
-            Shared.flicker[1] = f.z
-            Shared.flicker[2] = f.flicker
-            Shared.flicker[3] = f.cycles
-            Shared.flicker[4] = f.readoutSeconds
+            summary[0] = f.detected ? 1 : 0
+            summary[1] = f.z
+            summary[2] = f.flicker
+            summary[3] = f.cycles
+            summary[4] = f.readoutSeconds
         } else {
-            Shared.flicker[5] = f.detected ? 1 : 0
-            Shared.flicker[6] = f.z
+            summary[5] = f.detected ? 1 : 0
+            summary[6] = f.z
         }
     }
     if clean != 0 {
         let result = scan.clean(profiles)
         if let first = result.findings.first { store(first, at: 0) }
         store(result.after, at: 1)
-        Shared.flicker[7] = Double(result.findings.filter(\.detected).count)
-        Shared.gains = result.gains.map { Float($0) }
+        summary[7] = Double(result.findings.filter(\.detected).count)
+        Shared.gains.set(result.gains.map { Float($0) })
     } else {
         let finding = scan.scan(profiles)
         store(finding, at: 0)
         store(finding, at: 1)
     }
-    return Shared.flicker.withUnsafeBufferPointer { $0.baseAddress }
+    Shared.flicker.set(summary)
+    return UnsafePointer(Shared.flicker.pointer)
 }
 
 @_expose(wasm, "camo_flicker_gains")
 @_cdecl("camo_flicker_gains")
-func camoFlickerGains() -> UnsafePointer<Float>? {
-    Shared.gains.withUnsafeBufferPointer { $0.baseAddress }
+func camoFlickerGains() -> UnsafePointer<Float> {
+    UnsafePointer(Shared.gains.pointer)
 }
 
 @_expose(wasm, "camo_output")
 @_cdecl("camo_output")
-func camoOutput() -> UnsafePointer<Float>? {
-    Shared.output.withUnsafeBufferPointer { $0.baseAddress }
+func camoOutput() -> UnsafePointer<Float> {
+    UnsafePointer(Shared.output.pointer)
 }
 
 @_expose(wasm, "camo_log")
 @_cdecl("camo_log")
-func camoLog() -> UnsafePointer<UInt8>? {
-    Shared.logBytes.withUnsafeBufferPointer { $0.baseAddress }
+func camoLog() -> UnsafePointer<UInt8> {
+    UnsafePointer(Shared.logBytes.pointer)
 }
 
 @_expose(wasm, "camo_log_length")

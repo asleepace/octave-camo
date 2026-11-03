@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { Request, WorkerMessage } from "../src/engine/protocol.ts";
-import { outputName } from "../src/media.ts";
+import { neutralize, outputName } from "../src/media.ts";
 import { BAND_COUNT, bandCenters, F_HI, F_LO, logX, meanBands, mix, percentile, spectrogram } from "../src/spectrum.ts";
 import { bandChart } from "../src/ui/bands.ts";
 import { formatHz } from "../src/ui/terrain.ts";
@@ -41,7 +41,7 @@ describe("spectrum", () => {
 });
 
 describe("worker protocol", () => {
-  const clip = { sampleRate: 48_000, channels: [new Float32Array(10)] };
+  const clip = { token: 1, sampleRate: 48_000, channels: [new Float32Array(10)] };
   test("accepts well-formed requests", () => {
     expect(Request.parse({ type: "analyze", ...clip }).type).toBe("analyze");
     expect(Request.parse({ type: "scrub", ...clip, steps: ["mono", "hum"], seed: 3, cutoff: 300, keepVoice: true }).type).toBe("scrub");
@@ -50,20 +50,34 @@ describe("worker protocol", () => {
     expect(() => Request.parse({ type: "scrub", ...clip, steps: ["rm -rf"], seed: 3, cutoff: 300, keepVoice: true })).toThrow();
     expect(() => Request.parse({ type: "scrub", ...clip, steps: [], seed: 0, cutoff: 300, keepVoice: true })).toThrow();
     expect(() => Request.parse({ type: "analyze", sampleRate: 100, channels: [] })).toThrow();
-    expect(() => Request.parse({ type: "flicker", frames: 1, strips: 6, rows: 4, values: new Float32Array(), times: new Float32Array(), clean: true, purpose: "clip" })).toThrow();
+    expect(() => Request.parse({ type: "flicker", token: 1, frames: 1, strips: 6, rows: 4, values: new Float32Array(), times: new Float32Array(), clean: true, purpose: "clip" })).toThrow();
+    expect(() => Request.parse({ type: "analyze", sampleRate: 48_000, channels: [new Float32Array(10)] })).toThrow();   // no token
   });
   test("worker messages are validated too", () => {
-    expect(WorkerMessage.safeParse({ type: "stage", stage: "analyzing" }).success).toBe(true);
-    expect(WorkerMessage.safeParse({ type: "error", message: "x" }).success).toBe(false);   // scope is required
+    expect(WorkerMessage.safeParse({ type: "stage", token: 1, stage: "analyzing" }).success).toBe(true);
+    expect(WorkerMessage.safeParse({ type: "stage", stage: "analyzing" }).success).toBe(false);          // token is required
+    expect(WorkerMessage.safeParse({ type: "error", token: 1, message: "x" }).success).toBe(false);      // so is scope
   });
 });
 
 describe("output", () => {
-  const loaded = (name: string, video: boolean) => ({ name, video: video ? {} : null }) as Parameters<typeof outputName>[0];
-  test("names keep the stem and say what they are", () => {
-    expect(outputName(loaded("IMG_9829.MOV", true))).toBe("IMG_9829.camo.mp4");
-    expect(outputName(loaded("voice memo.m4a", false))).toBe("voice memo.camo.m4a");
-    expect(outputName(loaded(".mov", true))).toBe("clip.camo.mp4");
+  const loaded = (video: boolean) => ({ video: video ? {} : null }) as Parameters<typeof outputName>[0];
+  test("names are neutral and random, never derived from the original (which may hold a date)", () => {
+    expect(outputName(loaded(true))).toMatch(/^camo-[a-z2-9]{6}\.mp4$/);
+    expect(outputName(loaded(false))).toMatch(/^camo-[a-z2-9]{6}\.m4a$/);
+    expect(outputName(loaded(true))).not.toBe(outputName(loaded(true)));
+  });
+  test("the muxer's name is removed from the file without changing its size", () => {
+    const enc = new TextEncoder();
+    const file = new Uint8Array([...enc.encode("xxMediabunnyVideoHandler\0yy"), 18, ...enc.encode("Mediabunny v1.65.0"), 0, 7,
+      ...enc.encode("MediabunnySoundHandler\0")]);
+    const out = neutralize(file.slice());
+    const text = new TextDecoder().decode(out);
+    expect(out.length).toBe(file.length);
+    expect(text).not.toContain("Mediabunny");
+    expect(text).toContain("VideoHandler");
+    expect(text).toContain("SoundHandler");
+    expect(out[out.indexOf(7) - 1]).toBe(0);              // compressor name cleared, bytes after untouched
   });
   test("the band chart marks the cutoff and draws both curves", () => {
     const c = bandCenters(), level = Float32Array.from(c, () => -40);

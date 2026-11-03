@@ -4,7 +4,11 @@ import { STEPS } from "./camo.ts";
 
 const samples = z.instanceof(Float32Array);
 
+/** Which opened file a request is about; echoed in every reply so stale replies can be dropped. */
+const token = z.number().int().nonnegative();
+
 const clip = {
+  token,
   sampleRate: z.number().int().min(8_000).max(384_000),
   channels: z.array(samples).min(1).max(8),
 };
@@ -23,6 +27,7 @@ export type ScrubRequest = z.infer<typeof ScrubRequest>;
 
 export const FlickerRequest = z.object({
   type: z.literal("flicker"),
+  token,
   frames: z.number().int().min(1),
   strips: z.number().int().min(1).max(64),
   rows: z.number().int().min(8).max(1024),
@@ -43,10 +48,11 @@ export const Stage = z.enum(["loading", "analyzing", "scrubbing", "verifying"]);
 export type Stage = z.infer<typeof Stage>;
 
 export const WorkerMessage = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("stage"), stage: Stage }),
-  z.object({ type: z.literal("analysis"), trace: Trace, engine: z.enum(["wasm", "stand-in"]) }),
+  z.object({ type: z.literal("stage"), token, stage: Stage }),
+  z.object({ type: z.literal("analysis"), token, trace: Trace, engine: z.enum(["wasm", "stand-in"]) }),
   z.object({
     type: z.literal("result"),
+    token,
     output: samples,
     log: z.array(z.string()),
     after: Trace,
@@ -55,6 +61,7 @@ export const WorkerMessage = z.discriminatedUnion("type", [
   }),
   z.object({
     type: z.literal("flicker"),
+    token,
     purpose: z.enum(["clip", "verify"]),
     detected: z.boolean(),
     z: z.number(),
@@ -64,6 +71,6 @@ export const WorkerMessage = z.discriminatedUnion("type", [
     passesRemoved: z.number(),
     gains: samples.optional(),
   }),
-  z.object({ type: z.literal("error"), scope: z.enum(["audio", "picture"]), message: z.string() }),
+  z.object({ type: z.literal("error"), token, scope: z.enum(["audio", "picture"]), message: z.string() }),
 ]);
 export type WorkerMessage = z.infer<typeof WorkerMessage>;

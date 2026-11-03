@@ -56,35 +56,42 @@ Lowering a tone's level is not enough while its curve survives.
 
 ## Evidence
 
-Synthetic clips, AAC 128 kbps round trip, both attackers: the blind tracker (6 dB threshold)
-and the matched attacker with the true track plus two decoys. "Truth top N %" is where the true
-location ranks on the attacker's map when nothing crosses the detection threshold (lower is
-better; 50 % is chance). Low/high Δ are ERB loudness changes below and above 300 Hz.
+`cd harness && bun run bench:gate` (also run by CI on every push). Synthetic clips; the default
+chain, implemented in the harness and in the Swift pipeline the app ships; a 128 kbps AAC round
+trip; then both attackers: the blind tracker (6 dB threshold) and the matched attacker with the
+true track, two decoy tracks and the exact recording time. Before judging a clip, the matched
+attacker is calibrated: three renders of the same scene with no source give its noise floor, and
+only a detection clearly above that floor (z more than 3 above it, and above 7) within 1 km of the
+truth counts as a leak. Low/high Δ are ERB loudness changes below and above 300 Hz.
 
-| Clip | none | `hum+lowband` | `hum+subtract+lowband` | `hum+subtract+scurve+lowband` (default) |
+| Clip | Uncloaked | Cloaked (default chain) | Low Δ | High Δ |
 | --- | --- | --- | --- | --- |
-| Train, close (120 m) | leak z 12 | leak z 13 | no detection (10 %) | no detection (10 %) |
-| Train, distant (900 m, 600 Hz) | leak z 77 | leak z 74 | **leak z 30** | no detection (28 %) |
-| Ship (400 m) | leak z 79 | no detection | no detection | no detection |
-| Aircraft, distant (5.8 km) | leak z 20 | – | no detection (13 %) | no detection (25 %) |
-| Aircraft + speech | leak z 18 | – | no detection (29 %) | no detection (25 %) |
-| Aircraft, close (1.5 km) | blind 1.5 km, z 16 | – | no detection (2 %) | no detection (2 %) |
+| Aircraft, distant (5.8 km, −25 dB) | matched: leak, 0 m (z 20) | no detection | 3.0 dB | 0.2 dB |
+| Aircraft + speech | matched: leak, 0 m (z 18) | no detection; 68 % of voice detail below 300 Hz kept | 3.1 dB | 0.2 dB |
+| Aircraft, close (1.5 km) | both: leak (z 16) | no detection* | 10.3 dB | 1.1 dB |
+| Train, close (120 m) | matched: leak, 0 m (z 12) | no detection | 3.2 dB | 1.3 dB |
+| Train, distant (900 m, 600 Hz) | both: leak (z 77) | no detection | 3.0 dB | 0.8 dB |
+| Ship (400 m, 6 m/s) | matched: leak, 0 m (z 79) | no detection* | 3.2 dB | 1.0 dB |
 
-Audio cost for the default: about 3 dB of low-band change (where texture is regenerated) and
-0.2–0.4 dB above it. The close aircraft pass costs more (10 dB low, 1.2 dB high), because its
-tones are strong and get cancelled. On the speech clip, 80 % of voice energy below 300 Hz is kept.
+\* The matched attacker's best guess was still the true location, below its threshold. On the
+close pass that's the thinnest real margin. On the ship it means little: a 6 m/s source's Doppler
+curve is nearly flat, so it matches steady residue anywhere, and on renders with no ship at all the
+attacker reached z ≈ 10 within 250 m of the truth. That's why leaks are judged against each
+scene's noise floor: measured z 4.7 and 4.8 for the aircraft scenes, 0 for the close pass, 3.2 and
+3.8 for the trains, and 9.3 for the ship.
+
+The close pass costs more sound (10 dB low) because its tones are loud and get cancelled.
 
 What this taught us:
 
 - **Trains are the harder case**, not planes. Wheel and motor tones sit above the 300 Hz
-  `lowband` cutoff, so regeneration alone never touches them. The blind `scurve` search catches
-  what `subtract` misses, which is why it is now in the default chain.
+  `lowband` cutoff, so regeneration alone never touches them; without the blind `scurve` search,
+  the distant train leaked (z 30). `hum+lowband` (the web app's Light preset) still leaks both
+  train clips, which is why the app calls it partial.
 - **Raising the cutoff is the wrong fix.** `lowband(cutoff=1000)` cleared the train clips but
-  leaked the ship (z 10) and cost 0.8–1.1 dB above 300 Hz.
-- On the close aircraft pass the truth ranks in the top 2 % without crossing the detection
-  threshold. That's the thinnest margin in the table, and the first case to recheck on real
-  recordings.
-- More aircraft chains are in [harness/README.md](harness/README.md).
+  leaked the ship and cost 0.8–1.1 dB above 300 Hz.
+- **An attacker needs calibrating as much as a defense does.** A fixed detection threshold made a
+  slow source look found in silence.
 
 ## The cloak's own fingerprint
 
@@ -117,13 +124,16 @@ user can divide the estimated band out of each row on the GPU. That re-encodes t
 standard dynamic range, so it's opt-in.
 
 Synthetic clips (20 s, testsrc2 scene, readout 50–70 % of the frame period), scan z (detection
-above 60):
+above 60). The 120 Hz rows are the hard, common case (60 Hz lights at 30 fps): the bands barely
+move, and only their slow phase wander carries the clock. With a wander much larger than real
+grids show they're found; with a realistic one they aren't.
 
 | Clip | Before | After removal |
 | --- | --- | --- |
 | 100 Hz bands, 3 % (rolling at 30 fps) | 426 | 32 |
-| 120 Hz bands, 3 % (quasi-static) | 273 | 32 |
-| 120 Hz bands, 1 % | 65 | 16 |
+| 120 Hz bands, 3 %, grid wander ±0.25 Hz | 273 | 32 |
+| 120 Hz bands, 1 %, grid wander ±0.25 Hz | 65 | 16 |
+| 120 Hz bands, 3 %, real-grid wander ±0.05 Hz | 16–30: **not detected** (see gap 4) | – |
 | No flicker | 36 (nothing removed) | – |
 | Real iPhone clip, outdoors (IMG_9829) | 29 (nothing removed) | – |
 

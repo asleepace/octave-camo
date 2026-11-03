@@ -154,3 +154,37 @@ export const subtract = defineDefense({
   options: z.object({}),
   create: () => legacy.create({ steps: "subtract" }),
 });
+
+/** Path of the compiled Swift CLI (`swift build -c release` at the repo root), or OCTAVE_CAMO_BIN. */
+export const swiftBinary = () =>
+  process.env.OCTAVE_CAMO_BIN ?? join(import.meta.dir, "..", "..", "..", ".build", "release", "octave-camo");
+
+export const swift = defineDefense({
+  name: "swift",
+  summary: "the shipped Swift pipeline (`octave-camo scrub`): the code the web app runs as WebAssembly",
+  tier: "basic",
+  options: z.object({
+    /** Steps separated by "|" (mono, hum, subtract, scurve, lowband, wobble); empty = the Swift default. */
+    steps: z.string().regex(/^[a-z|]*$/).default(""),
+  }),
+  create: (o) => ({
+    async process(x, ctx) {
+      const bin = swiftBinary();
+      if (!(await Bun.file(bin).exists())) throw new Error(`the swift module needs the Swift CLI at ${bin}: run swift build -c release`);
+      const dir = await mkdtemp(join(tmpdir(), "octave-camo-swift-"));
+      try {
+        const inp = join(dir, "in.wav"), out = join(dir, "out.wav");
+        await writeMonoWav(inp, x, ctx.sampleRate);
+        const args = [bin, "scrub", inp, out, "--seed", String(ctx.seed)];
+        if (o.steps) args.push("--steps", o.steps.split("|").join(","));
+        const proc = Bun.spawn(args, { stdout: "pipe", stderr: "pipe" });
+        const [stdout, stderr, code] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited]);
+        if (code !== 0) throw new Error(`octave-camo scrub failed (${code}): ${stderr.trim().split("\n")[0]}`);
+        for (const line of stdout.trim().split("\n")) if (line) ctx.log(`swift: ${line}`);
+        return await readMono(out, ctx.sampleRate);
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    },
+  }),
+});

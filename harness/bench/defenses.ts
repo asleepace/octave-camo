@@ -35,13 +35,14 @@ const { values: opts } = parseArgs({
     chains: { type: "string", default: DEFAULT_CHAINS },
     clips: { type: "string", default: "distant,speech,close" },
     "no-aac": { type: "boolean", default: false },
-    /** CI gate: exit 1 if the default chain leaks on any clip, or if "none" stops leaking
-     *  (which would mean the attackers broke, making every defense look safe). */
+    /** CI gate: exit 1 if the default chain leaks on any clip (both the harness modules and the
+     *  shipped Swift pipeline), or if "none" stops leaking (the attackers broke, which would make
+     *  every defense look safe). */
     gate: { type: "boolean", default: false },
     json: { type: "string" },
   },
 });
-if (opts.gate) opts.chains = `none;${DEFAULT_CHAIN}`;
+if (opts.gate) opts.chains = `none;${DEFAULT_CHAIN};swift`;
 type Row = { clip: string; chain: string; blind: string; matched: string; leak: boolean; nullZ: number; lowDb: number; highDb: number; voice?: number };
 const rows: Row[] = [];
 
@@ -176,9 +177,11 @@ for (const name of opts.clips!.split(",")) {
 if (opts.json) await Bun.write(opts.json, JSON.stringify(rows, null, 1));
 if (opts.gate) {
   const failures = [
-    ...rows.filter((r) => r.chain === DEFAULT_CHAIN && r.leak).map((r) => `${r.clip}: default chain leaks (${r.blind}; ${r.matched})`),
+    ...rows.filter((r) => (r.chain === DEFAULT_CHAIN || r.chain === "swift") && r.leak)
+      .map((r) => `${r.clip}: ${r.chain === "swift" ? "the Swift pipeline" : "the default chain"} leaks (${r.blind}; ${r.matched})`),
     ...rows.filter((r) => r.chain === "none" && !r.leak).map((r) => `${r.clip}: attackers no longer find the uncloaked clip`),
   ];
-  console.log(failures.length ? `GATE FAILED\n  ${failures.join("\n  ")}` : "GATE PASSED: the default chain is safe on every clip, and the attackers still find every uncloaked one");
+  console.log(failures.length ? `GATE FAILED\n  ${failures.join("\n  ")}`
+    : "GATE PASSED: the default chain (harness and Swift) is safe on every clip, and the attackers still find every uncloaked one");
   process.exitCode = failures.length ? 1 : 0;
 }

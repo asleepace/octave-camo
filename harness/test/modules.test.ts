@@ -1,6 +1,7 @@
 /** Module-level behavior: hum, lowband details, decoy, informed, and the chain runner. */
 import { describe, expect, test } from "bun:test";
 import { describeModules, modules, needs, parseChain, parseChains, runChain } from "../src/defense/index.ts";
+import { swiftBinary } from "../src/defense/modules.ts";
 import { Rng } from "../src/defense/signal.ts";
 import type { DefenseContext } from "../src/defense/types.ts";
 import { fft } from "../src/dsp.ts";
@@ -183,4 +184,14 @@ describe("chains", () => {
     for (const v of y) peak = Math.max(peak, Math.abs(v));
     expect(peak).toBeLessThanOrEqual(0.99 + 1e-6);
   });
+});
+
+describe.skipIf(!(await Bun.file(swiftBinary()).exists()))("swift (the shipped pipeline)", () => {
+  test("runs the Swift CLI on a clip and returns the same length", async () => {
+    const sr = 16_000, x = noise(sr * 6, 0.05, 4), lines: string[] = [];
+    const y = await runChain(parseChain("swift"), x, { sampleRate: sr, seed: 3, log: (l) => lines.push(l) });
+    expect(y.length).toBeGreaterThan(x.length - 64);
+    expect(y.length).toBeLessThan(x.length + 64);
+    expect(lines.some((l) => l.includes("lowband"))).toBe(true);
+  }, 120_000);
 });

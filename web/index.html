@@ -125,13 +125,14 @@
             Lights on mains power flicker at twice the grid frequency. A phone camera reads its rows top to bottom,
             so the flicker lands as faint horizontal bands, and their drift is the same grid timestamp the hum
             carries. Each frame is scanned for those bands. If they're found, you can divide them out of every row;
-            that re-encodes the picture in standard dynamic range, so HDR footage looks a little different.
+            that re-encodes the picture in standard dynamic range, so HDR footage looks a little different. Faint
+            bands that barely move (60 Hz lights filmed at 30 fps) may not be found.
           </p>
           <h3 class="mt-6 text-white">What you keep</h3>
           <p class="mt-2 text-neutral-400">
-            Unless you remove flicker, the picture is copied bit for bit. Voices and the overall sound stay. The audio
-            becomes mono (multiple mics reveal direction) and the file loses all metadata: location, device,
-            timestamps.
+            Unless you remove flicker, the video stream is copied as is. Voices and the overall sound stay. The audio
+            becomes mono (multiple mics reveal direction), the file loses its metadata (location, device, timestamps)
+            and gets a random name, since phone file names often contain the date and time.
           </p>
         </div>
         <div>

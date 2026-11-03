@@ -7,11 +7,11 @@
  */
 import { decoy } from "./decoy.ts";
 import { lowband } from "./lowband.ts";
-import { hum, informed, legacy, subtract } from "./modules.ts";
+import { hum, informed, legacy, subtract, swift } from "./modules.ts";
 import { scurve } from "./scurve.ts";
 import type { Defense, DefenseContext, DefenseModule } from "./types.ts";
 
-export const modules: DefenseModule[] = [hum, subtract, lowband, scurve, decoy, informed, legacy] as DefenseModule[];
+export const modules: DefenseModule[] = [hum, subtract, lowband, scurve, decoy, informed, legacy, swift] as DefenseModule[];
 
 export type ChainStep = { module: DefenseModule; options: Record<string, string>; label: string };
 export type Chain = { label: string; steps: ChainStep[] };

@@ -4,7 +4,8 @@ import { type Request, type Stage, WorkerMessage } from "./engine/protocol.ts";
 
 type FlickerScan = { detected: boolean; z: number; flickerHz: number; readoutMs: number; gains?: Float32Array<ArrayBuffer>; frames: number };
 import { load, type Loaded, MediaError, outputName, save } from "./media.ts";
-import { measureProfiles } from "./video.ts";
+import { Input, ALL_FORMATS, BlobSource } from "mediabunny";
+import { measureProfiles, ROWS } from "./video.ts";
 import { Player, type Side } from "./player.ts";
 import { demo, meanBands, mix, percentile, type Spectrogram, spectrogram } from "./spectrum.ts";
 import { bandChart } from "./ui/bands.ts";
@@ -13,14 +14,20 @@ import { Terrain } from "./ui/terrain.ts";
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 const clock = (t: number) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, "0")}`;
-const randomSeed = () => 1 + Math.floor(Math.random() * 2 ** 31);
+/** A 52-bit seed from the platform's cryptographic generator (the noise and jitter must not be guessable). */
+const randomSeed = () => {
+  const [hi, lo] = crypto.getRandomValues(new Uint32Array(2));
+  return (hi! & 0xfffff) * 2 ** 32 + lo! + 1;
+};
 
 const CUTOFF = 300;
+/** Shortest clip the picture's flicker scan can judge. */
+const MIN_PICTURE_SECONDS = 5;
 
 const PRESETS = {
   full: { label: "Full", steps: ["hum", "subtract", "scurve", "lowband"], note: "planes, trains and ships" },
-  light: { label: "Light", steps: ["hum", "lowband"], note: "faster; distant background only" },
-  hum: { label: "Hum only", steps: ["hum"], note: "removes the recording-time clock only" },
+  light: { label: "Light", steps: ["hum", "lowband"], note: "faster, but partial: misses trains and close passes" },
+  hum: { label: "Hum only", steps: ["hum"], note: "partial: removes the recording-time clock only" },
 } as const satisfies Record<string, { label: string; steps: readonly Step[]; note: string }>;
 type Preset = keyof typeof PRESETS;
 
@@ -48,7 +55,7 @@ const state = {
   error: "",
   /** The picture's flicker scan (mains clock in rolling-shutter bands). */
   picture: {
-    status: "none" as "none" | "scanning" | "done" | "error",
+    status: "none" as "none" | "scanning" | "done" | "error" | "short",
     progress: 0,
     scan: null as FlickerScan | null,
     /** Remove flicker on save (re-encodes the picture). Defaults to on when flicker is found. */
@@ -79,6 +86,7 @@ worker.onmessage = (event) => {
   const parsed = WorkerMessage.safeParse(event.data);
   if (!parsed.success) return fail("unexpected message from the scrubber");
   const m = parsed.data;
+  if (m.token !== fileToken) return;          // a reply about a file that's no longer open
   switch (m.type) {
     case "stage":
       state.busy = m.stage;
@@ -101,7 +109,7 @@ worker.onmessage = (event) => {
     }
     case "flicker":
       if (m.purpose === "clip") {
-        const frames = m.gains ? m.gains.length / 120 : 0;
+        const frames = m.gains ? m.gains.length / ROWS : 0;
         state.picture.scan = { detected: m.detected, z: m.z, flickerHz: m.flickerHz, readoutMs: m.readoutMs, gains: m.gains, frames };
         state.picture.status = "done";
         state.picture.fix = m.detected;
@@ -144,8 +152,10 @@ async function open(file: File) {
     player.set("in", loaded.clip.channels, loaded.clip.sampleRate);
     setSide("in");
     state.busy = "analyzing";
-    send({ type: "analyze", sampleRate: loaded.clip.sampleRate, channels: loaded.clip.channels });
-    if (loaded.video) void scanPicture(loaded, token);
+    send({ type: "analyze", token, sampleRate: loaded.clip.sampleRate, channels: loaded.clip.channels });
+    // The scan sums whole 4 s segments; shorter clips can't be checked (and must not read as clean).
+    if (loaded.video && loaded.duration < MIN_PICTURE_SECONDS) state.picture.status = "short";
+    else if (loaded.video) void scanPicture(loaded, token);
   } catch (error) {
     fail(error instanceof MediaError ? error.message : `couldn't read this file (${(error as Error).message})`);
   }
@@ -166,11 +176,27 @@ async function scanPicture(loaded: Loaded, token: number) {
       renderTrace();
     });
     if (token !== fileToken) return;
-    send({ type: "flicker", ...profiles, clean: true, purpose: "clip" });
+    send({ type: "flicker", token, ...profiles, clean: true, purpose: "clip" });
   } catch (error) {
     if (token !== fileToken) return;
     state.picture.status = "error";
     state.picture.message = (error as Error).message;
+    render();
+  }
+}
+
+/** Decode the saved file and scan its picture again: the check the "gone" in the table reports. */
+async function verifyPicture(blob: Blob, token: number) {
+  try {
+    const input = new Input({ source: new BlobSource(blob), formats: ALL_FORMATS });
+    const video = await input.getPrimaryVideoTrack();
+    if (!video) throw new Error("the saved file has no picture");
+    const profiles = await measureProfiles(video, await video.computeDuration());
+    if (token !== fileToken) return;
+    send({ type: "flicker", token, ...profiles, clean: false, purpose: "verify" });
+  } catch (error) {
+    if (token !== fileToken) return;
+    state.picture.message = `couldn't check the saved picture: ${(error as Error).message}`;
     render();
   }
 }
@@ -184,7 +210,7 @@ function cloak() {
   state.busy = "loading";
   state.outputPreset = state.preset;
   send({
-    type: "scrub", sampleRate: loaded.clip.sampleRate, channels: loaded.clip.channels,
+    type: "scrub", token: fileToken, sampleRate: loaded.clip.sampleRate, channels: loaded.clip.channels,
     steps: ["mono", ...PRESETS[state.preset].steps], seed: randomSeed(), cutoff: CUTOFF, keepVoice: true,
   });
   render();
@@ -197,17 +223,16 @@ async function download() {
   render();
   try {
     const scan = state.picture.scan;
-    let picture = fixingPicture() && scan?.gains ? { gains: scan.gains, frames: scan.frames } : undefined;
-    // Dev-only hook for the end-to-end test: gains computed outside the app (stripped from builds).
-    const injected = import.meta.env.DEV ? (window as { __testGains?: number[] }).__testGains : undefined;
-    if (injected && picture) picture = { gains: Float32Array.from(injected), frames: injected.length / 120 };
+    const picture = fixingPicture() && scan?.gains ? { gains: scan.gains, frames: scan.frames } : undefined;
+    const token = fileToken;
     state.picture.verify = null;
     const saved = await save(loaded, outputSamples, loaded.clip.sampleRate, (f) => {
       saveProgress = f;
       renderPrimary();
     }, picture);
     saveProgress = 0;
-    if (saved.profiles) send({ type: "flicker", ...saved.profiles, clean: false, purpose: "verify" });
+    // Verify on the saved file itself (decoded again), not on what was fed to the encoder.
+    if (picture && loaded.video) void verifyPicture(saved.blob, token);
     state.picture.codec = saved.videoCodec ?? "";
     const blob = saved.blob;
     const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(blob), download: outputName(loaded) });
@@ -255,7 +280,7 @@ function renderPrimary() {
   button.textContent = s.busy === "saving" && saveProgress > 0 ? `ENCODING… ${Math.round(saveProgress * 100)}%`
     : s.busy ? stageText[s.busy]!
     : waitingForPicture ? `SCANNING PICTURE… ${Math.round(s.picture.progress * 100)}%`
-    : fresh() ? `SAVE ${s.loaded!.name.replace(/\.[^.]+$/, "")}.camo` : "CLOAK";
+    : fresh() ? "SAVE CLOAKED FILE" : "CLOAK";
   const ready = fresh() && !s.busy;
   for (const c of ["border-white", "text-white", "hover:bg-white"]) button.classList.toggle(c, !ready);
   for (const c of ["border-accent", "text-accent", "hover:bg-accent"]) button.classList.toggle(c, ready);
@@ -264,7 +289,8 @@ function renderPrimary() {
   if (s.error) text = `<span class="text-red-400">${esc(s.error)}</span>`;
   else if (!s.loaded) text = s.busy ? "reading the file…" : "drop a video above · nothing leaves your browser";
   else if (fresh() && s.after) {
-    text = `<span class="text-accent">cloaked</span> · ${s.after.tones} trackable tone${s.after.tones === 1 ? "" : "s"} left (was ${s.before?.tones ?? "?"}) · ${(s.ms / 1000).toFixed(1)} s · press x to compare`;
+    const word = s.preset === "full" ? "cloaked" : `partly cloaked (${PRESETS[s.preset].label})`;
+    text = `<span class="text-accent">${word}</span> · ${s.after.tones} trackable tone${s.after.tones === 1 ? "" : "s"} left (was ${s.before?.tones ?? "?"}) · ${(s.ms / 1000).toFixed(1)} s · press x to compare`;
   } else if (s.outputSamples) text = `preset changed · cloak again to apply ${PRESETS[s.preset].label.toLowerCase()}`;
   else if (s.before) {
     const t = s.before;
@@ -273,6 +299,12 @@ function renderPrimary() {
       : "no trackable tones found · cloaking still hides fainter ones";
   } else text = s.busy ? "listening like an attacker…" : "";
   status.innerHTML = `${text}${s.loaded && !s.error ? ` <span class="text-neutral-700">· ${PRESETS[s.preset].note}</span>` : ""}`;
+  const pic = s.picture;
+  const warning = !s.loaded?.video ? ""
+    : pic.status === "error" || pic.message ? `the picture wasn't checked for light flicker (${pic.message || "the scan failed"})`
+    : pic.status === "short" ? `the clip is too short (under ${MIN_PICTURE_SECONDS} s) to check the picture for light flicker`
+    : "";
+  if (warning) status.innerHTML += `<br><span class="text-amber-300/80">⚠ ${esc(warning)}</span>`;
 }
 
 function renderTrace() {
@@ -302,7 +334,8 @@ function pictureRow(): string {
   let vin = "–", vout = "";
   if (state.loaded && !video) vin = "no picture";
   else if (p.status === "scanning") vin = `scanning ${Math.round(p.progress * 100)}%`;
-  else if (p.status === "error") vin = "scan failed";
+  else if (p.status === "error") vin = `<span class="text-red-400">not checked</span>`;
+  else if (p.status === "short") vin = `<span class="text-neutral-500">too short</span>`;
   else if (p.scan) vin = p.scan.detected ? `${Math.round(p.scan.flickerHz)} Hz` : "none";
   if (p.verify) vout = p.verify.detected ? `<span class="text-red-400">left</span>` : `<span class="text-accent">gone</span>`;
   else if (p.scan?.detected && fresh()) vout = p.fix ? `<span class="text-neutral-500">on save</span>` : `<span class="text-neutral-500">kept</span>`;

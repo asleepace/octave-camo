@@ -11,8 +11,8 @@ trains and ships within earshot leave Doppler pitch curves in the background noi
 positions are public: an attacker predicts the curve for every candidate place and time and checks
 which one your audio matches, even for tones far too faint to hear. Mains hum, and the flicker of
 mains-powered lights in the picture, carry the power grid's frequency drift, which is logged and
-works as a timestamp. octave-camo removes those clues without noticeably changing what you see and
-hear.
+works as a timestamp. octave-camo removes those clues while keeping the picture, voices and the
+overall sound.
 
 > **Proof of concept.** octave-camo is in active development and provides no guarantee of
 > anonymity. It has only been tested on synthetic recordings and needs more testing and
@@ -27,7 +27,7 @@ hear.
 | Mains hum | Recording time and grid region (ENF) | Notches both 50 and 60 Hz harmonic families and refills the notches, so neither the hum nor the notch pattern survives |
 | Light flicker in the picture | The same grid timestamp, as rolling-shutter bands | Scans every frame; if found, divides the bands out (optional: re-encodes the picture) |
 | Multiple mics, spatial-audio tracks | Direction of sounds | Mono output; extra audio tracks dropped |
-| Metadata | GPS, device, timestamps, directly | Nothing is copied: no tags, no creation time |
+| Metadata | GPS, device, timestamps, directly | No container metadata is copied: no tags, no creation time, a random file name |
 
 It doesn't touch what the picture shows, what people say, or anything about the account that posts
 it.
@@ -43,11 +43,12 @@ light flicker) and a new mono AAC audio track, with no metadata.
 
 You shouldn't have to take a privacy tool's word for it.
 
-- **Nothing leaves your device.** The built page carries a Content-Security-Policy that only
-  allows its own origin (`default-src 'none'; connect-src 'self' blob:`; see
-  [web/vite.config.ts](web/vite.config.ts)), so no script on it can send data elsewhere. Check the
-  Network tab in your browser's developer tools while you cloak a file, or load the page, go
-  offline, and use it.
+- **Nothing leaves your device.** The page has no code that sends anything anywhere, and its
+  Content-Security-Policy (`default-src 'none'; connect-src 'self' blob:`; see
+  [web/vite.config.ts](web/vite.config.ts)) blocks requests, scripts, styles and fonts from any
+  other origin. A CSP can't stop everything (it doesn't cover navigating the page away or WebRTC),
+  so check for yourself: watch the Network tab in your browser's developer tools while you cloak a
+  file, or load the page, go offline, and use it.
 - **The picture is untouched.** Compare the video packets of the original and the cloaked file:
 
   ```sh
@@ -67,7 +68,8 @@ Synthetic clips, cloaked with the default chain, then re-encoded as 128 kbps AAC
 would). Two attackers: a blind tracker that fits flyby curves with no outside data, and a matched
 attacker that has the source's true track, the exact recording time, and a 10 km search grid. A
 leak means the true location was recovered within 1 km, above the attacker's noise floor on the
-same scene with no source in it.
+same scene with no source in it. CI checks both the harness's implementation of the default chain
+and the Swift pipeline the web app runs.
 
 | Clip | Uncloaked | Cloaked (default chain) | Sound change below / above 300 Hz |
 | --- | --- | --- | --- |
@@ -106,7 +108,8 @@ web app and the research harness:
 
 The web app also scans the picture: one decode pass measures each frame's row brightness, and a
 blind search for a band at 100 or 120 Hz (the way an attacker would look) decides whether the
-picture carries the grid clock. If it does, saving can divide the band out of every row on the GPU.
+picture carries the grid clock. If it does, saving can divide the band out of every row on the GPU,
+and the saved file is decoded and scanned again to confirm.
 
 ## Limits
 
@@ -116,7 +119,12 @@ picture carries the grid clock. If it does, saving can divide the band out of ev
   lights at 30 fps); timetabled sounds such as bells and horns. Details in
   [THREAT_MODEL.md](THREAT_MODEL.md).
 - Removing light flicker re-encodes the picture in standard dynamic range, so HDR footage looks a
-  little different.
+  little different. Clips under 5 seconds are too short to check for flicker.
+- Without de-flicker, the video stream is copied as is, including any data embedded in the stream
+  itself (some cameras put timecode, user data or telemetry there; container metadata is removed).
+  The codec settings and resolution also say what kind of device recorded it.
+- A cloaked file is recognisable as one (mono AAC audio, regenerated low band). That says the file
+  was processed, not where it was recorded.
 - Clips are processed in memory; the web app takes up to 5 minutes.
 
 ## Development
@@ -128,10 +136,11 @@ cd web && bun install && bun run dev                 # web app (a JS stand-in ru
 cd harness && bun install && bun test                # attackers, defenses, benchmarks
 ```
 
-CI runs on every push: Swift tests on macOS, Linux and WebAssembly; the web app's unit tests
-against the real wasm build; a browser end-to-end test of the production build (CSP on, metadata
-gone, picture hash-identical, flicker removed); the harness tests; and the benchmark gate. The site
-deploys from `main` only when those pass.
+CI runs on every push (actions pinned to commits, read-only permissions): Swift tests on macOS,
+Linux and WebAssembly; the web app's unit tests against the real wasm build; a browser end-to-end
+test of the production build (CSP on, metadata gone, picture hash-identical, flicker removed and
+re-verified on the saved file); the harness tests; and the benchmark gate on both the harness and
+the Swift pipeline. The site deploys from `main` only when all of them pass.
 
 ```
 Sources/

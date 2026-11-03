@@ -8,11 +8,14 @@ import {
   canEncodeVideo, EncodedPacketSink, EncodedVideoPacketSource, Input, type InputAudioTrack, type InputVideoTrack,
   Mp4OutputFormat, Output, VideoSample, VideoSampleSink, VideoSampleSource, type VideoCodec,
 } from "mediabunny";
-import type { Clip, Profiles } from "./engine/camo.ts";
-import { GainRenderer, ProfileProbe, ROWS } from "./video.ts";
+import type { Clip } from "./engine/camo.ts";
+import { GainRenderer, ROWS } from "./video.ts";
 
 /** Clips longer than this are refused: the scrubber holds the whole clip in memory. */
 export const MAX_SECONDS = 300;
+/** Limits checked before decoding anything (a crafted file could otherwise claim anything). */
+export const MAX_CHANNELS = 8;
+export const MAX_SAMPLE_RATE = 192_000;
 
 export type Loaded = {
   name: string;
@@ -34,11 +37,26 @@ export async function load(file: File): Promise<Loaded> {
 
   const duration = await audio.computeDuration();
   if (duration > MAX_SECONDS) throw new MediaError(`clip is ${Math.round(duration)} s; the limit is ${MAX_SECONDS} s`);
+  const channelCount = audio.numberOfChannels;
+  if (!(channelCount >= 1 && channelCount <= MAX_CHANNELS)) throw new MediaError(`unsupported channel count (${channelCount})`);
+  if (!(audio.sampleRate >= 8_000 && audio.sampleRate <= MAX_SAMPLE_RATE)) throw new MediaError(`unsupported sample rate (${audio.sampleRate} Hz)`);
 
-  const channelCount = audio.numberOfChannels, sampleRate = audio.sampleRate;
+  // The decoded rate is what matters (HE-AAC, for one, decodes at twice the rate its track declares).
+  let sampleRate = 0;
   const parts: Float32Array[][] = Array.from({ length: channelCount }, () => []);
   let frames = 0;
   for await (const sample of new AudioSampleSink(audio).samples()) {
+    if (!sampleRate) {
+      sampleRate = sample.sampleRate;
+      if (!(sampleRate >= 8_000 && sampleRate <= MAX_SAMPLE_RATE)) throw new MediaError(`unsupported sample rate (${sampleRate} Hz)`);
+    } else if (sample.sampleRate !== sampleRate) {
+      sample.close();
+      throw new MediaError("the audio changes sample rate partway through; that isn't supported");
+    }
+    if (frames + sample.numberOfFrames > (MAX_SECONDS + 1) * sampleRate) {
+      sample.close();
+      throw new MediaError(`the audio runs past the ${MAX_SECONDS} s limit (its header said ${Math.round(duration)} s)`);
+    }
     for (let ch = 0; ch < channelCount; ch++) {
       const plane = new Float32Array(sample.numberOfFrames);
       sample.copyTo(plane, { planeIndex: Math.min(ch, sample.numberOfChannels - 1), format: "f32-planar" });
@@ -47,6 +65,7 @@ export async function load(file: File): Promise<Loaded> {
     frames += sample.numberOfFrames;
     sample.close();
   }
+  if (!frames) throw new MediaError("the audio track is empty");
   const channels = parts.map((list) => {
     const out = new Float32Array(frames);
     let offset = 0;
@@ -59,20 +78,58 @@ export async function load(file: File): Promise<Loaded> {
   };
 }
 
-/** The cloaked file's name: IMG_1234.mov → IMG_1234.camo.mp4 (or .m4a without video). */
-export function outputName(loaded: Loaded): string {
-  const stem = loaded.name.replace(/\.[^.]+$/, "") || "clip";
-  return `${stem}.camo.${loaded.video ? "mp4" : "m4a"}`;
+/**
+ * The cloaked file's name: neutral and random, never derived from the original. Phone and
+ * screen-recording names carry the capture date and time (PXL_20261103_142233.mp4), and
+ * messengers keep file names.
+ */
+export function outputName(loaded: Pick<Loaded, "video">, random: () => number = secureRandom): string {
+  const id = Array.from({ length: 6 }, () => "abcdefghjkmnpqrstuvwxyz23456789"[Math.floor(random() * 31)]).join("");
+  return `camo-${id}.${loaded.video ? "mp4" : "m4a"}`;
 }
 
-/** Per-row gains that remove flicker: frames × ROWS, in decode order. */
+/** Uniform in [0, 1) from the platform's cryptographic generator. */
+export function secureRandom(): number {
+  return crypto.getRandomValues(new Uint32Array(1))[0]! / 2 ** 32;
+}
+
+/**
+ * Removes the muxer's name from the finished file: Mediabunny writes "MediabunnyVideoHandler" /
+ * "MediabunnySoundHandler" as track handler names, and its versioned name as the compressor name
+ * of a re-encoded video track. Those would mark the file as made with this tool. Handler names
+ * become ffmpeg's ("VideoHandler", "SoundHandler", the most common in the wild); the compressor
+ * name becomes empty. Same lengths, so no box sizes change.
+ */
+export function neutralize<T extends Uint8Array>(bytes: T): T {
+  const enc = new TextEncoder();
+  const replaceAll = (from: string, to: Uint8Array) => {
+    const pattern = enc.encode(from);
+    outer: for (let i = 0; i + pattern.length <= bytes.length; i++) {
+      for (let j = 0; j < pattern.length; j++) if (bytes[i + j] !== pattern[j]) continue outer;
+      bytes.set(to, i);
+      i += pattern.length - 1;
+    }
+  };
+  const padded = (s: string, length: number) => { const out = new Uint8Array(length); out.set(enc.encode(s)); return out; };
+  replaceAll("MediabunnyVideoHandler", padded("VideoHandler", 22));
+  replaceAll("MediabunnySoundHandler", padded("SoundHandler", 22));
+  replaceAll("MediabunnyTextHandler", padded("TextHandler", 21));
+  // Compressor name: a length byte, then the name ("Mediabunny v1.65.0"); clear both.
+  const marker = enc.encode("Mediabunny v");
+  outer2: for (let i = 1; i + marker.length <= bytes.length; i++) {
+    for (let j = 0; j < marker.length; j++) if (bytes[i + j] !== marker[j]) continue outer2;
+    const length = bytes[i - 1]!;
+    if (length >= marker.length && length <= 31) bytes.fill(0, i - 1, i + length);
+  }
+  return bytes;
+}
+
+/** Per-row gains that remove flicker: frames × ROWS, in presentation order (as VideoSampleSink yields). */
 export type PictureFix = { gains: Float32Array; frames: number };
 
 export type Saved = {
   blob: Blob;
-  /** Row profiles of the re-rendered picture (when a PictureFix was applied), to verify it. */
-  profiles?: Profiles;
-  /** Codec the picture was re-encoded with. */
+  /** Codec the picture was re-encoded with (when a PictureFix was applied). */
   videoCodec?: VideoCodec;
 };
 
@@ -132,17 +189,18 @@ export async function save(loaded: Loaded, mono: Float32Array, sampleRate: numbe
     }
   };
 
-  let probe: ProfileProbe | undefined;
   if (video && rendered && picture) {
-    probe = new ProfileProbe();
     let k = 0;
     for await (const sample of new VideoSampleSink(video).samples()) {
       await writeAudioUntil(sample.timestamp);
+      if (k >= picture.frames) {
+        sample.close();
+        throw new MediaError("the picture has more frames than were scanned; scan again before saving");
+      }
       const frame = sample.toVideoFrame();
       try {
-        const row = Math.min(k, picture.frames - 1);
+        const row = k;
         const canvas = rendered.renderer.render(frame, picture.gains.subarray(row * ROWS, (row + 1) * ROWS));
-        probe.add(canvas, sample.timestamp);
         const out = new VideoSample(canvas, { timestamp: sample.timestamp, duration: sample.duration });
         await rendered.source.add(out);
         out.close();
@@ -152,6 +210,7 @@ export async function save(loaded: Loaded, mono: Float32Array, sampleRate: numbe
       }
       k++;
     }
+    if (k !== picture.frames) throw new MediaError("the picture has fewer frames than were scanned; scan again before saving");
   } else if (video && videoSource) {
     const decoderConfig = await video.getDecoderConfig();
     if (!decoderConfig) throw new MediaError("could not read the video's codec configuration");
@@ -165,6 +224,6 @@ export async function save(loaded: Loaded, mono: Float32Array, sampleRate: numbe
   await writeAudioUntil(Infinity);
   await output.finalize();
   if (!target.buffer) throw new MediaError("encoding produced no output");
-  const blob = new Blob([target.buffer], { type: video ? "video/mp4" : "audio/mp4" });
-  return { blob, profiles: probe?.result(), videoCodec: rendered?.codec };
+  const blob = new Blob([neutralize(new Uint8Array(target.buffer))], { type: video ? "video/mp4" : "audio/mp4" });
+  return { blob, videoCodec: rendered?.codec };
 }
