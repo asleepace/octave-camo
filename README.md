@@ -26,8 +26,9 @@ bun test                                        # 88 tests
 bun run bench:defenses                          # chains × synthetic clips × both attackers
 ```
 
-The Swift package is the start of the iOS library. It hasn't been compiled yet: the toolchain
-wasn't available where it was written.
+The Swift package is the start of the iOS library. It builds, and its 19 tests pass in CI on
+macOS and Linux. It has the original pipeline (hum, tone subtraction, wobble); the modular
+defenses (`lowband` and friends) live in the harness for now.
 
 ```sh
 swift build -c release && swift test -c release

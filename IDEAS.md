@@ -66,5 +66,6 @@ Things that came up while building and testing. Each is roughly ordered by value
 - **Perceptual quality.** ERB loudness change is a proxy. A short listening test, or ViSQOL, on
   real clips would tell us whether `lowband` is truly unnoticeable on phone speakers versus
   headphones.
-- **Swift test target.** The package has XCTest files but has never been compiled here. Run
-  `swift test -c release` on a Mac and wire it into CI.
+- **Port the harness defenses to Swift.** CI now builds and tests the Swift package on macOS and
+  Linux, so `lowband` and `subtract` can be ported module by module, each with its harness test
+  as the spec.
