@@ -18,6 +18,21 @@ import { expectClean, FAKE_GPS, ffmpeg, flybyWav, pictureHash, probe, row, Sessi
 
 const dir = workDir();
 
+/** Luma of the spectrogram canvas, downsampled to 64 × 32 (once its colors have settled). */
+async function heatmapPixels(page: import("playwright").Page): Promise<number[]> {
+  await page.waitForTimeout(100);
+  return page.evaluate(() => {
+    const source = document.querySelector<HTMLCanvasElement>("#spec")!, w = 64, h = 32;
+    const small = document.createElement("canvas");
+    small.width = w; small.height = h;
+    const ctx = small.getContext("2d")!;
+    ctx.drawImage(source, 0, 0, w, h);
+    const px = ctx.getImageData(0, 0, w, h).data, out: number[] = [];
+    for (let i = 0; i < px.length; i += 4) out.push(0.2126 * px[i]! + 0.7152 * px[i + 1]! + 0.0722 * px[i + 2]!);
+    return out;
+  });
+}
+
 /** VP9/Opus WebM with a fake GPS tag; optionally with 100 Hz rolling-shutter bands. */
 function webm(name: string, opts: { flicker?: boolean; seconds?: number } = {}): string {
   const out = join(dir, `${name}.webm`), seconds = String(opts.seconds ?? 20);
@@ -88,6 +103,20 @@ describe.skipIf(!URL_)("cloak in the browser", () => {
     const out = await session.cloakAndSave();
     expect(out).toEndWith(".m4a");
     expectClean(out, { video: false });
+
+    // The spectrogram shows the cloaked sound after cloaking, follows "listen to", and differs
+    // from the original (the plane's harmonics and the hum are gone).
+    const pressed = (id: string) => page.getAttribute(id, "aria-pressed");
+    expect(await pressed("#spec-out")).toBe("true");
+    const after = await heatmapPixels(page);
+    await page.click("#spec-in");
+    expect(await pressed("#side-in")).toBe("true");
+    const before = await heatmapPixels(page);
+    expect(after.length).toBe(before.length);
+    let diff = 0;
+    for (let i = 0; i < before.length; i++) diff += Math.abs(before[i]! - after[i]!);
+    expect(diff / before.length).toBeGreaterThan(2);
+    expect(await page.getAttribute("#spec", "aria-label")).toContain("original");
     expect(session.problems).toEqual([]);
     await session.close();
   }, 900_000);

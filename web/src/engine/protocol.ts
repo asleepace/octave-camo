@@ -50,6 +50,11 @@ export type Request = z.infer<typeof Request>;
 const Trace = z.object({ tones: z.number(), doppler: z.number(), hum: z.number(), flybys: z.number() });
 /** Display spectrogram (computed in the worker so a long clip doesn't freeze the page). */
 const Spectrum = z.object({ db: samples, frames: z.number().int().nonnegative(), hop: z.number().positive() });
+/** The 2D heatmap's spectrogram (see spectrum.ts detail()). */
+const Detail = z.object({
+  db: samples, columns: z.number().int().min(1), rows: z.number().int().min(2),
+  seconds: z.number().nonnegative(), fLo: z.number().positive(), fHi: z.number().positive(),
+}).refine((d) => d.db.length === d.columns * d.rows && d.fHi > d.fLo, { message: "heatmap size mismatch", path: ["db"] });
 
 export const Stage = z.enum(["loading", "analyzing", "scrubbing", "verifying"]);
 export type Stage = z.infer<typeof Stage>;
@@ -60,12 +65,15 @@ export const WorkerMessage = z.discriminatedUnion("type", [
     /** Set when the scrubber couldn't be loaded (the page can't cloak anything). */
     failed: z.string().optional() }),
   z.object({ type: z.literal("stage"), token, stage: Stage }),
-  z.object({ type: z.literal("analysis"), token, trace: Trace, spectrum: Spectrum, engine: z.enum(["wasm", "stand-in"]) }),
+  /** Sent once at startup: the landing heatmap (an illustration, computed here to keep the page responsive). */
+  z.object({ type: z.literal("demo"), token, input: Detail, output: Detail }),
+  z.object({ type: z.literal("analysis"), token, trace: Trace, spectrum: Spectrum, detail: Detail, engine: z.enum(["wasm", "stand-in"]) }),
   z.object({
     type: z.literal("result"),
     token,
     output: samples,
     spectrum: Spectrum,
+    detail: Detail,
     log: z.array(z.string()),
     after: Trace,
     ms: z.number(),

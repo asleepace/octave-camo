@@ -9,6 +9,19 @@ are grouped by milestone, newest first, with the commits that made them.
 
 ## [Unreleased]
 
+### Spectrogram
+
+- A full-width 2D spectrogram (frequency over time) under the detected levels, with a
+  before / after control that follows "listen to" in the player. Before and after share one
+  color range, so the toggle shows what cloaking changed: the planes' curves and the hum lines
+  go, speech stays. A dotted line marks where the low end is regenerated; a playhead follows
+  playback, and clicking the image seeks there.
+- Finer than the 3D view (256 log-spaced rows from 30 Hz to 8 kHz, ~100 ms windows), so a
+  Doppler bend reads as a curve rather than steps. Computed in the worker; long clips are
+  pooled to at most 2,400 columns, keeping the loudest value so short tones aren't lost.
+- Before a file is opened it shows an illustration (a passing plane, mains hum and speech),
+  labelled as an example. The stage log moved below it.
+
 ## [0.1.1] — 2026-11-03
 
 ### Accessibility

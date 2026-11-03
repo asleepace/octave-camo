@@ -8,11 +8,12 @@ import { load, type Loaded, MediaError, outputName, prepareAudioEncoder, save } 
 import { Input, ALL_FORMATS, BlobSource } from "mediabunny";
 import { measureProfiles, ROWS } from "./video.ts";
 import { Player, type Side } from "./player.ts";
-import { bandCenters, demo, meanBands, percentile, type Spectrogram } from "./spectrum.ts";
+import { bandCenters, demo, type Detail, detailPercentile, meanBands, percentile, type Spectrogram } from "./spectrum.ts";
 
 const toSpectrogram = (s: { db: Float32Array; frames: number; hop: number }): Spectrogram => ({ centers: bandCenters(), ...s });
 import { bandChart } from "./ui/bands.ts";
 import { Terrain } from "./ui/terrain.ts";
+import { Heatmap, rampCss, timeTicks } from "./ui/heatmap.ts";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -45,6 +46,9 @@ const state = {
   loaded: null as Loaded | null,
   input: null as Spectrogram | null,
   output: null as Spectrogram | null,
+  /** The heatmap's finer spectrograms of the same audio. */
+  inputDetail: null as Detail | null,
+  outputDetail: null as Detail | null,
   outputSamples: null as Float32Array<ArrayBuffer> | null,
   before: null as Trace | null,
   after: null as Trace | null,
@@ -87,6 +91,9 @@ const quiet: Spectrogram = { centers: bandCenters(), hop: 0.05, frames: 1, db: n
 const player = new Player();
 const terrain = new Terrain($<HTMLCanvasElement>("terrain"));
 terrain.cutoff = CUTOFF;
+const heatmap = new Heatmap($<HTMLCanvasElement>("spec"));
+/** The landing heatmap (an illustration), sent by the worker once at startup. */
+let demoDetail: { input: Detail; output: Detail } | null = null;
 // The worker holds the decoded audio, so it must be under the page's Content-Security-Policy. A
 // worker loaded from its own URL takes its policy from its own HTTP response, and GitHub Pages
 // sends none; one started from a blob: URL inherits the page's. So a one-line blob: module
@@ -117,6 +124,10 @@ worker.onmessage = (event) => {
   const parsed = WorkerMessage.safeParse(event.data);
   if (!parsed.success) return fail("unexpected message from the scrubber");
   const m = parsed.data;
+  if (m.type === "demo") {
+    demoDetail = { input: m.input, output: m.output };
+    return render();
+  }
   if (m.type === "engine") {
     engineHash = m.sha256;
     if (m.failed) return killWorker(m.failed);
@@ -130,6 +141,7 @@ worker.onmessage = (event) => {
     case "analysis":
       state.before = m.trace;
       state.input = toSpectrogram(m.spectrum);
+      state.inputDetail = m.detail;
       state.engine = m.engine;
       state.busy = null;
       break;
@@ -138,7 +150,7 @@ worker.onmessage = (event) => {
       if (!clip) return;
       Object.assign(state, {
         busy: null, outputSamples: m.output, outputPreset: state.pendingPreset, after: m.after, log: m.log, ms: m.ms,
-        engine: m.engine, output: toSpectrogram(m.spectrum),
+        engine: m.engine, output: toSpectrogram(m.spectrum), outputDetail: m.detail,
       });
       player.set("out", [m.output], clip.sampleRate);
       setSide("out");
@@ -191,7 +203,7 @@ async function open(file: File) {
   if (workerDead) return fail(workerDead);
   player.clear();
   Object.assign(state, {
-    loaded: null, input: null, output: null, outputSamples: null, outputPreset: null, pendingPreset: null, before: null,
+    loaded: null, input: null, output: null, inputDetail: null, outputDetail: null, outputSamples: null, outputPreset: null, pendingPreset: null, before: null,
     after: null, log: [], busy: "decoding", error: "",
   });
   state.picture = { status: "none", progress: 0, scan: null, fix: false, verify: null, codec: "", message: "", verifyError: "" };
@@ -277,7 +289,7 @@ function cloak() {
   setSide("in");
   // The previous output is no longer what the button would save: if this run fails, there must be
   // nothing left over to save under the new preset's name.
-  Object.assign(state, { error: "", busy: "loading", outputSamples: null, outputPreset: null, output: null, after: null,
+  Object.assign(state, { error: "", busy: "loading", outputSamples: null, outputPreset: null, output: null, outputDetail: null, after: null,
     pendingPreset: state.preset });
   try {
     send({
@@ -339,6 +351,7 @@ function setSide(side: Side) {
   player.switchTo(side);
   player.side = side;
   terrain.show = side;
+  heatmap.show = side;
   render();
 }
 
@@ -515,6 +528,74 @@ function render() {
   terrain.output = state.loaded ? state.output : demoData.output;
   const scale = state.input ?? (state.loaded ? quiet : demoData.input);
   terrain.range = [percentile(scale, 0.5), percentile(scale, 0.999) + 2];
+  renderHeatmap();
+}
+
+/** The 2D spectrogram, its axes and its before/after control (which follows "listen to"). */
+function renderHeatmap() {
+  const example = !state.loaded;
+  const input = example ? demoDetail?.input ?? null : state.inputDetail;
+  const output = example ? demoDetail?.output ?? null : state.outputDetail;
+  if (heatmap.input !== input) {
+    // One color range for both sides, from the original: the toggle shows what changed.
+    heatmap.range = input ? [detailPercentile(input, 0.05), detailPercentile(input, 0.999)] : heatmap.range;
+  }
+  heatmap.input = input;
+  heatmap.output = output;
+  const lowband = example || PRESETS[state.outputPreset ?? state.preset].steps.some((s) => s === "lowband");
+  heatmap.cutoff = lowband ? CUTOFF : 0;
+  $("spec-cutoff").textContent = lowband ? `┄ regenerated below ${CUTOFF} Hz` : "";
+  $("spec-example").classList.toggle("hidden", !example);
+
+  const hasOut = !!output;
+  const out = $<HTMLButtonElement>("spec-out"), inn = $<HTMLButtonElement>("spec-in");
+  out.disabled = !hasOut;
+  const showing = hasOut ? heatmap.show : "in";
+  for (const [b, side] of [[inn, "in"], [out, "out"]] as const) {
+    const on = side === showing;
+    b.className = `px-3 py-1.5 ${on ? "bg-white text-black" : "text-neutral-400 disabled:text-neutral-600"}`;
+    b.setAttribute("aria-pressed", String(on));
+  }
+
+  const shown = heatmap.current;
+  const silentClip = !!state.loaded && !state.loaded.clip;
+  $("spec-note").textContent = silentClip ? "no sound in this video"
+    : !shown ? (state.loaded ? "listening…" : "")
+    : example ? (shown === output ? "plane and hum removed · voices kept" : "a passing plane · mains hum · voices")
+    : shown === output ? "after cloaking" : "the original";
+  const what = shown === output ? "after cloaking" : example ? "before cloaking" : "the original sound";
+  $("spec").setAttribute("aria-label", shown
+    ? `Spectrogram${example ? " (example)" : ""}, ${what}: frequency from ${Math.round(shown.fLo)} Hz to ${(shown.fHi / 1000).toFixed(1)} kHz over ${clock(shown.seconds)}; brighter is louder.`
+    : "Spectrogram: nothing to show yet");
+
+  // Axes, rebuilt only when the span changes.
+  const axisKey = shown ? `${shown.fLo}|${shown.fHi}|${shown.seconds}` : "";
+  const y = $("spec-y"), x = $("spec-x");
+  if (y.dataset.key !== axisKey) {
+    y.dataset.key = axisKey;
+    y.replaceChildren();
+    x.replaceChildren();
+    if (shown) {
+      for (const [f, label] of [[63, "63"], [250, "250"], [1000, "1k"], [4000, "4k"]] as const) {
+        if (f <= shown.fLo || f >= shown.fHi) continue;
+        const tick = document.createElement("span");
+        tick.className = "absolute right-0 -translate-y-1/2";
+        tick.style.top = `${(1 - Math.log(f / shown.fLo) / Math.log(shown.fHi / shown.fLo)) * 100}%`;
+        tick.textContent = label;
+        y.append(tick);
+      }
+      const ticks = timeTicks(shown.seconds);
+      for (const t of ticks) {
+        const tick = document.createElement("span");
+        const at = t / Math.max(shown.seconds, 1e-9);
+        tick.className = `absolute ${at > 0.97 ? "-translate-x-full" : at > 0.03 ? "-translate-x-1/2" : ""}`;
+        tick.style.left = `${at * 100}%`;
+        tick.textContent = shown.seconds < 60 ? `${t}s` : clock(t);
+        x.append(tick);
+      }
+    }
+  }
+  heatmap.draw();
 }
 
 // ---------- frame loop ----------
@@ -536,6 +617,8 @@ function frame(now: number) {
     terrain.time = (now / 1000) % (demoData.input.frames * demoData.input.hop);
   }
   terrain.draw(now);
+  heatmap.time = state.loaded?.clip ? player.time : null;
+  heatmap.draw();
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
@@ -558,6 +641,15 @@ $("cloak").addEventListener("click", primary);
 $("play").addEventListener("click", togglePlay);
 $("side-in").addEventListener("click", () => setSide("in"));
 $("side-out").addEventListener("click", () => setSide("out"));
+$("spec-in").addEventListener("click", () => setSide("in"));
+$("spec-out").addEventListener("click", () => setSide("out"));
+$("spec-ramp").style.background = rampCss();
+// Clicking the spectrogram seeks there (the slider above is the keyboard way to do the same).
+$("spec").addEventListener("click", (e) => {
+  if (!state.loaded?.clip) return;
+  const box = (e.currentTarget as HTMLElement).getBoundingClientRect();
+  player.seek(((e.clientX - box.left) / Math.max(1, box.width)) * player.duration);
+});
 $<HTMLInputElement>("seek").addEventListener("input", (e) => {
   player.seek((Number((e.target as HTMLInputElement).value) / 1000) * player.duration);
 });

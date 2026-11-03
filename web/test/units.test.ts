@@ -2,10 +2,79 @@ import { describe, expect, test } from "bun:test";
 import { Request, WorkerMessage } from "../src/engine/protocol.ts";
 import { neutralize, outputName } from "../src/media.ts";
 import { hasSei, lengthSize, stripSei, stripSeiFromConfig } from "../src/sei.ts";
-import { BAND_COUNT, bandCenters, F_HI, F_LO, logX, meanBands, mix, percentile, spectrogram } from "../src/spectrum.ts";
+import { BAND_COUNT, bandCenters, DETAIL_MAX_COLUMNS, DETAIL_ROWS, demoDetail, detail, detailHz, detailPercentile, F_HI, F_LO, logX, meanBands, mix, percentile, spectrogram } from "../src/spectrum.ts";
+import { LUT, paint, timeTicks } from "../src/ui/heatmap.ts";
 import { bandChart } from "../src/ui/bands.ts";
 import { formatHz } from "../src/ui/terrain.ts";
 import { CONTENT_SECURITY_POLICY } from "../vite.config.ts";
+
+describe("heatmap spectrogram", () => {
+  const sine = (sr: number, seconds: number, hz: number, amp = 0.5) => {
+    const x = new Float32Array(Math.round(sr * seconds));
+    for (let i = 0; i < x.length; i++) x[i] = amp * Math.sin((2 * Math.PI * hz * i) / sr);
+    return x;
+  };
+  const columnPeak = (d: ReturnType<typeof detail>, c: number) => {
+    const col = Array.from(d.db.subarray(c * d.rows, (c + 1) * d.rows));
+    return col.indexOf(Math.max(...col));
+  };
+
+  test("a tone is a thin line in its own row, low and high", () => {
+    for (const hz of [60, 440, 3_000]) {
+      const d = detail(sine(48_000, 3, hz), 48_000), c = Math.floor(d.columns / 2), peak = columnPeak(d, c);
+      expect(Math.abs(Math.log2(detailHz(d, peak) / hz))).toBeLessThan(1 / 24);
+      // A third of an octave away it is far down: a line, not a smear.
+      const away = Math.round(d.rows / Math.log2(d.fHi / d.fLo) / 3);
+      expect(d.db[c * d.rows + peak]! - d.db[c * d.rows + Math.min(d.rows - 1, peak + away)]!).toBeGreaterThan(30);
+    }
+  });
+
+  test("shape: rows, columns capped, span, and a low sample rate's ceiling", () => {
+    const d = detail(sine(48_000, 2, 440), 48_000);
+    expect(d.rows).toBe(DETAIL_ROWS);
+    expect(d.db.length).toBe(d.columns * d.rows);
+    expect(d.seconds).toBeCloseTo(2, 6);
+    expect(d.db.every(Number.isFinite)).toBe(true);
+    const long = detail(new Float32Array(8_000 * 600), 8_000);
+    expect(long.columns).toBe(DETAIL_MAX_COLUMNS);
+    expect(long.fHi).toBeLessThan(4_000);
+    expect(detailHz(long, long.rows - 1)).toBeCloseTo(long.fHi, 6);
+  });
+
+  test("pooling keeps a short tone in a long clip", () => {
+    const sr = 8_000, x = new Float32Array(sr * 600);
+    const at = sr * 300;                                 // 150 ms of 1 kHz, halfway through ten minutes
+    for (let i = 0; i < sr * 0.15; i++) x[at + i] = 0.5 * Math.sin((2 * Math.PI * 1_000 * i) / sr);
+    const d = detail(x, sr), c = Math.floor(d.columns / 2);
+    const loudest = Math.max(...Array.from({ length: 5 }, (_, k) => d.db[(c - 2 + k) * d.rows + columnPeak(d, c)]!));
+    expect(Math.abs(Math.log2(detailHz(d, columnPeak(d, c)) / 1_000))).toBeLessThan(1 / 24);
+    expect(loudest).toBeGreaterThan(-20);
+  });
+
+  test("paint: low frequencies at the bottom, colors from the ramp", () => {
+    const d = { db: new Float32Array([-100, 0, -100, 0]), columns: 2, rows: 2, seconds: 1, fLo: 30, fHi: 8_000 };
+    const px = paint(d, [-100, 0]);
+    // Row 0 (low, -100 dB) is the bottom pixel row: black. Row 1 (0 dB) is the top: the ramp's end.
+    expect(Array.from(px.subarray(8, 11))).toEqual(Array.from(LUT.subarray(0, 3)));
+    expect(Array.from(px.subarray(0, 3))).toEqual(Array.from(LUT.subarray(765, 768)));
+    expect(px[3]).toBe(255);
+    // Lightness only rises along the ramp.
+    for (let i = 1; i < 256; i++) expect(LUT[i * 3]! + LUT[i * 3 + 1]! + LUT[i * 3 + 2]!).toBeGreaterThanOrEqual(LUT[(i - 1) * 3]! + LUT[(i - 1) * 3 + 1]! + LUT[(i - 1) * 3 + 2]!);
+  });
+
+  test("time ticks are round and span the clip", () => {
+    expect(timeTicks(24)).toEqual([0, 5, 10, 15, 20]);
+    expect(timeTicks(300)).toEqual([0, 60, 120, 180, 240, 300]);
+    expect(timeTicks(0)).toEqual([0]);
+    for (const s of [1, 7, 59, 61, 299]) expect(timeTicks(s).length).toBeLessThanOrEqual(6);
+  });
+
+  test("the landing example: the illustration differs where the plane and hum were", () => {
+    const { input, output } = demoDetail();
+    expect(input.columns).toBe(output.columns);
+    expect(detailPercentile(input, 0.999)).toBeGreaterThan(detailPercentile(output, 0.999));
+  });
+});
 
 describe("spectrum", () => {
   test("band centers are log spaced from F_LO to F_HI", () => {
@@ -65,6 +134,13 @@ describe("worker protocol", () => {
     expect(WorkerMessage.safeParse({ type: "stage", token: 1, stage: "analyzing" }).success).toBe(true);
     expect(WorkerMessage.safeParse({ type: "stage", stage: "analyzing" }).success).toBe(false);          // token is required
     expect(WorkerMessage.safeParse({ type: "error", token: 1, message: "x" }).success).toBe(false);      // so is scope
+    const heat = (columns: number) => ({ db: new Float32Array(columns * 4), columns: 2, rows: 4, seconds: 1, fLo: 30, fHi: 8_000 });
+    expect(WorkerMessage.safeParse({ type: "demo", token: 0, input: heat(2), output: heat(2) }).success).toBe(true);
+    expect(WorkerMessage.safeParse({ type: "demo", token: 0, input: heat(3), output: heat(2) }).success).toBe(false); // size mismatch
+    const spectrum = { db: new Float32Array(96), frames: 1, hop: 0.05 };
+    const trace = { tones: 0, doppler: 0, hum: 0, flybys: 0 };
+    expect(WorkerMessage.safeParse({ type: "analysis", token: 1, trace, spectrum, engine: "wasm" }).success).toBe(false); // detail required
+    expect(WorkerMessage.safeParse({ type: "analysis", token: 1, trace, spectrum, detail: heat(2), engine: "wasm" }).success).toBe(true);
   });
 });
 

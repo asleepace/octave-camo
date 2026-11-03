@@ -138,10 +138,6 @@
             </thead>
             <tbody id="trace"></tbody>
           </table>
-          <details class="mt-5 text-[11px] text-neutral-500">
-            <summary class="cursor-pointer select-none hover:text-neutral-300">stage log</summary>
-            <ul id="log" class="mt-2 space-y-1 leading-relaxed"></ul>
-          </details>
         </div>
         <div class="min-w-0">
           <div class="flex items-baseline justify-between text-[11px] text-neutral-500">
@@ -151,6 +147,34 @@
           <div id="bands" class="mt-3"></div>
         </div>
       </div>
+
+      <!-- Spectrogram -->
+      <div class="mt-10">
+        <div class="flex items-center justify-between gap-3 text-[11px] text-neutral-500">
+          <p>spectrogram · frequency over time <span id="spec-example" class="text-neutral-500">· example</span></p>
+          <div class="flex shrink-0 border border-neutral-700" role="group" aria-label="Spectrogram of">
+            <button id="spec-in" class="px-3 py-1.5" aria-pressed="true">before</button>
+            <button id="spec-out" class="px-3 py-1.5" aria-pressed="false">after</button>
+          </div>
+        </div>
+        <div class="mt-3 flex gap-2">
+          <div id="spec-y" class="relative w-8 shrink-0 text-right text-[10px] text-neutral-500" aria-hidden="true"></div>
+          <div class="min-w-0 flex-1">
+            <canvas id="spec" class="block h-[180px] w-full md:h-[240px]" role="img" aria-label="Spectrogram"></canvas>
+            <div id="spec-x" class="relative mt-1 h-4 text-[10px] text-neutral-500" aria-hidden="true"></div>
+          </div>
+        </div>
+        <div class="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 pl-10 text-[10px] text-neutral-500">
+          <span>quiet</span><span id="spec-ramp" class="inline-block h-1.5 w-24" aria-hidden="true"></span><span>loud</span>
+          <span id="spec-cutoff" class="ml-3" aria-hidden="true"></span>
+          <span id="spec-note" class="ml-auto"></span>
+        </div>
+      </div>
+
+      <details class="mt-8 text-[11px] text-neutral-500">
+        <summary class="cursor-pointer select-none hover:text-neutral-300">stage log</summary>
+        <ul id="log" class="mt-2 space-y-1 leading-relaxed"></ul>
+      </details>
     </section>
 
     <!-- How it works -->

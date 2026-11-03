@@ -5,7 +5,7 @@
 import { Camo, type Clip, type Flicker, type Profiles, type Samples, type Trace } from "./camo.ts";
 import { z } from "zod";
 import { Request, type ScrubRequest, type WorkerMessage } from "./protocol.ts";
-import { mix, spectrogram } from "../spectrum.ts";
+import { demoDetail, detail, mix, spectrogram } from "../spectrum.ts";
 
 const spectrum = (x: Float32Array, sampleRate: number) => {
   const s = spectrogram(x, sampleRate);
@@ -63,6 +63,12 @@ async function loadEngine(): Promise<Engine> {
   };
 }
 
+// The landing heatmap: computed here, once, so the page stays responsive while it's made.
+setTimeout(() => {
+  const { input, output } = demoDetail();
+  post({ type: "demo", token: 0, input, output }, [input.db.buffer, output.db.buffer]);
+}, 0);
+
 self.onmessage = async (event: MessageEvent<unknown>) => {
   const data = event.data as { type?: unknown; token?: unknown } | null;
   const picture = data?.type === "flicker";
@@ -85,8 +91,9 @@ self.onmessage = async (event: MessageEvent<unknown>) => {
 
     if (request.type === "analyze") {
       post({ type: "stage", token, stage: "analyzing" });
-      const s = spectrum(mix(clip.channels), clip.sampleRate);
-      post({ type: "analysis", token, trace: e.analyze(clip), spectrum: s, engine: e.kind }, [s.db.buffer]);
+      const mono = mix(clip.channels);
+      const s = spectrum(mono, clip.sampleRate), d = detail(mono, clip.sampleRate);
+      post({ type: "analysis", token, trace: e.analyze(clip), spectrum: s, detail: d, engine: e.kind }, [s.db.buffer, d.db.buffer]);
       return;
     }
     post({ type: "stage", token, stage: "scrubbing" });
@@ -96,8 +103,8 @@ self.onmessage = async (event: MessageEvent<unknown>) => {
     post({ type: "stage", token, stage: "verifying" });
     const after = e.analyze({ sampleRate: request.sampleRate, channels: [output] });
 
-    const s = spectrum(output, request.sampleRate);
-    post({ type: "result", token, output, spectrum: s, log, after, ms, engine: e.kind }, [output.buffer, s.db.buffer]);
+    const s = spectrum(output, request.sampleRate), d = detail(output, request.sampleRate);
+    post({ type: "result", token, output, spectrum: s, detail: d, log, after, ms, engine: e.kind }, [output.buffer, s.db.buffer, d.db.buffer]);
   } catch (error) {
     // A trap leaves the instance's memory in an unknown state: start a fresh one (from the
     // compiled module, no download). Bad requests and load failures leave it alone.
