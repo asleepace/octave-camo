@@ -9,7 +9,25 @@ are grouped by milestone, newest first, with the commits that made them.
 
 ## [Unreleased]
 
-Nothing yet.
+### Accessibility
+
+- Text meets WCAG AA contrast (4.5:1) everywhere: the two dimmest greys were 4.4:1 and 2.7:1 on
+  black (now 6.1:1 and 5.1:1), and the smallest text is a step larger.
+- A visible focus ring on every control, including the hidden file input (shown on the drop zone).
+- CLOAK keeps keyboard focus while it works (it was disabled, which dropped focus to the page),
+  so SAVE is one key press away.
+- Landmarks (header, main, footer), a caption for the levels table, a text description for the
+  3D spectrogram, decorative symbols hidden from screen readers; the status line is only rewritten
+  when it changes, so screen readers don't re-announce it; the demo animation holds still with
+  "reduce motion".
+- Tests: axe-core (WCAG 2.2 A/AA) on the page empty, loaded and cloaked; a contrast check that
+  reads the real colors (axe can't parse Tailwind's oklch); keyboard-only open, cloak and save.
+
+### Search and link previews
+
+- A descriptive title and description, a one-line intro under the name, canonical URL, Open
+  Graph and X/Twitter tags with a 1200×630 preview image (`web/scripts/og-image.ts` renders it),
+  and schema.org `WebApplication` data.
 
 ## [0.1.1] — 2026-11-03
 

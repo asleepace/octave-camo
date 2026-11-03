@@ -6,6 +6,29 @@
 @theme {
   --font-mono: "JetBrains Mono", ui-monospace, monospace;
   --color-accent: #ffd23f;
+  /* Readable greys on black: Tailwind's neutral-500/600 are 4.4:1 and 2.7:1, under WCAG AA's
+     4.5:1 for text. These are 6.1:1 and 5.1:1. */
+  --color-neutral-500: #8a8a8a;
+  --color-neutral-600: #7d7d7d;
+}
+
+/* A visible focus ring on everything reachable by keyboard. */
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+/* The file input is visually hidden; show its focus on what stands for it. */
+body:has(#file:focus-visible) #drop:not(.hidden),
+body:has(#file:focus-visible) #open-another:not(.hidden) {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    transition-duration: 0s !important;
+    animation-duration: 0s !important;
+  }
 }
 
 input[type="range"]::-webkit-slider-thumb {

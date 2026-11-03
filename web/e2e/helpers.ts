@@ -150,7 +150,7 @@ export class Session {
       throw new Error(`no error shown; status "${await this.status()}"`);
     }
     // The page must be usable again: the drop zone back, the button off.
-    expect(await this.page.isDisabled("#cloak")).toBe(true);
+    expect(await this.page.getAttribute("#cloak", "aria-disabled")).toBe("true");
     return (await this.page.textContent("#status .text-red-400")) ?? "";
   }
 
@@ -184,4 +184,54 @@ export class Session {
   async close() {
     await this.page?.context().close();
   }
+}
+
+/**
+ * Text contrast, measured in the page (axe can't parse Tailwind v4's oklch() colors and reports
+ * the rule as incomplete). Colors go through a canvas to get sRGB; alpha and ancestor opacity are
+ * blended over the nearest opaque background. Inactive UI (the faded transport before a file is
+ * loaded, disabled controls) is exempt, as WCAG 1.4.3 allows.
+ */
+export async function lowContrast(page: Page): Promise<string[]> {
+  return page.evaluate(() => {
+    const ctx = document.createElement("canvas").getContext("2d", { willReadFrequently: true })!;
+    const rgba = (css: string): [number, number, number, number] => {
+      ctx.clearRect(0, 0, 1, 1);
+      ctx.fillStyle = "#000"; ctx.fillStyle = css;
+      ctx.fillRect(0, 0, 1, 1);
+      const [r, g, b, a] = ctx.getImageData(0, 0, 1, 1).data;
+      return [r!, g!, b!, a! / 255];
+    };
+    const lum = ([r, g, b]: number[]) => {
+      const f = (c: number) => { c /= 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; };
+      return 0.2126 * f(r!) + 0.7152 * f(g!) + 0.0722 * f(b!);
+    };
+    const over = (top: number[], a: number, bottom: number[]) => top.map((c, i) => c * a + bottom[i]! * (1 - a));
+    const background = (el: Element): number[] => {
+      const chain: Element[] = [];
+      for (let e: Element | null = el; e; e = e.parentElement) chain.push(e);
+      let bg = [0, 0, 0];                                  // the page is black
+      for (const e of chain.reverse()) {
+        const [r, g, b, a] = rgba(getComputedStyle(e).backgroundColor);
+        if (a > 0) bg = over([r, g, b], a, bg);
+      }
+      return bg;
+    };
+    const bad: string[] = [];
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      const el = n.parentElement!;
+      if (!n.textContent?.trim() || el.closest("[aria-hidden=true], .sr-only, .opacity-40, :disabled, [aria-disabled=true], script, style, noscript")) continue;
+      const box = el.getBoundingClientRect();
+      if (!box.width || !box.height || getComputedStyle(el).visibility === "hidden") continue;
+      let opacity = 1;
+      for (let e: Element | null = el; e; e = e.parentElement) opacity *= Number(getComputedStyle(e).opacity);
+      const s = getComputedStyle(el), [r, g, b, a] = rgba(s.color), bg = background(el);
+      const fg = over([r, g, b], a * opacity, bg);
+      const ratio = (Math.max(lum(fg), lum(bg)) + 0.05) / (Math.min(lum(fg), lum(bg)) + 0.05);
+      const size = parseFloat(s.fontSize), large = size >= 24 || (size >= 18.66 && Number(s.fontWeight) >= 700);
+      if (ratio < (large ? 3 : 4.5)) bad.push(`${ratio.toFixed(2)}:1 "${n.textContent.trim().slice(0, 40)}" (${el.tagName.toLowerCase()}${el.id ? "#" + el.id : ""})`);
+    }
+    return [...new Set(bad)];
+  });
 }

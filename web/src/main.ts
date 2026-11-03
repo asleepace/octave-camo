@@ -329,6 +329,7 @@ async function download() {
 let saveProgress = 0;
 
 function primary() {
+  if ($("cloak").getAttribute("aria-disabled") === "true") return;
   if (fresh()) void download();
   else cloak();
 }
@@ -357,7 +358,10 @@ function renderPrimary() {
     verifying: "CHECKING…", saving: "ENCODING…",
   };
   const scanning = fresh() && !s.busy && waitingForPicture();
-  button.disabled = !s.loaded || !!s.busy || scanning || !!workerDead;
+  // aria-disabled, not disabled: a disabled button drops keyboard focus to the page, so after
+  // CLOAK a keyboard or screen-reader user would lose their place before SAVE. primary() ignores
+  // presses while it's unavailable.
+  button.setAttribute("aria-disabled", String(!s.loaded || !!s.busy || scanning || !!workerDead));
   button.textContent = s.busy === "saving" && saveProgress > 0 ? `ENCODING… ${Math.round(saveProgress * 100)}%`
     : s.busy ? stageText[s.busy]!
     : scanning ? `SCANNING PICTURE… ${Math.round(s.picture.progress * 100)}%`
@@ -380,7 +384,7 @@ function renderPrimary() {
       ? `exposed · ${t.tones} tone${t.tones === 1 ? "" : "s"} a tracker can follow${t.doppler ? `, ${t.doppler} bending like a passing source` : ""}`
       : "no trackable tones found · cloaking still hides fainter ones";
   } else text = s.busy ? "listening like an attacker…" : "";
-  status.innerHTML = `${text}${s.loaded && !s.error && !silent() ? ` <span class="text-neutral-700">· ${PRESETS[s.preset].note}</span>` : ""}`;
+  let html = `${text}${s.loaded && !s.error && !silent() ? ` <span class="text-neutral-500">· ${PRESETS[s.preset].note}</span>` : ""}`;
   const pic = s.picture;
   const warning = !s.loaded?.video ? ""
     : pic.status === "unchecked" ? pic.message
@@ -389,7 +393,9 @@ function renderPrimary() {
     : pic.status === "short" ? `the clip is too short (under ${MIN_PICTURE_SECONDS} s) to check the picture for light flicker`
     : pic.scan?.detected && !pic.fix && !pic.verify ? "light flicker found and kept: it can help date the recording (tick \"Remove light flicker\" above)"
     : "";
-  if (warning) status.innerHTML += `<br><span class="text-amber-300/80">⚠ ${esc(warning)}</span>`;
+  if (warning) html += `<br><span class="text-amber-300/80"><span aria-hidden="true">⚠ </span>${esc(warning)}</span>`;
+  // A live region re-announces whenever it's rewritten: only touch it when the text changes.
+  if (status.innerHTML !== html) status.innerHTML = html;
 }
 
 function renderTrace() {
@@ -406,7 +412,7 @@ function renderTrace() {
     const bar = (v: number | undefined, color: string) =>
       v === undefined ? "" : `<span class="absolute inset-y-0 left-0 ${color}" style="width:${(100 * v) / max}%"></span>`;
     return `<tr class="border-t border-neutral-900">
-      <td class="py-2.5"><span class="text-white">${name}</span><span class="block text-[9px] text-neutral-600">${hint}</span></td>
+      <td class="py-2.5"><span class="text-white">${name}</span><span class="block text-[10px] text-neutral-600">${hint}</span></td>
       <td class="w-[34%] py-2.5"><span class="relative block h-[3px] bg-neutral-800">${bar(vin, "bg-neutral-500")}${bar(vout, "bg-accent")}</span></td>
       <td class="whitespace-nowrap py-2.5 pl-3 text-right tabular-nums text-white">${vin ?? (silent() ? `<span class="text-neutral-500">no sound</span>` : "–")}${vout !== undefined ? ` → <span class="text-accent">${vout}</span>` : ""}</td></tr>`;
   }).join("");
@@ -426,8 +432,8 @@ function pictureRow(): string {
   if (p.verify) vout = p.verify.detected ? `<span class="text-red-400">left</span>` : `<span class="text-accent">gone</span>`;
   else if (p.scan?.detected && fresh()) vout = p.fix ? `<span class="text-neutral-500">on save</span>` : `<span class="text-amber-300/80">kept</span>`;
   return `<tr class="border-t border-neutral-900">
-    <td class="py-2.5"><span class="text-white">light flicker</span><span class="block text-[9px] text-neutral-600">grid clock in the picture's row bands</span></td>
-    <td class="w-[34%] py-2.5 text-[10px] text-neutral-500">${p.scan ? `z ${Math.round(p.scan.z)}${p.verify ? ` → ${Math.round(p.verify.z)}` : ""}` : ""}</td>
+    <td class="py-2.5"><span class="text-white">light flicker</span><span class="block text-[10px] text-neutral-600">grid clock in the picture's row bands</span></td>
+    <td class="w-[34%] py-2.5 text-[11px] text-neutral-500">${p.scan ? `z ${Math.round(p.scan.z)}${p.verify ? ` → ${Math.round(p.verify.z)}` : ""}` : ""}</td>
     <td class="whitespace-nowrap py-2.5 pl-3 text-right text-white">${vin}${vout ? ` → ${vout}` : ""}</td></tr>`;
 }
 
@@ -460,7 +466,7 @@ function renderTransport() {
   out.disabled = !!state.loaded && !player.has("out");
   for (const [b, side] of [[inn, "in"], [out, "out"]] as const) {
     const on = terrain.show === side;
-    b.className = `px-3 py-1.5 ${on ? "bg-white text-black" : "text-neutral-400 disabled:text-neutral-700"}`;
+    b.className = `px-3 py-1.5 ${on ? "bg-white text-black" : "text-neutral-400 disabled:text-neutral-600"}`;
     b.setAttribute("aria-pressed", String(on));
   }
   $("drop").classList.toggle("hidden", !!state.loaded || state.busy === "decoding");
@@ -515,6 +521,8 @@ function render() {
 // ---------- frame loop ----------
 
 let lastClock = "";
+/** With reduced motion, the demo terrain holds still (playback still moves it: the user asked). */
+const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)");
 function frame(now: number) {
   if (state.loaded) {
     terrain.time = player.time;
@@ -525,7 +533,7 @@ function frame(now: number) {
       const seek = $<HTMLInputElement>("seek");
       if (document.activeElement !== seek) seek.value = String(Math.round((1000 * player.time) / Math.max(player.duration, 1e-9)));
     }
-  } else {
+  } else if (!reduceMotion.matches) {
     terrain.time = (now / 1000) % (demoData.input.frames * demoData.input.hop);
   }
   terrain.draw(now);
