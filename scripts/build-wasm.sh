@@ -11,7 +11,7 @@ flags=(-c "${CONFIG:-release}" --swift-sdk "$sdk" --product octave-camo-wasm
        # WebAssembly has no guard page: by default the shadow stack sits next to global data and
        # an overflow silently corrupts it. Give it 8 MB and put it first, so overflowing traps
        # (out-of-bounds write below address 0) instead.
-       -Xlinker -z -Xlinker stack-size=8388608 -Xlinker --stack-first)
+       -Xlinker -z -Xlinker stack-size=8388608 -Xlinker --stack-first -Xlinker --global-base=8388608)
 [ "${CONFIG:-release}" = release ] && flags+=(-Xlinker --strip-debug)
 swift build "${flags[@]}"
 bin=$(swift build "${flags[@]}" --show-bin-path)
