@@ -36,6 +36,14 @@ public struct ToneTracker {
         /// More ranges to search, each with its own `maxPeaksPerFrame` budget (so loud peaks in
         /// one can't crowd out tones in another). Tracks may cross between ranges.
         public var extraRanges: [ClosedRange<Double>] = []
+        /// Peak threshold in the extra ranges. Fine bins up there give background noise thousands
+        /// of chances per frame to clear 10 dB; at 15 dB it practically never does, while a real
+        /// whine stands 30 dB or more above its floor.
+        public var extraThresholdDB = 15.0
+        /// Association tolerance in the extra ranges, as frequency drift per second (scaled by the
+        /// hop): a fixed share of the frequency (like `relativeTolerance`) is ±100 Hz at 5 kHz,
+        /// wide enough to chain unrelated noise peaks. 5 %/s follows a passing jet's whine.
+        public var extraDriftPerSecond = 0.05
         /// Tracks shorter than this are discarded.
         public var minDuration = 2.0
         /// How far a peak must stand above the local median floor.
@@ -93,9 +101,11 @@ public struct ToneTracker {
                 levelDB[k] = 20 * log10((re[k] * re[k] + im[k] * im[k]).squareRoot() + 1e-12)
             }
 
-            let peaks = ranges.flatMap { findPeaks(levelDB, bins: $0, binHz: binHz) }
+            let peaks = ranges.enumerated().flatMap { i, bins in
+                findPeaks(levelDB, bins: bins, binHz: binHz, thresholdDB: i == 0 ? c.thresholdDB : c.extraThresholdDB)
+            }
             let time = (Double(start) + Double(c.window) / 2) / Double(sampleRate)
-            let used = associate(peaks, with: &open, at: time)
+            let used = associate(peaks, with: &open, at: time, hopSeconds: Double(c.hop) / Double(sampleRate))
 
             // Close tracks that have gone quiet; start new ones from unclaimed peaks.
             closed += open.filter { $0.misses > c.maxMisses }.map(\.track)
@@ -109,12 +119,12 @@ public struct ToneTracker {
     }
 
     /// Local maxima standing above the local median floor, strongest first.
-    private func findPeaks(_ db: [Double], bins: Range<Int>, binHz: Double) -> [Peak] {
+    private func findPeaks(_ db: [Double], bins: Range<Int>, binHz: Double, thresholdDB: Double) -> [Peak] {
         let c = config
         var peaks: [Peak] = []
         for k in bins where db[k] > db[k - 1] && db[k] >= db[k + 1] {
             let floorDB = DSP.median(db[max(k - c.floorHalfWidth, 0)...(k + c.floorHalfWidth)])
-            guard db[k] - floorDB > c.thresholdDB else { continue }
+            guard db[k] - floorDB > thresholdDB else { continue }
             // Parabolic interpolation on the dB spectrum for sub-bin frequency.
             let a = db[k - 1], b = db[k], d = db[k + 1]
             let denominator = a - 2 * b + d
@@ -126,12 +136,14 @@ public struct ToneTracker {
     }
 
     /// Greedy nearest-frequency association. Returns the indices of peaks that were claimed.
-    private func associate(_ peaks: [Peak], with open: inout [OpenTrack], at time: Double) -> Set<Int> {
+    private func associate(_ peaks: [Peak], with open: inout [OpenTrack], at time: Double, hopSeconds: Double) -> Set<Int> {
         var used = Set<Int>()
         for idx in open.indices {
             let predicted = open[idx].track.frequencies[open[idx].track.frequencies.count - 1]
             var best: Int?
-            var bestDistance = max(config.minToleranceHz, config.relativeTolerance * predicted)
+            let share = predicted > config.frequencyRange.upperBound && !config.extraRanges.isEmpty
+                ? config.extraDriftPerSecond * hopSeconds : config.relativeTolerance
+            var bestDistance = max(config.minToleranceHz, share * predicted)
             for (j, p) in peaks.enumerated() where !used.contains(j) {
                 let distance = abs(p.frequency - predicted)
                 if distance < bestDistance { best = j; bestDistance = distance }

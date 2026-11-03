@@ -135,8 +135,8 @@ final class ClueInvariantTests: XCTestCase {
 
     // MARK: Above 1 kHz
 
-    /// The check looks up to 8 kHz: steady tones up there are found where they are, while voices,
-    /// a whistled tune and birdsong (pitch that moves too much, or too briefly) are not.
+    /// The check looks up to 8 kHz: steady tones up there are found where they are, while speech,
+    /// a whistled tune, birdsong and plain background noise are not.
     func testTheCheckFindsHighTonesButNotVoicesOrBirds() {
         for (name, hz) in [("tone-1200", 1_200.0), ("tone-4500", 4_500.0)] {
             let a = FlybyAnalyzer().analyze(Scenes.make(name, rate: 16_000))
@@ -148,7 +148,10 @@ final class ClueInvariantTests: XCTestCase {
                 XCTAssertNotEqual(m.kind, .hum, "\(name): a high steady tone isn't called hum")
             }
         }
-        for name in ["speech", "singing", "whistle", "birdsong"] {
+        // (Sung notes are left out on purpose: harmonics of different notes that coincide, such as
+        // 12 × 220 ≈ 9 × 294 ≈ 8 × 330 Hz, do make a tone a tracker can follow, as held notes do
+        // below 1 kHz. The snapshot records how many.)
+        for name in ["speech", "whistle", "birdsong", "footsteps"] {
             for rate in [16_000, 48_000] {
                 let high = FlybyAnalyzer().analyze(Scenes.make(name, rate: rate)).tracks.filter { $0.meanFrequency > 1_000 }
                 XCTAssertTrue(high.isEmpty, "\(name) at \(rate) Hz: \(high.map { "\($0.meanFrequency) Hz for \($0.duration) s" })")
