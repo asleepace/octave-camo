@@ -42,7 +42,7 @@ const { values: opts } = parseArgs({
   },
 });
 if (opts.gate) opts.chains = `none;${DEFAULT_CHAIN}`;
-type Row = { clip: string; chain: string; blind: string; matched: string; leak: boolean; lowDb: number; highDb: number; voice?: number };
+type Row = { clip: string; chain: string; blind: string; matched: string; leak: boolean; nullZ: number; lowDb: number; highDb: number; voice?: number };
 const rows: Row[] = [];
 
 const repo = join(import.meta.dir, "..", "..");
@@ -56,7 +56,11 @@ const decoys = [
   { ...straightTrack({ offsetNorthM: 3_000, heightM: 6_000, speed: 220, t0: 75 }), id: "decoy2", callsign: "DECOY2" },
 ];
 
-type Clip = { name: string; wav: string; voice?: string; durationS: number; plane: FlightTrack; truthD: number };
+type Clip = {
+  name: string; wav: string; voice?: string; durationS: number; plane: FlightTrack; truthD: number;
+  /** Renders the same scene without the source (for the attacker's noise floor). */
+  renderNull?: (out: string, seed: number) => Promise<void>;
+};
 
 /** Moving sources on straight tracks, rendered by reference/synth_source.py (ground level unless noted). */
 const SOURCES: Record<string, { f0: number; speed: number; northM: number; heightM: number; t0: number; duration: number; toneDb: number; harmonics: number }> = {
@@ -73,10 +77,12 @@ async function makeClip(name: string): Promise<Clip> {
   const source = SOURCES[name];
   if (source) {
     const d = Math.hypot(source.northM, source.heightM);
-    await run(["python3", ref("synth_source.py"), wav, "--f0", String(source.f0), "--speed", String(source.speed),
-               "--distance", String(d), "--t0", String(source.t0), "--duration", String(source.duration),
-               "--tone-db", String(source.toneDb), "--harmonics", String(source.harmonics)]);
-    return { name, wav, durationS: source.duration, truthD: d,
+    const render = (out: string, toneDb: number, seed: number) =>
+      run(["python3", ref("synth_source.py"), out, "--f0", String(source.f0), "--speed", String(source.speed),
+           "--distance", String(d), "--t0", String(source.t0), "--duration", String(source.duration),
+           "--tone-db", String(toneDb), "--harmonics", String(source.harmonics), "--seed", String(seed)]);
+    await render(wav, source.toneDb, 1);
+    return { name, wav, durationS: source.duration, truthD: d, renderNull: (out, seed) => render(out, -200, seed).then(() => {}),
              plane: { ...straightTrack({ offsetNorthM: source.northM, heightM: source.heightM, speed: source.speed, t0: source.t0 }),
                       id: "plane", callsign: "REAL" } };
   }
@@ -86,8 +92,10 @@ async function makeClip(name: string): Promise<Clip> {
              plane: { ...straightTrack({ offsetNorthM: 900, heightM: 1200, speed: 75, t0: 30 }), id: "plane", callsign: "REAL" } };
   }
   if (name !== "distant" && name !== "speech") throw new Error(`unknown clip ${name}`);
-  await run(["python3", ref("synth_background.py"), wav, "--tone-db", "-25", ...(name === "speech" ? ["--speech", "45"] : [])]);
+  const speech = name === "speech" ? ["--speech", "45"] : [];
+  await run(["python3", ref("synth_background.py"), wav, "--tone-db", "-25", ...speech]);
   return { name, wav, voice: name === "speech" ? wav.replace(".wav", ".speech.wav") : undefined, durationS: 90,
+           renderNull: (out, seed) => run(["python3", ref("synth_background.py"), out, "--tone-db", "-200", "--seed", String(seed), ...speech]).then(() => {}),
            truthD: 5831, plane: { ...straightTrack({ offsetNorthM: 5_000, heightM: 3_000, speed: 150, t0: 45 }), id: "plane", callsign: "REAL" } };
 }
 
@@ -108,7 +116,23 @@ for (const name of opts.clips!.split(",")) {
   const tracks = [clip.plane, ...decoys];
   const original = await readMono(clip.wav, SR);
   const voice = clip.voice ? await readMono(clip.voice, SR) : undefined;
-  console.log(`=== ${name} (${clip.durationS} s, true closest approach ${clip.truthD} m)`);
+  // The attacker's noise floor on this scene: its peak z for the real track on renders with no
+  // source at all (after the same AAC round trip). Slow sources have nearly flat curves that
+  // match any steady residue, so a fixed z threshold alone gives false "leaks" there.
+  let nullZ = 0;
+  if (clip.renderNull) {
+    for (const seed of [11, 12, 13]) {
+      const nw = join(dir, `${name}-null-${seed}.wav`);
+      await clip.renderNull(nw, seed);
+      const posted = await aacRoundTrip(await readMono(nw, SR), `${name}-null-${seed}`);
+      const { x: low, rate } = decimate(posted, SR, 4_000);
+      const cfg = { ...defaultMatchedConfig, sampleRate: rate };
+      const m = matchedAttack(whitenedSpectrogram(low, cfg), tracks, info, cfg);
+      nullZ = Math.max(nullZ, m.aircraft.find((a) => a.id === "plane")!.peakZ);
+    }
+  }
+  const leakZ = Math.max(defaultMatchedConfig.detectionZ, nullZ + 3);
+  console.log(`=== ${name} (${clip.durationS} s, true closest approach ${clip.truthD} m; attacker noise floor z ${nullZ.toFixed(1)}, leak above z ${leakZ.toFixed(1)})`);
   console.log(`  ${pad("chain", 38)} ${pad("blind attack", 16)} ${pad("matched attack (ADS-B)", 34)} low Δ   high Δ${voice ? "  voice<300Hz" : ""}`);
 
   for (const chain of parseChains(opts.chains!.replace(/(^|;)none(;|$)/, "$1hum(mains=0)$2"))) {
@@ -129,17 +153,19 @@ for (const name of opts.clips!.split(",")) {
     const cfg = { ...defaultMatchedConfig, sampleRate: rate };
     const m = matchedAttack(whitenedSpectrogram(low, cfg), tracks, info, cfg);
     const real = m.aircraft.find((a) => a.id === "plane")!;
-    const located = real.detected && (m.ambiguityAwareErrorM ?? Infinity) <= 1_000;
+    const located = real.detected && real.peakZ > leakZ && (m.ambiguityAwareErrorM ?? Infinity) <= 1_000;
     const matchedText = located
       ? `LEAK ${m.ambiguityAwareErrorM!.toFixed(0)} m (z ${real.peakZ.toFixed(0)})`
       : m.errorM !== undefined
         ? `wrong place ${(m.errorM / 1000).toFixed(1)} km off`
-        : `no detection (truth top ${(100 - real.truthPercentile).toFixed(0)}%)`;
+        : real.detected && (m.ambiguityAwareErrorM ?? Infinity) <= 1_000
+          ? `at noise floor (z ${real.peakZ.toFixed(0)})`
+          : `no detection (truth top ${(100 - real.truthPercentile).toFixed(0)}%)`;
 
     const low300 = loudnessChange(original, processed, SR, 30, 300);
     const high = loudnessChange(original, processed, SR, 300, 4000);
     const v = voice ? voiceRetention(voice, processed, SR) : NaN;
-    rows.push({ clip: name, chain: label, blind: blindText, matched: matchedText, leak: located || blindText.startsWith("LEAK"),
+    rows.push({ clip: name, chain: label, blind: blindText, matched: matchedText, leak: located || blindText.startsWith("LEAK"), nullZ,
       lowDb: low300, highDb: high, voice: voice ? v : undefined });
     console.log(`  ${pad(label, 38)} ${pad(blindText, 16)} ${pad(matchedText, 34)} ${low300.toFixed(1).padStart(4)} dB ${high.toFixed(1).padStart(4)} dB` +
       `${voice ? `  ${(v * 100).toFixed(0).padStart(5)}%` : ""}  [${((performance.now() - t) / 1000).toFixed(0)}s]`);

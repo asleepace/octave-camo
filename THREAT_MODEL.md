@@ -5,8 +5,9 @@ What octave-camo defends against, what it doesn't, and the evidence for each cla
 ## Setting
 
 You post a video. Metadata is already stripped (most sites do this; octave-camo's remux also
-drops it). Nothing in the picture gives the place away. The attacker wants **where** (and, as a
-stepping stone, **when**) it was recorded, using only the published audio.
+drops it). Nothing the picture shows gives the place away. The attacker wants **where** (and, as a
+stepping stone, **when**) it was recorded, using only the published sound and the picture's
+incidental signals (light flicker).
 
 The attacker can:
 
@@ -43,7 +44,8 @@ Lowering a tone's level is not enough while its curve survives.
 | Train wheel and motor tones | Same, along a fixed track (often close to people) | GTFS-RT positions | `subtract`, `scurve`, `lowband` | Covered, benched (synthetic) |
 | Ship engines and foghorns | Same, slow and long | AIS | `lowband` | Covered, benched (synthetic) |
 | Buses, drones | Same | GTFS-RT, Remote ID | Same family | Expected covered, not benched |
-| Mains hum (ENF) in audio | Recording time to the second, grid region | ENF archives | `hum` notches | Covered |
+| Mains hum (ENF) in audio | Recording time to the second, grid region | ENF archives | `hum`: both 50 and 60 Hz families notched, notches refilled | Covered |
+| A defense's own fingerprint (notch pattern, imprinted lines) | Grid region | – | Both families notched and refilled at a static level; low-band noise shape smoothed over 1 ERB | Covered, tested (below) |
 | Multi-mic phase | Direction of arrival | – | `mono` | Covered |
 | Extra audio tracks (iPhone spatial audio, APAC, 4 channels) | Direction of arrival | – | Only the main track is read; the rest are dropped | Covered |
 | Loudness envelope of a pass | Closest-approach time and d/v | Any of the tracks above | `lowband` smoothing and jitter (partial) | **Open:** no envelope attacker yet |
@@ -84,6 +86,27 @@ What this taught us:
   recordings.
 - More aircraft chains are in [harness/README.md](harness/README.md).
 
+## The cloak's own fingerprint
+
+A defense can add clues of its own. The first version notched only the 60 Hz family: on a real
+iPhone clip the output had clean 7 dB dips at 120, 240 and 300 Hz where the original had none,
+which says "processed assuming 60 Hz mains", that is, the Americas.
+
+Now `hum` notches both families and refills each notch with noise at the neighbouring bands'
+long-term level, and `lowband` smooths the spectral shape of its noise over one ERB, so nothing
+narrow (a notch hole, a steady motor tone) is copied into it. Two details mattered:
+
+- **Without the refill**, notching the extra family carved the slow ship's tone each time it
+  drifted through a notch, and the dips' timing let the matched attacker place it.
+- **A refill that followed its neighbours' level over time** re-imprinted the same timing; the
+  benchmark gate caught it. The refill level is static.
+
+Tests (harness and Swift) check that after the cloak, harmonics of only one family (100, 150, 200,
+250, 350 vs 120, 180, 240, 360 Hz) differ by less than 1.5 dB on average, that a wandering mains
+line is removed without leaving a hole, and that a steady 87 Hz tone doesn't come back as a narrow
+line in the regenerated noise. Measured on noise: plain notches leave −38 to −50 dB dips; refilled,
+every harmonic is within the noise's own ±3 dB.
+
 ## Light flicker in the picture
 
 Lights on mains power flicker at twice the grid frequency, and a rolling shutter turns that into
@@ -115,7 +138,8 @@ In order of how much we think they matter:
    are being collected.
 2. **Loudness envelope attack.** A pass swells and fades over tens of seconds, and `lowband`'s
    0.75 s smoothing with ±1.5 dB jitter is probably not enough against a whole-envelope match.
-   The next step is to add an envelope term to the matched attacker, then measure.
+   The matched attacker here doesn't use envelopes, so this is untested. Next step: add an
+   envelope term, then measure.
 3. **Scheduled sounds** are clocks. Removing them is a sound-event problem, not a DSP one, so a
    classifier is the likely route (detect and duck).
 4. **Video-side ENF: quasi-static bands.** At 30 fps under 60 Hz lights, the 120 Hz bands barely

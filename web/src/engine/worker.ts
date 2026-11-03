@@ -71,3 +71,8 @@ self.onmessage = async (event: MessageEvent<unknown>) => {
     post({ type: "error", scope: picture ? "picture" : "audio", message: error instanceof Error ? error.message : String(error) });
   }
 };
+
+// Load the scrubber as soon as the page starts, so after the first load the page works offline
+// (a quick way to check that nothing needs the network). Errors surface on the first request.
+engine = loadEngine().catch((error) => { engine = undefined; throw error; });
+engine.catch(() => {});

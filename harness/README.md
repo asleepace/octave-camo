@@ -8,7 +8,7 @@ recovered the closest approach from the audio alone, and whether `scrub` stops i
 cd harness
 bun install
 cp .env.example .env              # add OpenSky and/or Flightradar24 credentials
-bun test                          # 88 tests, ~30 s: DSP, modules, attackers, CLI, API edge cases
+bun test                          # ~30 s: DSP, modules, attackers, fingerprints, CLI, API edge cases
 bun run test:e2e                  # + offline end-to-end verify run (~2 min with the NumPy analyzer)
 bun run verify clip.mov --callsign UAL1234 --scrub
 ```
@@ -88,11 +88,12 @@ bun run scrub clip.mov out.mp4                          # default: hum+subtract+
 bun run scrub clip.mov out.wav --chain "hum+scurve+lowband"
 bun run scrub clip.mov out.mp4 --chain "informed+lowband" --track tracks.json   # online
 bun run bench:defenses                                  # compare chains on synthetic clips
+bun run bench:gate                                      # CI gate: default chain vs. both attackers, 6 clips
 ```
 
 | Module | Tier | Idea |
 |---|---|---|
-| `hum` | basic | Notch the mains harmonics. Removes the grid-frequency (ENF) clock. |
+| `hum` | basic | Notch the 50 and 60 Hz harmonic families and refill each notch with noise at its neighbours' long-term level. Removes the grid-frequency (ENF) clock without leaving a notch pattern that names the grid. `mains=60` / `refill=false` for experiments. |
 | `subtract` | basic | Track tones frame by frame and cancel them. Catches loud, close passes whose harmonics reach above `lowband`'s cutoff. |
 | `lowband` | basic | Below `cutoff` (default 300 Hz), regenerate the band as noise matching each critical band's loudness, slowly smoothed and re-gained. Tracked voice harmonics are kept. `mode=highpass` just removes the band. |
 | `scurve` | offline | Search the whole family of straight-flyby pitch curves (engine tone, speed, time scale, closest-approach time) with no flight data. Cancel the best candidates, erring toward over-cancelling. |
@@ -106,33 +107,26 @@ bun run bench:defenses                                  # compare chains on synt
 away the fine structure the attacker integrates. Steady machine-like tones aren't mistaken for
 voice: voiced runs that hold the same pitch for more than 1.5 s are treated as engines.
 
-### Results (synthetic clips, after a 128 kbps AAC re-encode)
+### Results
 
-The attackers are the blind tracker (6 dB) and the matched attacker with ADS-B (the real track
-plus 2 decoy tracks). A "leak" means the true location was recovered.
+`bun run bench:gate` renders six synthetic clips (distant jet, jet over speech, close pass, close
+and distant train, ship), applies `none` and the default chain, re-encodes as 128 kbps AAC, and
+runs both attackers. Before judging a clip it calibrates the matched attacker: three renders of
+the same scene with no source give its noise floor, and only a detection clearly above that floor
+(and within 1 km of the truth) counts as a leak. CI fails if the default chain leaks anywhere, or if
+an uncloaked clip stops leaking. Current numbers and what they taught us are in
+[THREAT_MODEL.md](../THREAT_MODEL.md); `bun run bench:defenses` compares any chains you like.
 
-| Chain | Distant jet (5.8 km, −25 dB) | Same + speech | Close pass (1.5 km) | Low-band loudness change | Above 300 Hz |
-|---|---|---|---|---|---|
-| none | **leak** (0 m) | **leak** (0 m) | **leak** (both attackers) | 0 | 0 |
-| `legacy` (old scrub) | **leak** | **leak** | safe | 2.5–12 dB | 0.5–1.5 dB |
-| `hum+lowband` | safe | safe | **leak** (harmonics above the cutoff) | 3–3.5 dB | 0.2 dB |
-| `hum+scurve` | **leak** | safe | **leak** | 1–7 dB | 0.2–0.6 dB |
-| `hum+subtract+lowband` | safe | safe | safe | 3–10 dB* | 0.2–1.2 dB |
-| `hum+subtract+scurve+lowband` (default) | safe | safe | safe | 3–10 dB* | 0.2–1.2 dB |
-| `informed+…` (online) | safe | safe | partial | | |
-
-\* 10 dB on the close clip is mostly the plane itself being removed.
+Notes from the experiments:
 
 - **`scurve`** finds faint curves without flight data, but its 2 s windows are too coarse to
-  cancel fast, close sweeps. Use it as an add-on for faint tones above `lowband`'s cutoff:
-  that's why it joined the default chain once train wheels showed up as the hardest case (see
-  [THREAT_MODEL.md](../THREAT_MODEL.md)).
+  cancel fast, close sweeps; it's in the default chain for faint tones above `lowband`'s cutoff
+  (train wheels).
 - **Random `decoy`s** made the matched attacker report a wrong place (7–12 km off) on the distant
   clips. Treat that as promising but unproven: a real attacker sees hundreds of flights and can
   notice inconsistent solutions.
-- **Voice detail below 300 Hz**, measured as correlation with the clean voice: 96 % untouched,
-  53 % with `keepVoice` (the default), 38 % without. Above 300 Hz, where intelligibility lives,
-  nothing changes.
+- **Voice detail below 300 Hz**, measured as correlation with the clean voice, is about two-thirds
+  kept with `keepVoice` (the default). Above 300 Hz, where intelligibility lives, nothing changes.
 
 ### Adding a module
 
@@ -148,9 +142,9 @@ plus 2 decoy tracks). A "leak" means the true location was recovered.
 - **Flightradar24's `bounds` order** isn't documented anywhere I could confirm. The default is
   north,south,west,east. If an area search for a busy time comes back empty or 400s, set
   `FR24_BOUNDS_ORDER=swne`.
-- **Analyzer.** The harness calls `../.build/release/octave-camo`. Until the Swift build is
-  verified, set `OCTAVE_CAMO_CMD="python3 ../reference/analyze_json.py"` to use the NumPy
-  reference, which speaks the same CLI and JSON.
+- **Analyzer.** The blind attacker is `../.build/release/octave-camo analyze` when that binary
+  exists, else the NumPy reference (`reference/analyze_json.py`, same CLI and JSON). Override with
+  `OCTAVE_CAMO_CMD`.
 
 ## Layout
 
@@ -170,6 +164,7 @@ src/defense/            modular defenses: hum, lowband (+ pitch.ts), scurve (+ f
                         informed, legacy; index.ts = registry, chains; signal.ts = STFT/ERB helpers
 src/quality.ts          what a defense costs: ERB-band loudness change, voice retention
 src/scrub-cli.ts        apply a chain to a clip
-bench/defenses.ts       chains × synthetic clips × both attackers, after an AAC re-encode
+bench/defenses.ts       chains × synthetic clips × both attackers, after an AAC re-encode;
+                        --gate calibrates the attacker per clip and fails on a leak
 test/                   unit tests, fixtures, offline end-to-end test
 ```
