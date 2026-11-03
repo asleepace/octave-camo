@@ -24,7 +24,7 @@ overall sound.
 | Side channel | What it gives away | What octave-camo does |
 | --- | --- | --- |
 | Doppler curves of planes, trains, ships | Your position, matched against public tracks (ADS-B, transit feeds, AIS) | Cancels long tones, searches blind for flyby-shaped curves and cancels them, regenerates the low band as information-free noise |
-| Mains hum | Recording time and grid region (ENF) | Notches both 50 and 60 Hz harmonic families up to 1 kHz, right to the clip's edges, and refills the notches, so neither the hum nor the notch pattern survives |
+| Mains hum | Recording time and grid region (ENF) | Notches both 50 and 60 Hz harmonic families, right to the clip's edges, and refills the notches, so neither the hum nor the notch pattern survives |
 | Light flicker in the picture | The same grid timestamp, as rolling-shutter bands | Scans every frame; if found, divides the bands out (optional: re-encodes the picture) |
 | Multiple mics, spatial-audio tracks | Direction of sounds | Mono output; extra audio tracks dropped |
 | Metadata | GPS, device, timestamps, directly | No container metadata is copied: no tags, no creation time, timestamps rebased to zero, a random file name. Data embedded in H.264/HEVC packets (SEI: encoder settings, camcorder date and GPS) is removed too |
@@ -99,9 +99,8 @@ The default chain is `mono → hum → subtract → scurve → lowband`, the sam
 web app and the research harness:
 
 1. **mono** averages the channels, which removes direction of arrival.
-2. **hum** notches the 50 and 60 Hz harmonic families up to 1 kHz (zero-phase; Q = 30 below
-   400 Hz, 3 Hz wide above, so the voice band survives) and refills each notch with noise at its
-   neighbours' long-term level. Near the clip's edges, where a filter pass would start cold and
+2. **hum** notches the 50 and 60 Hz harmonic families below 400 Hz (zero-phase, Q = 30) and
+   refills each notch with noise at its neighbours' long-term level. Near the clip's edges, where a filter pass would start cold and
    let the hum through, both passes run in from the inside. That removes the grid clock without
    leaving a notch pattern that says which grid the recording came from.
 3. **subtract** follows each long tone, cancels a matched copy, re-tracks the residual, repeats.

@@ -28,7 +28,7 @@ final class InvariantTests: XCTestCase {
                 let t = Double(i) / Double(rate)
                 for base in mains {
                     var h = base
-                    while h < min(1_000, 0.45 * Double(rate)) {
+                    while h < min(400, 0.45 * Double(rate)) {
                         x[i] += 0.02 * sin(2 * .pi * (h * t + 0.01 * sin(2 * .pi * t / 3)) + Double(c))
                         h += base
                     }
@@ -203,7 +203,7 @@ final class InvariantTests: XCTestCase {
                 let result = seeded([.mono, .hum]).run(audio)
                 let y = result.audio.channels[0]
                 var h = base
-                while h < min(1_000, 0.45 * Double(rate)) {
+                while h < min(400, 0.45 * Double(rate)) {
                     let before = lineToNeighboursDB(audio.channels[0], h, rate: rate)
                     let after = lineToNeighboursDB(y, h, rate: rate)
                     XCTAssertGreaterThan(before, 15, "test scene lacks a \(h) Hz line at \(rate) Hz")

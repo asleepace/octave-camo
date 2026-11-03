@@ -52,7 +52,7 @@ describe("hum", () => {
     expect(amplitudeAt(y, sr, 60)).toBeGreaterThan(0.09);
   });
   test("is zero-phase: a kept tone isn't delayed", async () => {
-    // Above the notched range (harmonics up to 1 kHz), so nothing near it is notched or refilled.
+    // Well above the notched range (harmonics up to 400 Hz), so nothing near it is notched or refilled.
     const long = sr * 10, x = new Float32Array(long); addTone(x, sr, () => 1500, 0.1);
     const y = await runChain(parseChain("hum"), x, ctx(sr));
     const worst = (from: number, to: number) => { let e = 0; for (let i = from; i < to; i++) e = Math.max(e, Math.abs(y[i]! - x[i]!)); return e; };

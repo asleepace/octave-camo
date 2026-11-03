@@ -70,26 +70,21 @@ export const hum = defineDefense({
       }
       return values.filter((n) => n > 0);
     }),
-    /** Harmonics are notched below this (ENF can be read from any harmonic the mic picks up). */
-    maxHz: z.coerce.number().default(1000),
+    /** Harmonics are notched below this (see Swift's HumNotch.maxFrequency for why not higher). */
+    maxHz: z.coerce.number().default(400),
     q: z.coerce.number().positive().default(30),
-    /** From here up, notches are `narrowHz` wide instead of f/q (at Q 30 they'd merge and remove
-     *  most of the voice band between 400 Hz and 1 kHz). */
-    wideBelow: z.coerce.number().default(400),
-    narrowHz: z.coerce.number().positive().default(3),
     /** Refill each notch with noise at the neighbouring bands' level, so no dips are left behind. */
     refill: z.stringbool().default(true),
   }),
   create: (o) => ({
     process(x, ctx) {
       const sr = ctx.sampleRate, freqs: number[] = [], top = Math.min(o.maxHz, 0.45 * sr);
-      const qAt = (f: number) => (f < o.wideBelow ? o.q : Math.max(o.q, f / o.narrowHz));
       for (const base of o.mains.filter((m) => m >= 10)) {
         for (let f = base; f < top; f += base) if (!freqs.some((g) => Math.abs(g - f) < 0.5)) freqs.push(f);
       }
       freqs.sort((a, b) => a - b);
       let y = x;
-      for (const f of freqs) y = notch(y, f, qAt(f), sr);
+      for (const f of freqs) y = notch(y, f, o.q, sr);
       if (o.refill && freqs.length) {
         // For each notch: a narrow band of noise (white noise minus its own notch) at the long-term
         // median level of the notched signal's neighbouring bands, two bandwidths either side.
@@ -99,8 +94,8 @@ export const hum = defineDefense({
         const white = Float32Array.from({ length: x.length }, () => rng.gaussian());
         const out = Float32Array.from(y);
         for (const f of freqs) {
-          const q = qAt(f), bw = f / q;
-          const sides = [f - 2 * bw, f + 2 * bw].filter((g) => g > 0 && g < 0.45 * sr && !freqs.some((h) => Math.abs(h - g) < 1.5 * h / qAt(h)));
+          const q = o.q, bw = f / q;
+          const sides = [f - 2 * bw, f + 2 * bw].filter((g) => g > 0 && g < 0.45 * sr && !freqs.some((h) => Math.abs(h - g) < 1.5 * h / q));
           if (!sides.length) continue;
           let level = 0;
           for (const g of sides) {

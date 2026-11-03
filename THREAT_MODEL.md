@@ -44,7 +44,7 @@ Lowering a tone's level is not enough while its curve survives.
 | Train wheel and motor tones | Same, along a fixed track (often close to people) | GTFS-RT positions | `subtract`, `scurve`, `lowband` | Covered, benched (synthetic) |
 | Ship engines and foghorns | Same, slow and long | AIS | `lowband` | Covered, benched (synthetic) |
 | Buses, drones | Same | GTFS-RT, Remote ID | Same family | Expected covered, not benched |
-| Mains hum (ENF) in audio | Recording time to the second, grid region | ENF archives | `hum`: both 50 and 60 Hz families notched up to 1 kHz (to the clip's edges), notches refilled; `lowband` below 300 Hz | Covered |
+| Mains hum (ENF) in audio | Recording time to the second, grid region | ENF archives | `hum`: both 50 and 60 Hz families notched below 400 Hz (to the clip's edges), notches refilled; `lowband` below 300 Hz; `subtract` for lines it can follow above | Covered |
 | A defense's own fingerprint (notch pattern, imprinted lines) | Grid region | – | Both families notched and refilled at a static level; low-band noise shape smoothed over 1 ERB | Covered, tested (below) |
 | Multi-mic phase | Direction of arrival | – | `mono` | Covered |
 | Extra audio tracks (iPhone spatial audio, APAC, 4 channels) | Direction of arrival | – | Only the main track is read; the rest are dropped | Covered |
@@ -171,9 +171,13 @@ In order of how much we think they matter:
    removed (below).
 5. **Unknown-time attacker.** We assume the attacker knows the recording time. Searching over the
    time offset would show how much the delay before posting buys.
-6. **Hum above 1 kHz** is only removed when the tone tracker sees it (10 dB over the noise).
-   Higher harmonics are usually far weaker, but an attacker integrating for minutes can use faint
-   ones.
+6. **Hum above 400 Hz** is only removed when `subtract`'s tone tracker sees it (10 dB over the
+   noise), and a notch removes a steady line outright but a wandering one only partly (about
+   25–30 dB at the fundamental with typical grid wander). Higher harmonics are usually far weaker,
+   but an attacker integrating for minutes can use faint ones. Narrow notches up to 1 kHz were
+   tried and dropped: they barely touch a wandering line there (the wander grows with the
+   harmonic number), and they carved gaps into train tones that broke `subtract`'s tracking, so
+   the benchmark gate's close train leaked.
 7. **High-frame-rate video** (slow motion) can't be checked for flicker, and AV1 metadata units
    are copied with the picture.
 

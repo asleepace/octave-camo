@@ -43,16 +43,12 @@ final class FingerprintTests: XCTestCase {
     }
 
     func testDefaultNotchesCoverBothGridsOnce() {
-        var below400 = HumNotch()
-        below400.maxFrequency = 400
-        XCTAssertEqual(below400.harmonics(sampleRate: 48_000), [50, 60, 100, 120, 150, 180, 200, 240, 250, 300, 350, 360])
+        XCTAssertEqual(HumNotch().harmonics(sampleRate: 48_000), [50, 60, 100, 120, 150, 180, 200, 240, 250, 300, 350, 360])
         var sixty = HumNotch()
         sixty.mains = [60]
-        XCTAssertEqual(sixty.harmonics(sampleRate: 48_000), Array(stride(from: 60.0, to: 1_000, by: 60)))
-        // Both families up to 1 kHz, shared harmonics (300, 600, 900) once.
-        XCTAssertEqual(HumNotch().harmonics(sampleRate: 48_000).count, 19 + 16 - 3)
+        XCTAssertEqual(sixty.harmonics(sampleRate: 48_000), [60, 120, 180, 240, 300, 360])
         // Never at or above Nyquist, and nothing for nonsense grids.
-        XCTAssertLessThan(HumNotch().harmonics(sampleRate: 1_000).max() ?? 0, 450)
+        XCTAssertLessThan(HumNotch().harmonics(sampleRate: 600).max() ?? 0, 270)
         var silly = HumNotch()
         silly.mains = [0.01, -50, .nan]
         XCTAssertEqual(silly.harmonics(sampleRate: 48_000), [])

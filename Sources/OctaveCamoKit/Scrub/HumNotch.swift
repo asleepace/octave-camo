@@ -23,18 +23,14 @@ public struct HumNotch: ScrubStage {
     /// Mains frequencies whose harmonics are notched (60 Hz in the Americas, 50 Hz in most of the
     /// rest of the world). Empty disables the stage.
     public var mains: [Double] = [50, 60]
-    /// Harmonics are notched below this frequency. ENF can be read from any harmonic a microphone
-    /// picks up; `lowband` regenerates everything below 300 Hz as well, but above that only these
-    /// notches remove it.
-    public var maxFrequency = 1_000.0
-    /// Q of the notches below `wideBelow` (1.7 Hz wide at 50 Hz, 12 Hz at 360 Hz).
+    /// Harmonics are notched below this frequency (`lowband` also regenerates everything below
+    /// 300 Hz; above 400 Hz, `subtract` cancels mains lines it can follow). Notching higher was
+    /// tried: narrow notches between 400 Hz and 1 kHz barely touch a wandering grid line there
+    /// (its wander grows with the harmonic number), and they carved gaps into train tones that
+    /// broke `subtract`'s tracking, so the benchmark gate's close train leaked.
+    public var maxFrequency = 400.0
+    /// Notch Q (1.7 Hz wide at 50 Hz, 12 Hz at 360 Hz).
     public var q = 30.0
-    /// Above this, notches have a fixed width (`narrowWidthHz`) instead: at Q 30 they would merge
-    /// and remove most of the voice band between 400 Hz and 1 kHz.
-    public var wideBelow = 400.0
-    /// Width of the notches from `wideBelow` up. Wide enough for the grid's wander, which grows
-    /// with the harmonic number (±0.05 Hz at the fundamental is ±0.8 Hz at 960 Hz).
-    public var narrowWidthHz = 3.0
     /// Refill each notch with noise at the neighbouring bands' level (no dips left behind).
     public var refill = true
     public var seed: UInt64 = .random(in: 1...UInt64.max)
@@ -58,10 +54,7 @@ public struct HumNotch: ScrubStage {
         return out.sorted()
     }
 
-    /// Q of the notch at `f`.
-    func q(at f: Double) -> Double { f < wideBelow ? q : max(q, f / narrowWidthHz) }
-
-    func notch(_ f: Double, _ sampleRate: Int) -> Biquad { Biquad.notch(frequency: f, q: q(at: f), sampleRate: sampleRate) }
+    func notch(_ f: Double, _ sampleRate: Int) -> Biquad { Biquad.notch(frequency: f, q: q, sampleRate: sampleRate) }
 
     public func process(_ x: [Double], sampleRate: Int) -> (output: [Double], summary: String) {
         let freqs = harmonics(sampleRate: sampleRate)
@@ -82,15 +75,15 @@ public struct HumNotch: ScrubStage {
         var out = y
         let nyquistGuard = 0.45 * Double(sampleRate)
         for f in freqs {
-            let bandwidth = f / q(at: f)
+            let bandwidth = f / q
             var sides: [Double] = []
             for g in [f - 2 * bandwidth, f + 2 * bandwidth] where g > 0 && g < nyquistGuard {
-                if !freqs.contains(where: { abs($0 - g) < 1.5 * $0 / q(at: $0) }) { sides.append(g) }
+                if !freqs.contains(where: { abs($0 - g) < 1.5 * $0 / q }) { sides.append(g) }
             }
             if sides.isEmpty { continue }
             var level = 0.0
             for g in sides {
-                let notched = Biquad.notch(frequency: g, q: q(at: f), sampleRate: sampleRate).applyZeroPhase(y)
+                let notched = Biquad.notch(frequency: g, q: q, sampleRate: sampleRate).applyZeroPhase(y)
                 var band = [Double](repeating: 0, count: n)
                 for i in 0..<n { band[i] = y[i] - notched[i] }
                 let e = Self.envelope(band, length: length)

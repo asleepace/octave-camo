@@ -21,8 +21,6 @@ edge-case suite. Several of the fixes below were found by the new tests themselv
 - **Mains hum survived at the clip's edges.** Zero-phase notches start cold, so the first and
   last fraction of a second kept the local grid's hum (which says which grid). Near each edge both
   filter passes now run in from inside the clip, already settled. Found by the invariant tests.
-- **Hum harmonics up to 1 kHz** are notched and refilled (was 400 Hz); above 400 Hz the notches
-  are 3 Hz wide so the voice band survives. Same change in the harness.
 - **A passing engine could be kept as "voice"** by `lowband` (and so survive the Light preset):
   the voice tracker only rejected unbroken runs of steady pitch, but a Doppler glide moves, and in
   noise a machine's voicing flickers, which chopped even a steady tone into speech-length pieces
@@ -92,6 +90,9 @@ edge-case suite. Several of the fixes below were found by the new tests themselv
 
 ### Known, not yet fixed
 
+- Mains harmonics above 400 Hz are removed only when `subtract` can follow them. Notching up to
+  1 kHz was tried in this round and dropped: the benchmark gate caught the close train leaking
+  (the notches carved its tones and broke `subtract`'s tracking). See the threat model.
 - Videos with no audio track are refused rather than having their metadata stripped.
 - A cloaked MP3 keeps the encoder's start and end padding (the browser's decoder doesn't trim it):
   a fraction of a second longer, audio-only files only.
