@@ -22,7 +22,9 @@ information and removes it without noticeably changing what a listener hears.
 **In the browser:** [asleepace.github.io/octave-camo](https://asleepace.github.io/octave-camo/).
 Drop a video, press CLOAK, save. Everything runs on your device: the Swift scrubber is
 compiled to WebAssembly, and nothing is uploaded. The saved file keeps the original video
-stream untouched and gets a new AAC audio track, with no metadata.
+stream untouched and gets a new AAC audio track, with no metadata. The picture is also
+scanned for light flicker (the grid clock in rolling-shutter bands); if it's found, you can
+remove it, which re-encodes the picture.
 
 ## Quick start (development)
 
@@ -66,7 +68,8 @@ Sources/
   OctaveCamoKit/      pure-Swift DSP, no Foundation: builds for iOS, macOS, Linux, WebAssembly
     DSP/              FFT + RealFFT, Biquad, SeededRNG, low-band STFT, ERB scale
     Model/            FlybyGeometry: the flyby physics, shared by synth, fitter and scurve
-    Analysis/         ToneTracker, FlybyAnalyzer (the blind attacker), PitchTracker (YIN)
+    Analysis/         ToneTracker, FlybyAnalyzer (the blind attacker), PitchTracker (YIN),
+                      FlickerScan (light flicker in video: scan and removal gains)
     Scrub/            ScrubPipeline: HumNotch, ToneSubtraction, SCurveCancel,
                       LowBandRegeneration, BandWobble
     Synth/            FlybySynth: known-truth test clips

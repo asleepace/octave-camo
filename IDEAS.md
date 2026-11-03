@@ -16,10 +16,12 @@ Things that came up while building and testing. Each is roughly ordered by value
 - **Scheduled sounds act as clocks and beacons.** Church bells, the Golden Gate foghorns, school
   bells and train horns at crossings are all timetabled events. Hearing one pins down the time,
   and its loudness and echo give rough distance.
-- **Video carries the mains frequency (ENF) too.** LED and fluorescent lights flicker at twice
-  the grid frequency, and rolling-shutter cameras record that flicker as faint bands. That's a
-  timestamp in the *picture*, even after `hum` removes it from the audio. A video-side
-  de-flicker would close it.
+- **Video ENF, quasi-static case.** De-flicker handles rolling bands, but at 30 fps under 60 Hz
+  lights the bands barely move and only their slow wander carries the clock. A matched attacker
+  with the ENF reference could still get processing gain there. Ideas: a phase-coherent model
+  across strips and time, or masking the wander with a synthetic band of random slow drift.
+- **De-flicker without leaving HDR.** The browser can only re-render to 8-bit SDR. An iOS app
+  could apply the same per-row gains in the 10-bit HLG domain with AVFoundation and keep HDR.
 - **The loudness envelope is an attack surface we haven't tested.** A distant plane's rumble swells
   and fades over tens of seconds. The peak time and width give its closest-approach time and d/v.
   `lowband` smooths over 0.75 s and adds ±1.5 dB of slow random gain. That's probably not enough

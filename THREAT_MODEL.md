@@ -45,10 +45,11 @@ Lowering a tone's level is not enough while its curve survives.
 | Buses, drones | Same | GTFS-RT, Remote ID | Same family | Expected covered, not benched |
 | Mains hum (ENF) in audio | Recording time to the second, grid region | ENF archives | `hum` notches | Covered |
 | Multi-mic phase | Direction of arrival | – | `mono` | Covered |
+| Extra audio tracks (iPhone spatial audio, APAC, 4 channels) | Direction of arrival | – | Only the main track is read; the rest are dropped | Covered |
 | Loudness envelope of a pass | Closest-approach time and d/v | Any of the tracks above | `lowband` smoothing and jitter (partial) | **Open:** no envelope attacker yet |
 | Scheduled sounds (bells, horns, foghorns) | Time, plus rough distance from level and echo | Timetables | None | **Open** |
 | Room and outdoor acoustics | Place type, not position | – | None | Out of scope |
-| ENF as light flicker in video | Recording time | ENF archives | None (video side) | **Open** |
+| ENF as light flicker in video | Recording time, grid region | ENF archives | Optional de-flicker (re-encodes the picture) | Partly covered, see below |
 | Picture, speech content, account history | Anything | – | None | Out of scope |
 
 ## Evidence
@@ -83,6 +84,29 @@ What this taught us:
   recordings.
 - More aircraft chains are in [harness/README.md](harness/README.md).
 
+## Light flicker in the picture
+
+Lights on mains power flicker at twice the grid frequency, and a rolling shutter turns that into
+faint horizontal bands whose drift is the grid timestamp. The web app scans every frame's row
+profile (median over column strips, static part removed, each temporal frequency whitened across
+spatial frequency) for a line at 100 or 120 Hz, the way an attacker would. If it finds one, the
+user can divide the estimated band out of each row on the GPU. That re-encodes the picture in
+standard dynamic range, so it's opt-in.
+
+Synthetic clips (20 s, testsrc2 scene, readout 50–70 % of the frame period), scan z (detection
+above 60):
+
+| Clip | Before | After removal |
+| --- | --- | --- |
+| 100 Hz bands, 3 % (rolling at 30 fps) | 426 | 32 |
+| 120 Hz bands, 3 % (quasi-static) | 273 | 32 |
+| 120 Hz bands, 1 % | 65 | 16 |
+| No flicker | 36 (nothing removed) | – |
+| Real iPhone clip, outdoors (IMG_9829) | 29 (nothing removed) | – |
+
+Through the browser (decode, per-row gains in WebGL, re-encode), the saved file scanned at z 34
+against 398 for the input.
+
 ## Known gaps
 
 In order of how much we think they matter:
@@ -94,7 +118,11 @@ In order of how much we think they matter:
    The next step is to add an envelope term to the matched attacker, then measure.
 3. **Scheduled sounds** are clocks. Removing them is a sound-event problem, not a DSP one, so a
    classifier is the likely route (detect and duck).
-4. **Video-side ENF** (rolling-shutter flicker bands) survives audio scrubbing.
+4. **Video-side ENF: quasi-static bands.** At 30 fps under 60 Hz lights, the 120 Hz bands barely
+   move, and only their slow phase wander carries the clock. With real-grid wander (±0.05 Hz) that
+   moving part is too faint to tell apart from a clean scene, so the scan doesn't flag it and
+   nothing is removed. Rolling bands (50 Hz grids at 30 fps) and strong wander are found and
+   removed (below).
 5. **Unknown-time attacker.** We assume the attacker knows the recording time. Searching over the
    time offset would show how much the delay before posting buys.
 

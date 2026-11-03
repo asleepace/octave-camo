@@ -21,7 +21,20 @@ export const ScrubRequest = z.object({
 });
 export type ScrubRequest = z.infer<typeof ScrubRequest>;
 
-export const Request = z.discriminatedUnion("type", [AnalyzeRequest, ScrubRequest]);
+export const FlickerRequest = z.object({
+  type: z.literal("flicker"),
+  frames: z.number().int().min(1),
+  strips: z.number().int().min(1).max(64),
+  rows: z.number().int().min(8).max(1024),
+  values: samples,
+  times: samples,
+  clean: z.boolean(),
+  /** Echoed back so the page can tell the clip scan from the saved-file check. */
+  purpose: z.enum(["clip", "verify"]),
+});
+export type FlickerRequest = z.infer<typeof FlickerRequest>;
+
+export const Request = z.discriminatedUnion("type", [AnalyzeRequest, ScrubRequest, FlickerRequest]);
 export type Request = z.infer<typeof Request>;
 
 const Trace = z.object({ tones: z.number(), doppler: z.number(), hum: z.number(), flybys: z.number() });
@@ -40,6 +53,17 @@ export const WorkerMessage = z.discriminatedUnion("type", [
     ms: z.number(),
     engine: z.enum(["wasm", "stand-in"]),
   }),
-  z.object({ type: z.literal("error"), message: z.string() }),
+  z.object({
+    type: z.literal("flicker"),
+    purpose: z.enum(["clip", "verify"]),
+    detected: z.boolean(),
+    z: z.number(),
+    flickerHz: z.number(),
+    readoutMs: z.number(),
+    after: z.object({ detected: z.boolean(), z: z.number() }),
+    passesRemoved: z.number(),
+    gains: samples.optional(),
+  }),
+  z.object({ type: z.literal("error"), scope: z.enum(["audio", "picture"]), message: z.string() }),
 ]);
 export type WorkerMessage = z.infer<typeof WorkerMessage>;

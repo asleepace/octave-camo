@@ -26,7 +26,7 @@ export type Trace = {
 export type ScrubResult = { output: Samples; log: string[] };
 
 /** Row profiles of a video: log brightness per frame, column strip and row band (row 0 on top). */
-export type Profiles = { frames: number; strips: number; rows: number; values: Float32Array; times: Float32Array };
+export type Profiles = { frames: number; strips: number; rows: number; values: Samples; times: Samples };
 
 /** Mains flicker in the picture (Swift's FlickerScan). */
 export type Flicker = {

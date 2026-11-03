@@ -5,10 +5,11 @@
  */
 import {
   ALL_FORMATS, AudioSample, AudioSampleSink, AudioSampleSource, BlobSource, BufferTarget, canEncodeAudio,
-  EncodedPacketSink, EncodedVideoPacketSource, Input, type InputAudioTrack, type InputVideoTrack, Mp4OutputFormat,
-  Output,
+  canEncodeVideo, EncodedPacketSink, EncodedVideoPacketSource, Input, type InputAudioTrack, type InputVideoTrack,
+  Mp4OutputFormat, Output, VideoSample, VideoSampleSink, VideoSampleSource, type VideoCodec,
 } from "mediabunny";
-import type { Clip } from "./engine/camo.ts";
+import type { Clip, Profiles } from "./engine/camo.ts";
+import { GainRenderer, ProfileProbe, ROWS } from "./video.ts";
 
 /** Clips longer than this are refused: the scrubber holds the whole clip in memory. */
 export const MAX_SECONDS = 300;
@@ -64,8 +65,27 @@ export function outputName(loaded: Loaded): string {
   return `${stem}.camo.${loaded.video ? "mp4" : "m4a"}`;
 }
 
+/** Per-row gains that remove flicker: frames × ROWS, in decode order. */
+export type PictureFix = { gains: Float32Array; frames: number };
+
+export type Saved = {
+  blob: Blob;
+  /** Row profiles of the re-rendered picture (when a PictureFix was applied), to verify it. */
+  profiles?: Profiles;
+  /** Codec the picture was re-encoded with. */
+  videoCodec?: VideoCodec;
+};
+
+/** First codec this browser can encode at the clip's size: HEVC, then H.264, VP9, AV1. */
+async function pictureCodec(width: number, height: number, bitrate: number): Promise<VideoCodec> {
+  for (const codec of ["hevc", "avc", "vp9", "av1"] as const) {
+    if (await canEncodeVideo(codec, { width, height, bitrate })) return codec;
+  }
+  throw new MediaError("this browser can't encode video, so it can't remove flicker");
+}
+
 export async function save(loaded: Loaded, mono: Float32Array, sampleRate: number,
-                           onProgress: (fraction: number) => void = () => {}): Promise<Blob> {
+                           onProgress: (fraction: number) => void = () => {}, picture?: PictureFix): Promise<Saved> {
   if (!(await canEncodeAudio("aac", { numberOfChannels: 1, sampleRate }))) {
     // Firefox (and some others) can't encode AAC natively: fall back to a WASM build of FFmpeg's encoder.
     const { registerAacEncoder } = await import("@mediabunny/aac-encoder");
@@ -78,7 +98,17 @@ export async function save(loaded: Loaded, mono: Float32Array, sampleRate: numbe
   output.setMetadataTags({ creationTime: null });
   const { video } = loaded;
   let videoSource: EncodedVideoPacketSource | null = null;
-  if (video) {
+  let rendered: { source: VideoSampleSource; renderer: GainRenderer; codec: VideoCodec } | null = null;
+  if (video && picture) {
+    // Re-encode the picture with flicker divided out, at about the original bitrate.
+    const width = video.codedWidth, height = video.codedHeight;
+    const stats = await video.computePacketStats(300).catch(() => null);
+    const bitrate = Math.round(Math.min(25e6, Math.max(4e6, stats?.averageBitrate ?? 12e6)));
+    const codec = await pictureCodec(width, height, bitrate);
+    const source = new VideoSampleSource({ codec, bitrate });
+    output.addVideoTrack(source, { rotation: video.rotation });
+    rendered = { source, renderer: new GainRenderer(width, height), codec };
+  } else if (video) {
     if (!video.codec) throw new MediaError("unsupported video codec");
     videoSource = new EncodedVideoPacketSource(video.codec);
     output.addVideoTrack(videoSource, { rotation: video.rotation });
@@ -102,7 +132,27 @@ export async function save(loaded: Loaded, mono: Float32Array, sampleRate: numbe
     }
   };
 
-  if (video && videoSource) {
+  let probe: ProfileProbe | undefined;
+  if (video && rendered && picture) {
+    probe = new ProfileProbe();
+    let k = 0;
+    for await (const sample of new VideoSampleSink(video).samples()) {
+      await writeAudioUntil(sample.timestamp);
+      const frame = sample.toVideoFrame();
+      try {
+        const row = Math.min(k, picture.frames - 1);
+        const canvas = rendered.renderer.render(frame, picture.gains.subarray(row * ROWS, (row + 1) * ROWS));
+        probe.add(canvas, sample.timestamp);
+        const out = new VideoSample(canvas, { timestamp: sample.timestamp, duration: sample.duration });
+        await rendered.source.add(out);
+        out.close();
+      } finally {
+        frame.close();
+        sample.close();
+      }
+      k++;
+    }
+  } else if (video && videoSource) {
     const decoderConfig = await video.getDecoderConfig();
     if (!decoderConfig) throw new MediaError("could not read the video's codec configuration");
     let first = true;
@@ -115,5 +165,6 @@ export async function save(loaded: Loaded, mono: Float32Array, sampleRate: numbe
   await writeAudioUntil(Infinity);
   await output.finalize();
   if (!target.buffer) throw new MediaError("encoding produced no output");
-  return new Blob([target.buffer], { type: video ? "video/mp4" : "audio/mp4" });
+  const blob = new Blob([target.buffer], { type: video ? "video/mp4" : "audio/mp4" });
+  return { blob, profiles: probe?.result(), videoCodec: rendered?.codec };
 }

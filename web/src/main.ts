@@ -1,7 +1,10 @@
 import "./style.css";
 import type { Step, Trace } from "./engine/camo.ts";
 import { type Request, type Stage, WorkerMessage } from "./engine/protocol.ts";
+
+type FlickerScan = { detected: boolean; z: number; flickerHz: number; readoutMs: number; gains?: Float32Array<ArrayBuffer>; frames: number };
 import { load, type Loaded, MediaError, outputName, save } from "./media.ts";
+import { measureProfiles } from "./video.ts";
 import { Player, type Side } from "./player.ts";
 import { demo, meanBands, mix, percentile, type Spectrogram, spectrogram } from "./spectrum.ts";
 import { bandChart } from "./ui/bands.ts";
@@ -43,7 +46,22 @@ const state = {
   ms: 0,
   engine: "wasm" as "wasm" | "stand-in",
   error: "",
+  /** The picture's flicker scan (mains clock in rolling-shutter bands). */
+  picture: {
+    status: "none" as "none" | "scanning" | "done" | "error",
+    progress: 0,
+    scan: null as FlickerScan | null,
+    /** Remove flicker on save (re-encodes the picture). Defaults to on when flicker is found. */
+    fix: false,
+    /** The same scan on the saved picture. */
+    verify: null as { detected: boolean; z: number } | null,
+    /** Codec of the last re-encoded picture. */
+    codec: "",
+    message: "",
+  },
 };
+/** Bumped per opened file, so a slow picture scan can't land on the next clip. */
+let fileToken = 0;
 
 const demoData = demo();
 const player = new Player();
@@ -81,7 +99,22 @@ worker.onmessage = (event) => {
       setSide("out");
       break;
     }
+    case "flicker":
+      if (m.purpose === "clip") {
+        const frames = m.gains ? m.gains.length / 120 : 0;
+        state.picture.scan = { detected: m.detected, z: m.z, flickerHz: m.flickerHz, readoutMs: m.readoutMs, gains: m.gains, frames };
+        state.picture.status = "done";
+        state.picture.fix = m.detected;
+      } else {
+        state.picture.verify = { detected: m.detected, z: m.z };
+      }
+      break;
     case "error":
+      if (m.scope === "picture") {
+        state.picture.status = "error";
+        state.picture.message = m.message;
+        break;
+      }
       return fail(m.message);
   }
   render();
@@ -101,6 +134,8 @@ async function open(file: File) {
     loaded: null, input: null, output: null, outputSamples: null, outputPreset: null, before: null, after: null,
     log: [], busy: "decoding", error: "",
   });
+  state.picture = { status: "none", progress: 0, scan: null, fix: false, verify: null, codec: "", message: "" };
+  const token = ++fileToken;
   render();
   try {
     const loaded = await load(file);
@@ -110,11 +145,37 @@ async function open(file: File) {
     setSide("in");
     state.busy = "analyzing";
     send({ type: "analyze", sampleRate: loaded.clip.sampleRate, channels: loaded.clip.channels });
+    if (loaded.video) void scanPicture(loaded, token);
   } catch (error) {
     fail(error instanceof MediaError ? error.message : `couldn't read this file (${(error as Error).message})`);
   }
   render();
 }
+
+/** Measure row profiles (one decode pass) and ask the worker for flicker and removal gains. */
+async function scanPicture(loaded: Loaded, token: number) {
+  if (!loaded.video) return;
+  state.picture.status = "scanning";
+  render();
+  try {
+    let last = 0;
+    const profiles = await measureProfiles(loaded.video, loaded.duration, (f) => {
+      if (token !== fileToken || f - last < 0.02) return;
+      last = f;
+      state.picture.progress = f;
+      renderTrace();
+    });
+    if (token !== fileToken) return;
+    send({ type: "flicker", ...profiles, clean: true, purpose: "clip" });
+  } catch (error) {
+    if (token !== fileToken) return;
+    state.picture.status = "error";
+    state.picture.message = (error as Error).message;
+    render();
+  }
+}
+
+const fixingPicture = () => !!state.loaded?.video && state.picture.fix && !!state.picture.scan?.detected && !!state.picture.scan.gains;
 
 function cloak() {
   const loaded = state.loaded;
@@ -135,7 +196,20 @@ async function download() {
   state.busy = "saving";
   render();
   try {
-    const blob = await save(loaded, outputSamples, loaded.clip.sampleRate);
+    const scan = state.picture.scan;
+    let picture = fixingPicture() && scan?.gains ? { gains: scan.gains, frames: scan.frames } : undefined;
+    // Dev-only hook for the end-to-end test: gains computed outside the app (stripped from builds).
+    const injected = import.meta.env.DEV ? (window as { __testGains?: number[] }).__testGains : undefined;
+    if (injected && picture) picture = { gains: Float32Array.from(injected), frames: injected.length / 120 };
+    state.picture.verify = null;
+    const saved = await save(loaded, outputSamples, loaded.clip.sampleRate, (f) => {
+      saveProgress = f;
+      renderPrimary();
+    }, picture);
+    saveProgress = 0;
+    if (saved.profiles) send({ type: "flicker", ...saved.profiles, clean: false, purpose: "verify" });
+    state.picture.codec = saved.videoCodec ?? "";
+    const blob = saved.blob;
     const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(blob), download: outputName(loaded) });
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 30_000);
@@ -145,6 +219,8 @@ async function download() {
   }
   render();
 }
+
+let saveProgress = 0;
 
 function primary() {
   if (fresh()) void download();
@@ -174,8 +250,12 @@ function renderPrimary() {
     decoding: "DECODING…", loading: "LOADING…", analyzing: "LISTENING…", scrubbing: "CLOAKING…",
     verifying: "CHECKING…", saving: "ENCODING…",
   };
-  button.disabled = !s.loaded || !!s.busy;
-  button.textContent = s.busy ? stageText[s.busy]! : fresh() ? `SAVE ${s.loaded!.name.replace(/\.[^.]+$/, "")}.camo` : "CLOAK";
+  const waitingForPicture = fresh() && !s.busy && s.picture.status === "scanning";
+  button.disabled = !s.loaded || !!s.busy || waitingForPicture;
+  button.textContent = s.busy === "saving" && saveProgress > 0 ? `ENCODING… ${Math.round(saveProgress * 100)}%`
+    : s.busy ? stageText[s.busy]!
+    : waitingForPicture ? `SCANNING PICTURE… ${Math.round(s.picture.progress * 100)}%`
+    : fresh() ? `SAVE ${s.loaded!.name.replace(/\.[^.]+$/, "")}.camo` : "CLOAK";
   const ready = fresh() && !s.busy;
   for (const c of ["border-white", "text-white", "hover:bg-white"]) button.classList.toggle(c, !ready);
   for (const c of ["border-accent", "text-accent", "hover:bg-accent"]) button.classList.toggle(c, ready);
@@ -213,7 +293,41 @@ function renderTrace() {
       <td class="w-[34%] py-2.5"><span class="relative block h-[3px] bg-neutral-800">${bar(vin, "bg-neutral-500")}${bar(vout, "bg-accent")}</span></td>
       <td class="whitespace-nowrap py-2.5 pl-3 text-right tabular-nums text-white">${vin ?? "–"}${vout !== undefined ? ` → <span class="text-accent">${vout}</span>` : ""}</td></tr>`;
   }).join("");
+  $("trace").insertAdjacentHTML("beforeend", pictureRow());
   $("log").innerHTML = state.log.map((l) => `<li>${esc(l)}</li>`).join("") || "<li>no run yet</li>";
+}
+
+function pictureRow(): string {
+  const p = state.picture, video = !!state.loaded?.video;
+  let vin = "–", vout = "";
+  if (state.loaded && !video) vin = "no picture";
+  else if (p.status === "scanning") vin = `scanning ${Math.round(p.progress * 100)}%`;
+  else if (p.status === "error") vin = "scan failed";
+  else if (p.scan) vin = p.scan.detected ? `${Math.round(p.scan.flickerHz)} Hz` : "none";
+  if (p.verify) vout = p.verify.detected ? `<span class="text-red-400">left</span>` : `<span class="text-accent">gone</span>`;
+  else if (p.scan?.detected && fresh()) vout = p.fix ? `<span class="text-neutral-500">on save</span>` : `<span class="text-neutral-500">kept</span>`;
+  return `<tr class="border-t border-neutral-900">
+    <td class="py-2.5"><span class="text-white">light flicker</span><span class="block text-[9px] text-neutral-600">grid clock in the picture's row bands</span></td>
+    <td class="w-[34%] py-2.5 text-[10px] text-neutral-500">${p.scan ? `z ${Math.round(p.scan.z)}${p.verify ? ` → ${Math.round(p.verify.z)}` : ""}` : ""}</td>
+    <td class="whitespace-nowrap py-2.5 pl-3 text-right text-white">${vin}${vout ? ` → ${vout}` : ""}</td></tr>`;
+}
+
+function renderPicture() {
+  const el = $("picture"), p = state.picture;
+  const show = !!state.loaded?.video && !!p.scan?.detected;
+  el.classList.toggle("hidden", !show);
+  if (!show || !p.scan) return;
+  el.innerHTML = `<label class="flex cursor-pointer items-start gap-3 border border-neutral-800 px-4 py-3 text-[11px] leading-relaxed hover:border-neutral-600">
+    <input id="fix-picture" type="checkbox" class="mt-0.5 h-3.5 w-3.5 shrink-0 accent-[#ffd23f]" ${p.fix ? "checked" : ""} ${state.busy ? "disabled" : ""} />
+    <span><span class="text-white">Remove light flicker from the picture.</span>
+    <span class="text-neutral-500">The picture has ${p.scan.flickerHz.toFixed(1)} Hz banding from mains lighting (rolling shutter, ~${p.scan.readoutMs.toFixed(0)} ms readout).
+    Removing it re-encodes the video${p.codec ? ` (${p.codec.toUpperCase()})` : ""} in standard dynamic range: slower, and HDR looks a little different.</span></span>
+  </label>`;
+  $<HTMLInputElement>("fix-picture").addEventListener("change", (e) => {
+    state.picture.fix = (e.target as HTMLInputElement).checked;
+    state.picture.verify = null;
+    render();
+  });
 }
 
 function renderTransport() {
@@ -232,7 +346,7 @@ function renderTransport() {
   }
   $("drop").classList.toggle("hidden", has || state.busy === "decoding");
   $("file-name").textContent = state.loaded
-    ? `${state.loaded.name} · ${clock(state.loaded.duration)} · ${state.loaded.clip.sampleRate / 1000} kHz · ${state.loaded.video ? "picture kept as is · audio replaced · metadata dropped" : "audio only"} · drop another file to replace`
+    ? `${state.loaded.name} · ${clock(state.loaded.duration)} · ${state.loaded.clip.sampleRate / 1000} kHz · ${!state.loaded.video ? "audio only" : fixingPicture() ? "picture re-encoded without flicker" : "picture kept as is"} · audio replaced · metadata dropped`
     : "";
   $("legend-main").textContent = terrain.show;
   $("legend-ghost").textContent = terrain.show === "in" ? "out" : "in";
@@ -248,11 +362,12 @@ function renderSteps() {
   const on = new Set<Step>(PRESETS[state.preset].steps);
   $("steps-explained").innerHTML = (Object.entries(STEP_TEXT) as [Step, [string, string]][]).map(([step, [title, body]], i) =>
     `<li class="${on.has(step) ? "" : "opacity-40"}"><span class="text-neutral-200">${i + 1}. ${title}.</span> ${body}${on.has(step) ? "" : ` <span class="text-neutral-600">(off in ${PRESETS[state.preset].label})</span>`}</li>`,
-  ).join("");
+  ).join("") + `<li class="${state.loaded && !state.loaded.video ? "opacity-40" : ""}"><span class="text-neutral-200">${Object.keys(STEP_TEXT).length + 1}. Remove light flicker (picture).</span> When the scan finds mains-light bands, each row is divided by its estimated band, which takes the grid clock out of the picture. Optional, because it re-encodes the video.</li>`;
 }
 
 function render() {
   renderPrimary();
+  renderPicture();
   renderTrace();
   renderTransport();
   renderBands();
