@@ -47,7 +47,7 @@ jobs:
           --checksum 83baca83553f8c443cda7b84800912e6e709c3acd2e7ebf277794ca5836c0da5
       - name: Build
         run: scripts/build-wasm.sh web/public/octave-camo.wasm
-      - name: Build (debug, for tests: its traps print a reason)
+      - name: Build debug variant (its traps print a reason)
         run: CONFIG=debug scripts/build-wasm.sh wasm-debug/octave-camo-debug.wasm
       - uses: actions/upload-artifact@v4
         with:
