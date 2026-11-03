@@ -90,18 +90,25 @@ public struct SCurveCancel: ScrubStage {
         }
 
         var acc = [Double](repeating: 0, count: J)
+        // The hot loop (every curve × frame × row): the valid row range is worked out once per
+        // frame instead of tested per element, and the arrays are read without bounds checks.
         func score(_ c: Curve) -> Candidate {
             let r = ratios(at: spec.times, c)
-            for j in 0..<J { acc[j] = 0 }
-            for t in 0..<T {
-                let shift: Double = log(r[t]) / delta
-                let s = Int(shift.rounded(.down))
-                let w: Double = shift - Double(s)
-                let row = t * J
-                for j in jLo...jHi {
-                    let a = j + s
-                    if a >= 0 && a + 1 < J {
-                        acc[j] += (1 - w) * rows.data[row + a] + w * rows.data[row + a + 1]
+            acc.withUnsafeMutableBufferPointer { accumulator in
+                rows.data.withUnsafeBufferPointer { data in
+                    for j in 0..<J { accumulator[j] = 0 }
+                    for t in 0..<T {
+                        let shift: Double = log(r[t]) / delta
+                        let s = Int(shift.rounded(.down))
+                        let w: Double = shift - Double(s)
+                        let row = t * J
+                        // a = j + s must satisfy 0 <= a and a + 1 < J.
+                        let lo = max(jLo, -s), hi = min(jHi, J - 2 - s)
+                        guard lo <= hi else { continue }
+                        for j in lo...hi {
+                            let a = row + j + s
+                            accumulator[j] += (1 - w) * data[a] + w * data[a + 1]
+                        }
                     }
                 }
             }

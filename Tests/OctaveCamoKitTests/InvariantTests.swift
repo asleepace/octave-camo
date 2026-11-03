@@ -17,7 +17,8 @@ final class InvariantTests: XCTestCase {
     }
 
     /// Noise, a voice-ish harmonic stack and mains hum (both families), per channel.
-    private func scene(rate: Int, seconds: Double, channels: Int = 1, mains: [Double] = [60], seed: UInt64 = 5) -> Audio {
+    private func scene(rate: Int, seconds: Double, channels: Int = 1, mains: [Double] = [60], tone: Bool = true,
+                       seed: UInt64 = 5) -> Audio {
         let n = Int(Double(rate) * seconds)
         var rng = SeededRNG(seed: seed)
         var out: [[Double]] = []
@@ -32,7 +33,7 @@ final class InvariantTests: XCTestCase {
                         h += base
                     }
                 }
-                x[i] += 0.05 * sin(2 * .pi * 220 * t) * (0.5 + 0.5 * sin(2 * .pi * 3 * t))
+                if tone { x[i] += 0.05 * sin(2 * .pi * 220 * t) * (0.5 + 0.5 * sin(2 * .pi * 3 * t)) }
             }
             out.append(x)
         }
@@ -191,21 +192,39 @@ final class InvariantTests: XCTestCase {
 
     // MARK: Each stage works at every rate
 
+    /// Every harmonic of either grid, at every rate, is knocked down by at least 25 dB or to within
+    /// 4 dB of its neighbours, right to the clip's edges. (A notch removes a steady line outright;
+    /// the hum here wanders a little, as grids do, and the part that wanders off the notch's centre
+    /// is attenuated rather than removed. Below 300 Hz `lowband` regenerates the band anyway.)
     func testHumIsRemovedAtEverySampleRate() {
         for rate in Self.rates {
             for base in [50.0, 60.0] {
-                let audio = scene(rate: rate, seconds: 6, mains: [base])
-                let y = seeded([.mono, .hum]).run(audio).audio.channels[0]
+                let audio = scene(rate: rate, seconds: 6, mains: [base], tone: false)
+                let result = seeded([.mono, .hum]).run(audio)
+                let y = result.audio.channels[0]
                 var h = base
                 while h < min(1_000, 0.45 * Double(rate)) {
                     let before = lineToNeighboursDB(audio.channels[0], h, rate: rate)
                     let after = lineToNeighboursDB(y, h, rate: rate)
                     XCTAssertGreaterThan(before, 15, "test scene lacks a \(h) Hz line at \(rate) Hz")
-                    XCTAssertLessThan(after, 4, "\(h) Hz hum survived at \(rate) Hz (\(after) dB)")
+                    XCTAssertTrue(after < 4 || before - after > 25,
+                                  "\(h) Hz hum survived at \(rate) Hz: \(before) → \(after) dB; \(result.log)")
                     h += base
                 }
             }
         }
+    }
+
+    /// The edges specifically: the first and last half second carry no more hum than the middle.
+    func testHumIsGoneAtTheClipEdges() {
+        let rate = 16_000, n = rate * 8
+        var x = [Double](repeating: 0, count: n)
+        for i in 0..<n { x[i] = 0.1 * sin(2 * .pi * 60 * Double(i) / Double(rate)) }
+        var stage = HumNotch()
+        stage.refill = false
+        let y = stage.process(x, sampleRate: rate).output
+        let edge = (y[0..<(rate / 2)] + y[(n - rate / 2)...]).map(abs).max() ?? 0
+        XCTAssertLessThan(edge, 0.001, "a 60 Hz line survives at the clip's edges")
     }
 
     func testLowbandRemovesASteadyLowToneAtEverySampleRate() {
@@ -214,9 +233,10 @@ final class InvariantTests: XCTestCase {
             var rng = SeededRNG(seed: 8)
             var x = rng.normals(n).map { 0.02 * $0 }
             for i in 0..<n { x[i] += 0.05 * sin(2 * .pi * 137.3 * Double(i) / Double(rate)) }
-            let y = seeded([.mono, .lowband]).run(Audio(sampleRate: rate, channels: [x])).audio.channels[0]
+            let result = seeded([.mono, .lowband]).run(Audio(sampleRate: rate, channels: [x]))
+            let y = result.audio.channels[0]
             XCTAssertGreaterThan(lineToNeighboursDB(x, 137.3, rate: rate), 20)
-            XCTAssertLessThan(lineToNeighboursDB(y, 137.3, rate: rate), 6, "137 Hz tone survived lowband at \(rate) Hz")
+            XCTAssertLessThan(lineToNeighboursDB(y, 137.3, rate: rate), 6, "137 Hz tone survived lowband at \(rate) Hz; \(result.log)")
         }
     }
 

@@ -11,6 +11,88 @@ are grouped by milestone, newest first, with the commits that made them.
 
 Nothing yet.
 
+## Second review: invariants and media edge cases — 2026-11-03
+
+A second independent review (Swift core and web app), plus new invariant tests and a media
+edge-case suite. Several of the fixes below were found by the new tests themselves.
+
+### Security / privacy
+
+- **Mains hum survived at the clip's edges.** Zero-phase notches start cold, so the first and
+  last fraction of a second kept the local grid's hum (which says which grid). Near each edge both
+  filter passes now run in from inside the clip, already settled. Found by the invariant tests.
+- **Hum harmonics up to 1 kHz** are notched and refilled (was 400 Hz); above 400 Hz the notches
+  are 3 Hz wide so the voice band survives. Same change in the harness.
+- **A passing engine was kept as "voice"** by `lowband`: the voice tracker only rejected steady
+  pitches, and a Doppler glide moves. Unbroken voiced runs longer than 2 s are now rejected; the
+  voice keep-width is in Hz, not FFT bins (it grew with the sample rate, keeping up to 88 % of
+  the band at 192 kHz).
+- **Data embedded in H.264/HEVC packets (SEI) is removed** when the picture is copied: x264's
+  version and settings, camcorder date and GPS, drone telemetry. Also removed from HEVC
+  configurations. The UI's "metadata dropped" is now true for the picture too.
+- **Timestamps start at zero**: a source's absolute start (an MPEG-TS an hour in, a recorder's
+  clock) was carried into the output as an edit list.
+- **The worker is under the page's Content-Security-Policy**: started from a blob: URL (which
+  inherits the page's policy) instead of its own URL (which on GitHub Pages had none).
+- One NaN, Inf or absurd sample (a corrupt float file) no longer silences or blanks the output:
+  replaced and logged. One NaN in the picture profiles no longer turns the flicker scan off.
+
+### Fixed
+
+- 192 kHz audio hung the save (AAC can't carry it): audio is decoded straight to mono and
+  resampled to 48 kHz at most, which also cuts memory by up to 16×.
+- Opening a second file while the first was decoding mixed the two (stale analysis, stuck
+  "LISTENING…", one file's flicker gains applied to the other).
+- A failed re-cloak left the previous preset's output savable under the new preset's name.
+- The `c` shortcut could save before the picture scan finished (skipping flicker removal).
+- A late check of an earlier save could report "flicker gone" for a later one.
+- The "too short to check" test used the audio's length, not the picture's.
+- Streams cut mid-GOP failed at save; copying now starts at the first keyframe.
+- The primary audio track is chosen among those the browser can decode.
+- Worker errors and unreadable messages no longer leave the UI stuck; any error no longer forces
+  the wasm to download again (the compiled module is kept, so the page stays usable offline).
+- Encoders and GPU contexts are released when a save fails; `neutralize` only searches outside the
+  media data.
+- Swift: notch filters guarded against Nyquist; nonsense `mains`, lowband cutoffs and scurve f0
+  ranges no longer trap; empty WAV data is an error.
+- wasm exports check sizes for overflow, report rejected input (instead of a stale result or
+  zeros that read as clean), and export the flicker gains' length.
+
+### Added
+
+- **The flicker scan says when it couldn't look** (too few frames, or a frame rate around 200 fps
+  and up): shown as "not checkable", never as "none".
+- **Swift invariant tests** (`InvariantTests`): every sample rate from 8 to 192 kHz and 1, 2 or 6
+  channels gives mono, finite, same-length, peak-limited output; degenerate lengths and
+  pathological signals; same seed same output, different seed different noise, in every seeded
+  stage; channel order doesn't matter; hum removed at every rate; lowband removes a steady tone at
+  every rate; the voice band changes by under 2 dB; no time shift; a passing engine isn't kept as
+  voice; the default chain removes a flyby at 22.05 and 96 kHz; every combination of steps is
+  sound; bad settings don't trap; flicker gains finite and depth-capped; a timing tripwire.
+- **Media edge-case suite** (`web/e2e/media.test.ts`): MKV/VP9/FLAC 96 kHz 6-channel, WebM
+  VP8/Vorbis 22.05 kHz with an odd 177×99 picture, MP4/AV1/Opus, variable frame rate, Ogg/Opus,
+  MP3 8 kHz, FLAC 192 kHz, a 0.3 s clip, two video tracks, a silent track, audio starting late
+  (sync kept); refused cleanly without echoing the file name: no audio track, random bytes, an
+  empty file, over the length limit; a truncated file; a second file opened mid-load; a double
+  press of CLOAK. In Google Chrome: GPS injected as SEI is gone, an MPEG-TS starting an hour in
+  comes out at zero, a stream cut mid-GOP saves. Every case checks that workers run from blob:
+  URLs.
+- Web unit tests for SEI stripping (length-prefixed and Annex B, H.264 and HEVC, HEVC configs),
+  box-aware neutralizing and the stricter worker protocol; wasm tests for rejected input, NaN
+  samples, sample rates and "not checked" flicker.
+
+### Changed
+
+- The stand-in engine (dev only) no longer pretends to find flicker unless
+  `VITE_STANDIN_FLICKER=1`.
+
+### Known, not yet fixed
+
+- Videos with no audio track are refused rather than having their metadata stripped.
+- AV1 metadata units are copied with the picture.
+- `scurve` cost grows with the square of the clip length, and spectrograms for the display are
+  computed on the main thread.
+
 ## Hardening for review — 2026-11-03
 
 Getting the project to a state the security community can check for themselves.

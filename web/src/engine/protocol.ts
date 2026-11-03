@@ -48,17 +48,20 @@ export const Request = z.union([AnalyzeRequest, ScrubRequest, FlickerRequest]);
 export type Request = z.infer<typeof Request>;
 
 const Trace = z.object({ tones: z.number(), doppler: z.number(), hum: z.number(), flybys: z.number() });
+/** Display spectrogram (computed in the worker so a long clip doesn't freeze the page). */
+const Spectrum = z.object({ db: samples, frames: z.number().int().nonnegative(), hop: z.number().positive() });
 
 export const Stage = z.enum(["loading", "analyzing", "scrubbing", "verifying"]);
 export type Stage = z.infer<typeof Stage>;
 
 export const WorkerMessage = z.discriminatedUnion("type", [
   z.object({ type: z.literal("stage"), token, stage: Stage }),
-  z.object({ type: z.literal("analysis"), token, trace: Trace, engine: z.enum(["wasm", "stand-in"]) }),
+  z.object({ type: z.literal("analysis"), token, trace: Trace, spectrum: Spectrum, engine: z.enum(["wasm", "stand-in"]) }),
   z.object({
     type: z.literal("result"),
     token,
     output: samples,
+    spectrum: Spectrum,
     log: z.array(z.string()),
     after: Trace,
     ms: z.number(),

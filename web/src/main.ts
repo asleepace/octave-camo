@@ -8,7 +8,9 @@ import { load, type Loaded, MediaError, outputName, save } from "./media.ts";
 import { Input, ALL_FORMATS, BlobSource } from "mediabunny";
 import { measureProfiles, ROWS } from "./video.ts";
 import { Player, type Side } from "./player.ts";
-import { demo, meanBands, mix, percentile, type Spectrogram, spectrogram } from "./spectrum.ts";
+import { bandCenters, demo, meanBands, percentile, type Spectrogram } from "./spectrum.ts";
+
+const toSpectrogram = (s: { db: Float32Array; frames: number; hop: number }): Spectrogram => ({ centers: bandCenters(), ...s });
 import { bandChart } from "./ui/bands.ts";
 import { Terrain } from "./ui/terrain.ts";
 
@@ -106,6 +108,7 @@ worker.onmessage = (event) => {
       break;
     case "analysis":
       state.before = m.trace;
+      state.input = toSpectrogram(m.spectrum);
       state.engine = m.engine;
       state.busy = null;
       break;
@@ -114,7 +117,7 @@ worker.onmessage = (event) => {
       if (!loaded) return;
       Object.assign(state, {
         busy: null, outputSamples: m.output, outputPreset: state.pendingPreset, after: m.after, log: m.log, ms: m.ms,
-        engine: m.engine, output: spectrogram(m.output, loaded.clip.sampleRate),
+        engine: m.engine, output: toSpectrogram(m.spectrum),
       });
       player.set("out", [m.output], loaded.clip.sampleRate);
       setSide("out");
@@ -172,7 +175,6 @@ async function open(file: File) {
     const loaded = await load(file);
     if (token !== fileToken) return;           // another file was opened while this one decoded
     state.loaded = loaded;
-    state.input = spectrogram(mix(loaded.clip.channels), loaded.clip.sampleRate);
     player.set("in", loaded.clip.channels, loaded.clip.sampleRate);
     setSide("in");
     state.busy = "analyzing";

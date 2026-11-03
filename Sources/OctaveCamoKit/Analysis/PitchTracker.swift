@@ -19,9 +19,12 @@ public struct PitchTracker {
     /// YIN aperiodicity threshold (lower is stricter). 0.3 finds most voiced speech in real
     /// recordings without picking up background noise.
     public var threshold = 0.3
-    /// Voiced runs longer than this with less than `steadyCents` of movement are not voice.
+    /// Smooth (machine-like) stretches longer than this are rejected.
     public var maxSteadySeconds = 1.5
-    public var steadyCents = 30.0
+    /// "Smooth": the median frame-to-frame change in pitch slope is under this.
+    public var smoothCents = 10.0
+    /// Unvoiced gaps up to this long don't end a stretch.
+    public var maxGapSeconds = 0.3
     /// Unbroken voiced runs longer than this are not speech, however they move. Speech breaks
     /// for consonants and pauses every second or so; a long sung note loses only its kept
     /// low-band detail (it's regenerated like everything else).
@@ -78,20 +81,42 @@ public struct PitchTracker {
 
     private func cents(_ a: Double, _ b: Double) -> Double { 1200 * log2(a / b) }
 
+    /// Rejects voiced stretches that come from a machine rather than a voice:
+    /// - an unbroken run longer than `maxRunSeconds` (speech breaks every second or so);
+    /// - a stretch longer than `maxSteadySeconds`, joined across short unvoiced gaps (noise makes
+    ///   a machine's voicing flicker, which would otherwise chop it into speech-length pieces),
+    ///   whose pitch follows a smooth curve: steady or gliding like a Doppler pass. Speech pitch
+    ///   jitters from frame to frame; a machine's doesn't.
     private func rejectSteadyRuns(_ f0: inout [Double], times: [Double]) {
+        var reject = [Bool](repeating: false, count: f0.count)
+        // Unbroken runs.
         var start = 0
         while start < f0.count {
             if f0[start] == 0 { start += 1; continue }
             var end = start
             while end + 1 < f0.count && f0[end + 1] > 0 && abs(cents(f0[end + 1], f0[end])) < 100 { end += 1 }
-            let length = times[end] - times[start]
-            var reject = length > maxRunSeconds
-            if !reject && length > maxSteadySeconds {
-                let run = f0[start...end]
-                reject = cents(run.max()!, run.min()!) < steadyCents
-            }
-            if reject { for i in start...end { f0[i] = 0 } }
+            if times[end] - times[start] > maxRunSeconds { for i in start...end { reject[i] = true } }
             start = end + 1
         }
+        // Stretches joined across short gaps, judged by smoothness.
+        var group: [Int] = []
+        func judge() {
+            defer { group.removeAll() }
+            guard group.count >= 5, let first = group.first, let last = group.last,
+                  times[last] - times[first] > maxSteadySeconds else { return }
+            var curvature: [Double] = []
+            for k in 2..<group.count {
+                let a = cents(f0[group[k - 1]], f0[group[k - 2]]), b = cents(f0[group[k]], f0[group[k - 1]])
+                curvature.append(abs(b - a))
+            }
+            if DSP.median(curvature[...]) < smoothCents { for i in first...last { reject[i] = true } }
+        }
+        for i in f0.indices where f0[i] > 0 {
+            if let previous = group.last,
+               times[i] - times[previous] > maxGapSeconds || abs(cents(f0[i], f0[previous])) >= 100 { judge() }
+            group.append(i)
+        }
+        judge()
+        for i in f0.indices where reject[i] { f0[i] = 0 }
     }
 }

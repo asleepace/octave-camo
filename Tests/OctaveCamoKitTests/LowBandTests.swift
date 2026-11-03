@@ -88,16 +88,50 @@ final class LowBandTests: XCTestCase {
 
     // MARK: Pitch
 
-    func testPitchFindsAMovingVoice() {
-        var x = noise(sr * 5, rms: 0.002)
-        let f: (Int) -> Double = { 140 + 25 * sin(2 * Double.pi * Double($0) / Double(self.sr) / 1.3) }
-        for h in 1...6 { addTone(&x, { Double(h) * f($0) }, amplitude: 0.1 / Double(h)) }
-        let times = (0..<80).map { 0.5 + Double($0) * 0.05 }
-        let f0 = PitchTracker().track(x, sampleRate: sr, at: times)
-        XCTAssertGreaterThan(f0.filter { $0 > 0 }.count, 60)
-        for (q, v) in f0.enumerated() where v > 0 {
-            XCTAssertEqual(v, f(Int(times[q] * Double(sr))), accuracy: 5)
+    /// Syllables (0.3 s voiced, 0.12 s gap) at alternating pitches, each with intonation and jitter:
+    /// speech-like, so it must be kept.
+    func testPitchFindsAVoice() {
+        let n = sr * 5
+        var rng = SeededRNG(seed: 4)
+        var f = [Double](repeating: 0, count: n), jitter = 0.0
+        let bases: [Double] = [120, 175, 140, 200, 125, 165, 210, 130, 185, 150, 115, 190]
+        for i in 0..<n {
+            let t = Double(i) / Double(sr)
+            let syllable = Int(t / 0.42)
+            let into: Double = t - Double(syllable) * 0.42
+            guard into < 0.3 else { continue }
+            if i % 160 == 0 { jitter = 0.7 * jitter + rng.normal() * 25 }       // cents, every 10 ms
+            f[i] = bases[syllable % bases.count] * (1 + 0.15 * into) * pow(2, jitter / 1_200)
         }
+        var x = noise(n, rms: 0.002), phase = 0.0
+        for i in 0..<n where f[i] > 0 {
+            phase += 2 * Double.pi * f[i] / Double(sr)
+            for h in 1...6 { x[i] += 0.1 / Double(h) * sin(Double(h) * phase) }
+        }
+        let times = (0..<90).map { 0.2 + Double($0) * 0.05 }
+        let f0 = PitchTracker().track(x, sampleRate: sr, at: times)
+        let voicedTruth = times.filter { f[Int($0 * Double(sr))] > 0 }.count
+        XCTAssertGreaterThan(f0.filter { $0 > 0 }.count, voicedTruth / 2, "speech must be kept")
+        for (q, v) in f0.enumerated() where v > 0 {
+            let truth = f[Int(times[q] * Double(sr))]
+            if truth > 0 { XCTAssertEqual(v, truth, accuracy: 0.06 * truth) }
+        }
+    }
+
+    /// An engine's glide whose voicing flickers in and out (as it does in noise) must not be kept
+    /// piece by piece: each piece is speech-length, the whole is a Doppler curve.
+    func testPitchRejectsAGlideBrokenIntoPieces() {
+        let n = sr * 6
+        var x = noise(n, rms: 0.002), phase = 0.0
+        for i in 0..<n {
+            let t = Double(i) / Double(sr)
+            let f: Double = 120 + 40 / (1 + exp((t - 3) * 1.5))        // 160 → 120 Hz, S-shaped
+            phase += 2 * Double.pi * f / Double(sr)
+            guard t.truncatingRemainder(dividingBy: 0.65) < 0.5 else { continue }
+            for h in 1...4 { x[i] += 0.1 / Double(h) * sin(Double(h) * phase) }
+        }
+        let times = (0..<110).map { 0.2 + Double($0) * 0.05 }
+        XCTAssertEqual(PitchTracker().track(x, sampleRate: sr, at: times).filter { $0 > 0 }.count, 0)
     }
 
     func testPitchRejectsASteadyEngineTone() {
