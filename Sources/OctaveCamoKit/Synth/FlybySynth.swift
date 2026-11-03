@@ -106,7 +106,12 @@ public struct FlybySynth {
             let length = rng.uniform(0.15...0.4)
             let m = Int(length * sr), start = Int(at * sr)
             let pitch = rng.uniform(100...220), bend = rng.uniform(-1...1)
-            let f = (0..<m).map { i in pitch * (1 + 0.1 * (2 * Double(i) / Double(max(m - 1, 1)) - 1) * bend) }
+            // Pitch glides linearly from (1 − 0.1·bend) to (1 + 0.1·bend) × pitch over the syllable.
+            let span = Double(max(m - 1, 1))
+            let f: [Double] = (0..<m).map { i -> Double in
+                let position: Double = 2 * Double(i) / span - 1
+                return pitch * (1 + 0.1 * position * bend)
+            }
             let phase = DSP.cumulativePhase(f, dt: 1 / sr)
             for i in 0..<m where start + i < n {
                 let envelope = pow(sin(Double.pi * Double(i) / Double(m)), 2)
