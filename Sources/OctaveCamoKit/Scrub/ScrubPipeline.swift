@@ -33,6 +33,8 @@ public struct ScrubResult {
 /// is opt-in, since benchmarks showed it adds little once `lowband` runs.
 public struct ScrubPipeline {
     public static let defaultSteps: Set<ScrubStep> = [.mono, .hum, .subtract, .scurve, .lowband]
+    /// Input samples beyond this (60 dB over full scale) are corrupt, not loud.
+    public static let maxSampleMagnitude = 1_000.0
 
     public var steps: Set<ScrubStep> = ScrubPipeline.defaultSteps
     public var hum = HumNotch()
@@ -47,6 +49,20 @@ public struct ScrubPipeline {
 
     public func run(_ input: Audio) -> ScrubResult {
         var log: [String] = []
+        // One NaN or Inf would spread through every filter and FFT and silence (or blow up) the
+        // whole output, and one absurd value (a corrupt float file) would make the peak limiter
+        // scale everything else to nothing.
+        var input = input
+        var replaced = 0
+        let usable = { (v: Double) in v.isFinite && abs(v) <= Self.maxSampleMagnitude }
+        for c in input.channels.indices where !input.channels[c].allSatisfy(usable) {
+            for i in input.channels[c].indices where !usable(input.channels[c][i]) {
+                input.channels[c][i] = 0
+                replaced += 1
+            }
+        }
+        if replaced > 0 { log.append("input: replaced \(replaced) non-finite or out-of-range sample(s) with silence") }
+
         var y: [Double]
         if steps.contains(.mono) {
             y = input.mono

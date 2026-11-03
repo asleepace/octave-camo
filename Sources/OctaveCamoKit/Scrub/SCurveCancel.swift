@@ -55,6 +55,7 @@ public struct SCurveCancel: ScrubStage {
     static let maxRatio = 1.6
 
     public func process(_ x: [Double], sampleRate: Int) -> (output: [Double], summary: String) {
+        guard f0Min > 0, f0Max > f0Min * 1.1 else { return (x, "scurve: skipped (empty f0 range)") }
         let (low, rate) = DSP.decimate(x, sampleRate: Double(sampleRate), to: Self.analysisRate)
         let spec = WhitenedSpectrogram(low, sampleRate: rate, window: Self.window, hop: Self.hop,
                                        fMin: f0Min, fMax: f0Max * Self.maxRatio)
@@ -68,6 +69,7 @@ public struct SCurveCancel: ScrubStage {
         let J = rows.columns
         let jLo = Int((log(1 / Self.minRatio) / delta).rounded())
         let jHi = min(Int((log(f0Max / rowsMin) / delta).rounded()), J - 1)
+        guard jHi > jLo else { return (x, "scurve: skipped (f0 range above the analysis band)") }
 
         // The physical family on a grid.
         var curves: [Curve] = []
@@ -88,18 +90,25 @@ public struct SCurveCancel: ScrubStage {
         }
 
         var acc = [Double](repeating: 0, count: J)
+        // The hot loop (every curve × frame × row): the valid row range is worked out once per
+        // frame instead of tested per element, and the arrays are read without bounds checks.
         func score(_ c: Curve) -> Candidate {
             let r = ratios(at: spec.times, c)
-            for j in 0..<J { acc[j] = 0 }
-            for t in 0..<T {
-                let shift: Double = log(r[t]) / delta
-                let s = Int(shift.rounded(.down))
-                let w: Double = shift - Double(s)
-                let row = t * J
-                for j in jLo...jHi {
-                    let a = j + s
-                    if a >= 0 && a + 1 < J {
-                        acc[j] += (1 - w) * rows.data[row + a] + w * rows.data[row + a + 1]
+            acc.withUnsafeMutableBufferPointer { accumulator in
+                rows.data.withUnsafeBufferPointer { data in
+                    for j in 0..<J { accumulator[j] = 0 }
+                    for t in 0..<T {
+                        let shift: Double = log(r[t]) / delta
+                        let s = Int(shift.rounded(.down))
+                        let w: Double = shift - Double(s)
+                        let row = t * J
+                        // a = j + s must satisfy 0 <= a and a + 1 < J.
+                        let lo = max(jLo, -s), hi = min(jHi, J - 2 - s)
+                        guard lo <= hi else { continue }
+                        for j in lo...hi {
+                            let a = row + j + s
+                            accumulator[j] += (1 - w) * data[a] + w * data[a + 1]
+                        }
                     }
                 }
             }

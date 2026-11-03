@@ -9,17 +9,30 @@ import WASILibc
 #endif
 
 /// Voice pitch tracking (YIN, de Cheveigné & Kawahara 2002), used to keep voice harmonics while
-/// the rest of the low band is regenerated. Engines are periodic too, so voiced runs that hold a
-/// nearly constant pitch for too long are rejected: speech moves, machines don't.
+/// the rest of the low band is regenerated. Engines are periodic too, so two kinds of voiced run
+/// are rejected: a nearly constant pitch held too long (machines don't move), and any unbroken run
+/// longer than speech produces (a passing engine glides for many seconds without a break, and
+/// keeping its pitch curve would hand the attacker the Doppler curve).
 public struct PitchTracker {
     public var minHz = 70.0
     public var maxHz = 400.0
     /// YIN aperiodicity threshold (lower is stricter). 0.3 finds most voiced speech in real
     /// recordings without picking up background noise.
     public var threshold = 0.3
-    /// Voiced runs longer than this with less than `steadyCents` of movement are not voice.
+    /// Smooth (machine-like) stretches longer than this are rejected.
     public var maxSteadySeconds = 1.5
-    public var steadyCents = 30.0
+    /// "Steady": the middle half of the stretch's pitches lies within this.
+    public var steadyCents = 80.0
+    /// A voiced frame joins a stretch if within this of the stretch's recent median pitch.
+    public var joinCents = 300.0
+    /// |Kendall's τ| between time and pitch at or above this, over a real change, is a glide.
+    public var glideTau = 0.7
+    /// Unvoiced gaps up to this long (or 2.5 query spacings, if longer) don't end a stretch.
+    public var maxGapSeconds = 0.3
+    /// Unbroken voiced runs longer than this are not speech, however they move. Speech breaks
+    /// for consonants and pauses every second or so; a long sung note loses only its kept
+    /// low-band detail (it's regenerated like everything else).
+    public var maxRunSeconds = 2.0
 
     public init() {}
 
@@ -72,19 +85,64 @@ public struct PitchTracker {
 
     private func cents(_ a: Double, _ b: Double) -> Double { 1200 * log2(a / b) }
 
+    /// Rejects voiced stretches that come from a machine rather than a voice:
+    /// - an unbroken run longer than `maxRunSeconds` (speech breaks every second or so);
+    /// - a stretch longer than `maxSteadySeconds`, joined across short unvoiced gaps (noise makes
+    ///   a machine's voicing flicker, which would otherwise chop it into speech-length pieces),
+    ///   whose pitch is steady or moves one way throughout, like a Doppler pass (judged on
+    ///   quartiles and ranks, so the estimator's jitter in noise doesn't hide it). Speech pitch
+    ///   rises and falls.
     private func rejectSteadyRuns(_ f0: inout [Double], times: [Double]) {
+        var reject = [Bool](repeating: false, count: f0.count)
+        // Unbroken runs.
         var start = 0
         while start < f0.count {
             if f0[start] == 0 { start += 1; continue }
             var end = start
             while end + 1 < f0.count && f0[end + 1] > 0 && abs(cents(f0[end + 1], f0[end])) < 100 { end += 1 }
-            if times[end] - times[start] > maxSteadySeconds {
-                let run = f0[start...end]
-                if cents(run.max()!, run.min()!) < steadyCents {
-                    for i in start...end { f0[i] = 0 }
-                }
-            }
+            if times[end] - times[start] > maxRunSeconds { for i in start...end { reject[i] = true } }
             start = end + 1
         }
+        // Stretches joined across short gaps (relative to the query spacing too: with queries
+        // 0.25 s apart, one unvoiced query is already a 0.5 s gap). In noise the estimator jitters
+        // by tens of cents, so membership compares against the stretch's recent median, and the
+        // tests are quartile- and rank-based.
+        var spacings: [Double] = []
+        for i in 1..<max(times.count, 1) where times[i] > times[i - 1] { spacings.append(times[i] - times[i - 1]) }
+        let spacing = spacings.isEmpty ? 0.05 : DSP.median(spacings[...])
+        let maxGap = max(maxGapSeconds, 2.5 * spacing)
+        var group: [Int] = []
+        func judge() {
+            defer { group.removeAll() }
+            guard group.count >= 5, let first = group.first, let last = group.last,
+                  times[last] - times[first] > maxSteadySeconds else { return }
+            let c = group.map { cents(f0[$0], f0[first]) }
+            // Steady: the middle half of the pitches lies within steadyCents.
+            let sorted = c.sorted()
+            let iqr = sorted[Int(0.75 * Double(sorted.count - 1))] - sorted[Int(0.25 * Double(sorted.count - 1))]
+            // Gliding: pitch ranks follow time ranks (Kendall's τ), and it moves by more than steadyCents.
+            var concordant = 0, discordant = 0
+            for a in 0..<c.count {
+                for b in (a + 1)..<c.count {
+                    if c[b] > c[a] { concordant += 1 } else if c[b] < c[a] { discordant += 1 }
+                }
+            }
+            let pairs = Double(max(1, c.count * (c.count - 1) / 2))
+            let tau = Double(concordant - discordant) / pairs
+            let k = max(1, c.count / 4)
+            let change = abs(DSP.median(c[(c.count - k)...]) - DSP.median(c[..<k]))
+            if iqr < steadyCents || (abs(tau) >= glideTau && change >= steadyCents) {
+                for i in first...last { reject[i] = true }
+            }
+        }
+        for i in f0.indices where f0[i] > 0 {
+            if let previous = group.last {
+                let recent = DSP.median(group.suffix(3).map { f0[$0] }[...])
+                if times[i] - times[previous] > maxGap || abs(cents(f0[i], recent)) >= joinCents { judge() }
+            }
+            group.append(i)
+        }
+        judge()
+        for i in f0.indices where reject[i] { f0[i] = 0 }
     }
 }

@@ -1,7 +1,7 @@
 /** Module-level behavior: hum, lowband details, decoy, informed, and the chain runner. */
 import { describe, expect, test } from "bun:test";
 import { describeModules, modules, needs, parseChain, parseChains, runChain } from "../src/defense/index.ts";
-import { swiftBinary } from "../src/defense/modules.ts";
+import { notch, swiftBinary } from "../src/defense/modules.ts";
 import { Rng } from "../src/defense/signal.ts";
 import type { DefenseContext } from "../src/defense/types.ts";
 import { fft } from "../src/dsp.ts";
@@ -52,11 +52,26 @@ describe("hum", () => {
     expect(amplitudeAt(y, sr, 60)).toBeGreaterThan(0.09);
   });
   test("is zero-phase: a kept tone isn't delayed", async () => {
-    const x = new Float32Array(n); addTone(x, sr, () => 1000, 0.1);
+    // Well above the notched range (harmonics up to 400 Hz), so nothing near it is notched or refilled.
+    const long = sr * 10, x = new Float32Array(long); addTone(x, sr, () => 1500, 0.1);
     const y = await runChain(parseChain("hum"), x, ctx(sr));
-    let err = 0;
-    for (let i = sr; i < n - sr; i++) err = Math.max(err, Math.abs(y[i]! - x[i]!));
-    expect(err).toBeLessThan(1e-3);
+    const worst = (from: number, to: number) => { let e = 0; for (let i = from; i < to; i++) e = Math.max(e, Math.abs(y[i]! - x[i]!)); return e; };
+    // Exactly zero-phase once both passes have settled (the edge passes settle within ~3 s here)...
+    expect(worst(3 * sr, long - 3 * sr)).toBeLessThan(1e-3);
+    // ...and at the edges, where both passes run one way over 32 notches, within about 10° (20 µs
+    // at 1.5 kHz: inaudible; the price of removing the mains line right up to the edge).
+    expect(worst(0, long)).toBeLessThan(0.025);
+  });
+});
+
+describe("notch edges", () => {
+  test("a mains line is gone right up to the clip's first and last samples", () => {
+    const sr = 16_000, n = sr * 4, x = new Float32Array(n);
+    addTone(x, sr, () => 60, 0.1);
+    const y = notch(x, 60, 30, sr);
+    let edge = 0;
+    for (let i = 0; i < sr / 4; i++) edge = Math.max(edge, Math.abs(y[i]!), Math.abs(y[n - 1 - i]!));
+    expect(edge).toBeLessThan(0.01);                    // was 0.1 (untouched) with cold passes
   });
 });
 

@@ -44,10 +44,12 @@ Lowering a tone's level is not enough while its curve survives.
 | Train wheel and motor tones | Same, along a fixed track (often close to people) | GTFS-RT positions | `subtract`, `scurve`, `lowband` | Covered, benched (synthetic) |
 | Ship engines and foghorns | Same, slow and long | AIS | `lowband` | Covered, benched (synthetic) |
 | Buses, drones | Same | GTFS-RT, Remote ID | Same family | Expected covered, not benched |
-| Mains hum (ENF) in audio | Recording time to the second, grid region | ENF archives | `hum`: both 50 and 60 Hz families notched, notches refilled | Covered |
+| Mains hum (ENF) in audio | Recording time to the second, grid region | ENF archives | `hum`: both 50 and 60 Hz families notched below 400 Hz (to the clip's edges), notches refilled; `lowband` below 300 Hz; `subtract` for lines it can follow above | Covered |
 | A defense's own fingerprint (notch pattern, imprinted lines) | Grid region | – | Both families notched and refilled at a static level; low-band noise shape smoothed over 1 ERB | Covered, tested (below) |
 | Multi-mic phase | Direction of arrival | – | `mono` | Covered |
 | Extra audio tracks (iPhone spatial audio, APAC, 4 channels) | Direction of arrival | – | Only the main track is read; the rest are dropped | Covered |
+| Data inside the video packets (H.264/HEVC SEI: encoder settings, camcorder date and GPS, drone telemetry) | Device, time, place | – | SEI removed from copied packets and from the HEVC configuration | Covered for H.264/HEVC; AV1 metadata units are copied |
+| The source's own timestamps (a TS stream starting hours in, a recorder's clock) | Time | – | Timestamps rebased to zero | Covered |
 | Loudness envelope of a pass | Closest-approach time and d/v | Any of the tracks above | `lowband` smoothing and jitter (partial) | **Open:** no envelope attacker yet |
 | Scheduled sounds (bells, horns, foghorns) | Time, plus rough distance from level and echo | Timetables | None | **Open** |
 | Room and outdoor acoustics | Place type, not position | – | None | Out of scope |
@@ -107,6 +109,12 @@ narrow (a notch hole, a steady motor tone) is copied into it. Two details matter
   drifted through a notch, and the dips' timing let the matched attacker place it.
 - **A refill that followed its neighbours' level over time** re-imprinted the same timing; the
   benchmark gate caught it. The refill level is static.
+- **Filters start cold.** A zero-phase notch (a forward pass, then a backward one) lets the hum
+  through for a time constant at each end, where one of its passes starts: a fraction of a second
+  of the local grid's hum at the clip's edges, which says which grid it was. The invariant tests
+  caught it (the line stayed 5–17 dB above its neighbours). Near each edge both passes now run in
+  from inside the clip, already settled, and cross-fade into the zero-phase result; that shifts
+  phase by a few degrees there, which isn't audible.
 
 Tests (harness and Swift) check that after the cloak, harmonics of only one family (100, 150, 200,
 250, 350 vs 120, 180, 240, 360 Hz) differ by less than 1.5 dB on average, that a wandering mains
@@ -140,6 +148,10 @@ grids show they're found; with a realistic one they aren't.
 Through the browser (decode, per-row gains in WebGL, re-encode), the saved file scanned at z 34
 against 398 for the input.
 
+A picture the scan can't judge is reported as "not checkable", never as clean: under one 4 s
+segment of frames, or a frame rate so high (about 200 fps and up) that a 100/120 Hz band is under half a
+cycle per frame and looks like a gradient.
+
 ## Known gaps
 
 In order of how much we think they matter:
@@ -159,6 +171,15 @@ In order of how much we think they matter:
    removed (below).
 5. **Unknown-time attacker.** We assume the attacker knows the recording time. Searching over the
    time offset would show how much the delay before posting buys.
+6. **Hum above 400 Hz** is only removed when `subtract`'s tone tracker sees it (10 dB over the
+   noise), and a notch removes a steady line outright but a wandering one only partly (about
+   25–30 dB at the fundamental with typical grid wander). Higher harmonics are usually far weaker,
+   but an attacker integrating for minutes can use faint ones. Narrow notches up to 1 kHz were
+   tried and dropped: they barely touch a wandering line there (the wander grows with the
+   harmonic number), and they carved gaps into train tones that broke `subtract`'s tracking, so
+   the benchmark gate's close train leaked.
+7. **High-frame-rate video** (slow motion) can't be checked for flicker, and AV1 metadata units
+   are copied with the picture.
 
 ## Guarantees
 

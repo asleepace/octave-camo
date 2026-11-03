@@ -12,8 +12,10 @@ const clip = {
   sampleRate: z.number().int().min(8_000).max(384_000),
   channels: z.array(samples).min(1).max(8),
 };
+const sameLength = (r: { channels: Float32Array[] }) => r.channels.every((c) => c.length === r.channels[0]!.length && c.length > 0);
+const sameLengthIssue = { message: "channels must be non-empty and the same length", path: ["channels"] };
 
-export const AnalyzeRequest = z.object({ type: z.literal("analyze"), ...clip });
+export const AnalyzeRequest = z.object({ type: z.literal("analyze"), ...clip }).refine(sameLength, sameLengthIssue);
 
 export const ScrubRequest = z.object({
   type: z.literal("scrub"),
@@ -22,7 +24,7 @@ export const ScrubRequest = z.object({
   seed: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER),
   cutoff: z.number().min(50).max(2_000),
   keepVoice: z.boolean(),
-});
+}).refine(sameLength, sameLengthIssue);
 export type ScrubRequest = z.infer<typeof ScrubRequest>;
 
 export const FlickerRequest = z.object({
@@ -36,24 +38,30 @@ export const FlickerRequest = z.object({
   clean: z.boolean(),
   /** Echoed back so the page can tell the clip scan from the saved-file check. */
   purpose: z.enum(["clip", "verify"]),
-});
+  /** Echoed back: which save a verify belongs to (a later save makes it stale). */
+  seq: z.number().int().nonnegative().default(0),
+}).refine((r) => r.values.length === r.frames * r.strips * r.rows && r.times.length === r.frames,
+  { message: "profile size mismatch", path: ["values"] });
 export type FlickerRequest = z.infer<typeof FlickerRequest>;
 
-export const Request = z.discriminatedUnion("type", [AnalyzeRequest, ScrubRequest, FlickerRequest]);
+export const Request = z.union([AnalyzeRequest, ScrubRequest, FlickerRequest]);
 export type Request = z.infer<typeof Request>;
 
 const Trace = z.object({ tones: z.number(), doppler: z.number(), hum: z.number(), flybys: z.number() });
+/** Display spectrogram (computed in the worker so a long clip doesn't freeze the page). */
+const Spectrum = z.object({ db: samples, frames: z.number().int().nonnegative(), hop: z.number().positive() });
 
 export const Stage = z.enum(["loading", "analyzing", "scrubbing", "verifying"]);
 export type Stage = z.infer<typeof Stage>;
 
 export const WorkerMessage = z.discriminatedUnion("type", [
   z.object({ type: z.literal("stage"), token, stage: Stage }),
-  z.object({ type: z.literal("analysis"), token, trace: Trace, engine: z.enum(["wasm", "stand-in"]) }),
+  z.object({ type: z.literal("analysis"), token, trace: Trace, spectrum: Spectrum, engine: z.enum(["wasm", "stand-in"]) }),
   z.object({
     type: z.literal("result"),
     token,
     output: samples,
+    spectrum: Spectrum,
     log: z.array(z.string()),
     after: Trace,
     ms: z.number(),
@@ -63,6 +71,8 @@ export const WorkerMessage = z.discriminatedUnion("type", [
     type: z.literal("flicker"),
     token,
     purpose: z.enum(["clip", "verify"]),
+    seq: z.number(),
+    checked: z.boolean(),
     detected: z.boolean(),
     z: z.number(),
     flickerHz: z.number(),

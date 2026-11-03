@@ -57,6 +57,7 @@ public enum WAV {
         let decode = try sampleDecoder(format: format, bits: bitsPerSample, bytes: bytes)
         let stride = bitsPerSample / 8
         let frameCount = data.count / (stride * channelCount)
+        guard frameCount > 0 else { throw WAVError.invalid("no audio in the data chunk") }
 
         var channels = [[Double]](repeating: [Double](repeating: 0, count: frameCount), count: channelCount)
         var position = data.lowerBound

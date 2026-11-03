@@ -43,10 +43,15 @@ final class FingerprintTests: XCTestCase {
     }
 
     func testDefaultNotchesCoverBothGridsOnce() {
-        XCTAssertEqual(HumNotch().harmonics, [50, 60, 100, 120, 150, 180, 200, 240, 250, 300, 350, 360])
+        XCTAssertEqual(HumNotch().harmonics(sampleRate: 48_000), [50, 60, 100, 120, 150, 180, 200, 240, 250, 300, 350, 360])
         var sixty = HumNotch()
         sixty.mains = [60]
-        XCTAssertEqual(sixty.harmonics, [60, 120, 180, 240, 300, 360])
+        XCTAssertEqual(sixty.harmonics(sampleRate: 48_000), [60, 120, 180, 240, 300, 360])
+        // Never at or above Nyquist, and nothing for nonsense grids.
+        XCTAssertLessThan(HumNotch().harmonics(sampleRate: 600).max() ?? 0, 270)
+        var silly = HumNotch()
+        silly.mains = [0.01, -50, .nan]
+        XCTAssertEqual(silly.harmonics(sampleRate: 48_000), [])
     }
 
     func testRefillRemovesAWanderingMainsLineWithoutLeavingAHole() {

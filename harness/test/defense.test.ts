@@ -73,14 +73,64 @@ describe("lowband", () => {
 describe("pitch tracking", () => {
   const times = Float64Array.from({ length: 80 }, (_, i) => 0.5 + i * 0.05);
 
-  test("finds a moving voice-like pitch", () => {
-    const x = noise(SR * 5, 0.002);
-    const f = (i: number) => 140 + 25 * Math.sin((2 * Math.PI * i) / SR / 1.3);
-    for (let h = 1; h <= 6; h++) addTone(x, (i) => h * f(i), 0.1 / h);
-    const { f0 } = trackPitch(x, SR, times);
-    const voiced = Array.from(f0).filter((v) => v > 0);
-    expect(voiced.length).toBeGreaterThan(60);
-    for (let q = 0; q < times.length; q++) if (f0[q]! > 0) expect(Math.abs(f0[q]! - f(times[q]! * SR))).toBeLessThan(5);
+  test("keeps a voice: syllables at changing pitches, with intonation and jitter", () => {
+    const n = SR * 5, x = noise(n, 0.002), f = new Float64Array(n), rng = new Rng(4);
+    const bases = [120, 175, 140, 200, 125, 165, 210, 130, 185, 150, 115, 190];
+    let jitter = 0, phase = 0;
+    for (let i = 0; i < n; i++) {
+      const t = i / SR, syllable = Math.floor(t / 0.42), into = t - syllable * 0.42;
+      if (into >= 0.3) continue;
+      if (i % Math.round(SR / 100) === 0) jitter = 0.7 * jitter + rng.gaussian() * 25;     // cents
+      f[i] = bases[syllable % bases.length]! * (1 + 0.15 * into) * 2 ** (jitter / 1200);
+      phase += (2 * Math.PI * f[i]!) / SR;
+      for (let h = 1; h <= 6; h++) x[i]! += (0.1 / h) * Math.sin(h * phase);
+    }
+    const q = Float64Array.from({ length: 90 }, (_, k) => 0.2 + k * 0.05);
+    const { f0 } = trackPitch(x, SR, q);
+    const truth = Array.from(q).filter((t) => f[Math.floor(t * SR)]! > 0).length;
+    expect(Array.from(f0).filter((v) => v > 0).length).toBeGreaterThan(truth / 2);
+    for (let k = 0; k < q.length; k++) {
+      const real = f[Math.floor(q[k]! * SR)]!;
+      if (f0[k]! > 0 && real > 0) expect(Math.abs(f0[k]! - real)).toBeLessThan(0.06 * real);
+    }
+  });
+
+  test("rejects a glide whose voicing flickers (each piece speech-length, the whole a Doppler curve)", () => {
+    const n = SR * 6, x = noise(n, 0.002);
+    let phase = 0;
+    for (let i = 0; i < n; i++) {
+      const t = i / SR, f = 120 + 40 / (1 + Math.exp((t - 3) * 1.5));
+      phase += (2 * Math.PI * f) / SR;
+      if (t % 0.65 < 0.5) for (let h = 1; h <= 4; h++) x[i]! += (0.1 / h) * Math.sin(h * phase);
+    }
+    const q = Float64Array.from({ length: 110 }, (_, k) => 0.2 + k * 0.05);
+    expect(Array.from(trackPitch(x, SR, q).f0).filter((v) => v > 0).length).toBe(0);
+  });
+
+  test("in heavy noise, with sparse queries, machines are still rejected and a phrase still kept", () => {
+    // 8 kHz (no decimation, full-band noise) queried at lowband's frame centres, 0.256 s apart:
+    // the estimator jitters by ±50 cents, which once chopped a steady tone into kept pieces.
+    const sr = 8_000, rng = new Rng(8);
+    const synth = (seconds: number, noiseRms: number, f: (t: number) => number, gate: (t: number) => boolean = () => true) => {
+      const n = sr * seconds, x = new Float32Array(n);
+      let phase = 0;
+      for (let i = 0; i < n; i++) {
+        const t = i / sr;
+        x[i] = noiseRms * rng.gaussian();
+        phase += (2 * Math.PI * f(t)) / sr;
+        if (gate(t)) for (let h = 1; h <= 4; h++) x[i]! += (0.05 / h) * Math.sin(h * phase);
+      }
+      return x;
+    };
+    const frames = (x: Float32Array) => Float64Array.from({ length: Math.floor((x.length + 8192) / 2048) + 1 }, (_, m) => (m * 2048 - 4096) / sr);
+    const kept = (x: Float32Array) => Array.from(trackPitch(x, sr, frames(x)).f0).filter((v) => v > 0).length;
+    expect(kept(synth(6, 0.02, () => 137.3))).toBe(0);                                          // steady
+    expect(kept(synth(24, 0.02, (t) => 120 + 40 / (1 + Math.exp((t - 12) * 0.5))))).toBe(0);  // a slow pass
+    const phrase = synth(8, 0.004, (t) => {
+      const accent = [0, 3, -1, 5, 1, -2, 4, 0, 2, -3][Math.floor(t / 0.33) % 10]!;
+      return 160 * 2 ** ((accent - 0.8 * (t % 2.6)) / 12) * (1 + 0.02 * Math.sin(37 * t));      // falling, with accents
+    }, (t) => t % 0.33 < 0.25);
+    expect(kept(phrase)).toBeGreaterThan(10);
   });
 
   test("rejects a steady engine tone as not-voice", () => {

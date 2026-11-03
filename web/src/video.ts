@@ -16,12 +16,14 @@ const PROBE_W = STRIPS * 16, PROBE_H = ROWS * 2;
 /** Accumulates per-frame row profiles (log luma per strip and row band). */
 export class ProfileProbe {
   private readonly ctx: OffscreenCanvasRenderingContext2D;
-  private values: number[] = [];
+  private values = new Float32Array(STRIPS * ROWS * 64);
   private times: number[] = [];
 
   constructor() {
     const canvas = new OffscreenCanvas(PROBE_W, PROBE_H);
-    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    // Not willReadFrequently: that keeps the canvas on the CPU, so every full-size frame would be
+    // read back before scaling. On the GPU only the small probe image is read back.
+    const ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("2D canvas unavailable");
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = "high";
@@ -31,6 +33,12 @@ export class ProfileProbe {
   add(source: CanvasImageSource, time: number) {
     this.ctx.drawImage(source, 0, 0, PROBE_W, PROBE_H);
     const px = this.ctx.getImageData(0, 0, PROBE_W, PROBE_H).data;
+    const cells = STRIPS * ROWS, base = this.times.length * cells;
+    if (base + cells > this.values.length) {
+      const grown = new Float32Array(this.values.length * 2);
+      grown.set(this.values);
+      this.values = grown;
+    }
     for (let s = 0; s < STRIPS; s++) {
       for (let r = 0; r < ROWS; r++) {
         let sum = 0;
@@ -41,7 +49,7 @@ export class ProfileProbe {
             sum += 0.2126 * px[i]! + 0.7152 * px[i + 1]! + 0.0722 * px[i + 2]!;
           }
         }
-        this.values.push(Math.log(sum / 32 / 255 + 1 / 255));
+        this.values[base + s * ROWS + r] = Math.log(sum / 32 / 255 + 1 / 255);
       }
     }
     this.times.push(time);
@@ -51,9 +59,7 @@ export class ProfileProbe {
 
   /** Values in [frame][strip][row] order. */
   result(): Profiles {
-    const frames = this.times.length, out = new Float32Array(frames * STRIPS * ROWS);
-    // add() pushed [frame][strip][row] already.
-    out.set(this.values);
+    const frames = this.times.length, out = this.values.slice(0, frames * STRIPS * ROWS);
     return { frames, strips: STRIPS, rows: ROWS, values: out, times: Float32Array.from(this.times) };
   }
 }
@@ -62,15 +68,20 @@ export class ProfileProbe {
 export async function measureProfiles(video: InputVideoTrack, duration: number,
                                       onProgress: (fraction: number) => void = () => {}): Promise<Profiles> {
   const probe = new ProfileProbe();
+  // Times relative to the first frame: a stream can start hours in, and float32 times that far
+  // out lose the precision the scan's phase search needs.
+  let first: number | null = null;
   for await (const sample of new VideoSampleSink(video).samples()) {
+    first ??= sample.timestamp;
+    const t = sample.timestamp - first;
     const frame = sample.toVideoFrame();
     try {
-      probe.add(frame, sample.timestamp);
+      probe.add(frame, t);
     } finally {
       frame.close();
       sample.close();
     }
-    if (probe.frames % 15 === 0) onProgress(Math.min(1, sample.timestamp / Math.max(duration, 1e-9)));
+    if (probe.frames % 15 === 0) onProgress(Math.min(1, t / Math.max(duration, 1e-9)));
   }
   onProgress(1);
   return probe.result();
@@ -143,6 +154,11 @@ export class GainRenderer {
     gl.uniform1i(gl.getUniformLocation(program, "frame"), 0);
     this.gainsLocation = gl.getUniformLocation(program, "gains[0]")!;
     gl.viewport(0, 0, width, height);
+  }
+
+  /** Releases the GPU context now rather than whenever the garbage collector gets to it. */
+  dispose() {
+    this.gl.getExtension("WEBGL_lose_context")?.loseContext();
   }
 
   render(frame: VideoFrame, gains: Float32Array): OffscreenCanvas {
