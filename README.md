@@ -65,10 +65,20 @@ You shouldn't have to take a privacy tool's word for it.
 - **The page is the code in this repository.** The footer shows the version, the commit, and the
   SHA-256 of the WebAssembly the page actually loaded (computed in your browser from the bytes it
   runs). Compare it with the `octave-camo.wasm` checksum in the
-  [release](https://github.com/asleepace/octave-camo/releases), or rebuild it yourself (the
-  release notes say how, and record whether two clean builds came out identical). The site's `checksums.txt`
-  lists every file it serves, and after each deploy CI re-downloads the live site and checks every
-  file against its own build:
+  [release](https://github.com/asleepace/octave-camo/releases), or rebuild it yourself: the build
+  is reproducible (from 0.1.1; CI rebuilds it in another directory on every push and fails if a
+  byte differs), so the commit in the footer gives the same hash on any machine:
+
+  ```sh
+  git clone https://github.com/asleepace/octave-camo && cd octave-camo && git checkout <commit>
+  docker run --rm -v "$PWD":/src -w /src swift:6.4.2 bash -c "swift sdk install \
+    https://download.swift.org/swift-6.4.2-release/wasm-sdk/swift-6.4.2-RELEASE/swift-6.4.2-RELEASE_wasm.artifactbundle.tar.gz \
+    --checksum 83baca83553f8c443cda7b84800912e6e709c3acd2e7ebf277794ca5836c0da5 && scripts/build-wasm.sh /src/rebuilt.wasm"
+  sha256sum rebuilt.wasm
+  ```
+
+  The site's `checksums.txt` lists every file it serves (the web build is reproducible too), and
+  after each deploy CI re-downloads the live site and checks every file against its own build:
 
   ```sh
   site=https://asleepace.github.io/octave-camo

@@ -45,8 +45,11 @@ version and commit you're using; please include it in reports.
   the bytes it runs. It should equal the `octave-camo.wasm` checksum in the matching
   [release](https://github.com/asleepace/octave-camo/releases).
 - `checksums.txt` on the site lists every file it serves; CI checks the live site against its own
-  build after each deploy. The web build is reproducible, and each release records whether the
-  wasm build was (two clean builds in different directories, compared byte for byte).
+  build after each deploy.
+- Both builds are reproducible (from 0.1.1): rebuilding the commit shown in the footer gives
+  the same wasm hash on any machine (README.md says how). CI rebuilds the wasm in another
+  directory on every push and fails if a byte differs, and a release checks the deployed file
+  against two fresh builds.
 - A hash shown by a page can't vouch for that page: the comparison has to be against something
   you got elsewhere (the release, or your own build). The site also works offline once loaded,
   so you can check what it sends: nothing.

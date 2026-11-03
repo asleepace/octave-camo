@@ -59,6 +59,13 @@ jobs:
           --checksum 83baca83553f8c443cda7b84800912e6e709c3acd2e7ebf277794ca5836c0da5
       - name: Build
         run: scripts/build-wasm.sh web/public/octave-camo.wasm
+      - name: Reproducible (a clean build in another directory must be byte-identical)
+        run: |
+          git config --global --add safe.directory "$PWD"
+          mkdir -p /tmp/elsewhere && git archive HEAD | tar -x -C /tmp/elsewhere
+          (cd /tmp/elsewhere && scripts/build-wasm.sh /tmp/again.wasm)
+          sha256sum web/public/octave-camo.wasm /tmp/again.wasm
+          cmp web/public/octave-camo.wasm /tmp/again.wasm
       - name: Build debug variant (its traps print a reason)
         run: CONFIG=debug scripts/build-wasm.sh wasm-debug/octave-camo-debug.wasm
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

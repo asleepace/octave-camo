@@ -79,6 +79,9 @@ jobs:
           sha256sum deployed/octave-camo.wasm out/same-path.wasm out/other-path.wasm
           same() { cmp -s deployed/octave-camo.wasm "$1" && echo yes || echo no; }
           printf 'same path: %s; another path: %s\n' "$(same out/same-path.wasm)" "$(same out/other-path.wasm)" | tee out/reproducible
+          # From 0.1.1 on the build is reproducible (CI checks every push); a release that isn't
+          # can't be verified independently, so it fails. 0.1.0 predates the fix and may say no.
+          [ "${TAG}" = v0.1.0 ] || grep -q "same path: yes; another path: yes" out/reproducible
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: reproducible
@@ -151,7 +154,17 @@ jobs:
             echo "  live site and checks each file against its own build. (The live site moves on with \`main\`;"
             echo "  its footer shows which commit it is.)"
             echo "- Rebuilding the wasm from source gives the same bytes: **$(cat artifacts/reproducible/reproducible)**."
-            echo "  Until both say yes, a rebuild can't independently confirm the deployed file."
+            echo "  To check it yourself (any directory, any machine):"
+            echo
+            echo '  ```sh'
+            echo "  git clone https://github.com/${GITHUB_REPOSITORY} && cd octave-camo && git checkout ${TAG}"
+            echo '  docker run --rm -v "$PWD":/src -w /src swift:6.4.2 bash -c "swift sdk install \'
+            echo '    https://download.swift.org/swift-6.4.2-release/wasm-sdk/swift-6.4.2-RELEASE/swift-6.4.2-RELEASE_wasm.artifactbundle.tar.gz \'
+            echo '    --checksum 83baca83553f8c443cda7b84800912e6e709c3acd2e7ebf277794ca5836c0da5 && scripts/build-wasm.sh /src/rebuilt.wasm"'
+            echo '  sha256sum rebuilt.wasm'
+            echo '  ```'
+            echo
+            echo "  (Before 0.1.1 the build embedded per-machine compiler hashes, so this said no.)"
             echo
             echo '```'
             cat assets/SHA256SUMS

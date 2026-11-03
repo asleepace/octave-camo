@@ -11,6 +11,21 @@ are grouped by milestone, newest first, with the commits that made them.
 
 Nothing yet.
 
+## [0.1.1] — 2026-11-03
+
+### Reproducible builds
+
+- **The WebAssembly build is reproducible.** Rebuilding a commit gives the same bytes on any
+  machine and in any directory, so the engine hash in the page's footer can be checked against
+  your own build, not only against ours. The only bytes that varied were the compiler's
+  `.swift_modhash` section (per-object hashes of the IR including debug info, kept for
+  incremental builds, unused at runtime); release builds now have no debug info and no modhash.
+  CI rebuilds the wasm in another directory on every push and fails if a byte differs.
+- **A release ships the exact wasm that was deployed** for its commit, not a rebuild (0.1.0's
+  first release listed a rebuilt file whose hash didn't match the site's footer; it was
+  corrected the same day). Rebuilds are made to check reproducibility, and a release fails if they
+  don't match. Releases can be re-run by hand for an existing tag.
+
 ## [0.1.0] — 2026-11-03
 
 The first tagged release. octave-camo removes the location and time clues in a video's sound and
