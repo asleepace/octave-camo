@@ -121,3 +121,7 @@ wobble stopped at 400 Hz (a stray 3rd-harmonic fragment: 1510 m, but the wrong s
 - `reference/` is the prototype the numbers above came from. The Swift code mirrors its
   algorithms and defaults, except the faster wobble (matches the original to better than
   −60 dB) and different random streams, so exact figures won't match.
+
+## License
+
+MIT, see [LICENSE](LICENSE).
