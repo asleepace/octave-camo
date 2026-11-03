@@ -48,11 +48,15 @@ public struct LowBandRegeneration: ScrubStage {
         var outRe = stft.re, outIm = stft.im
 
         // How much of each bin to replace: 1 below `bottom`, raised cosine to 0 at `top`.
-        let replace: [Double] = (0..<K).map { k in
-            let f = Double(k) * binHz
-            if f <= bottom { return 1 }
-            if f >= top { return 0 }
-            return 0.5 + 0.5 * cos(Double.pi * (f - bottom) / (top - bottom))
+        var replace = [Double](repeating: 0, count: K)
+        for k in 0..<K {
+            let f: Double = Double(k) * binHz
+            if f <= bottom {
+                replace[k] = 1
+            } else if f < top {
+                let u: Double = (f - bottom) / (top - bottom)
+                replace[k] = 0.5 + 0.5 * cos(Double.pi * u)
+            }
         }
 
         if mode == .highpass {
@@ -69,7 +73,8 @@ public struct LowBandRegeneration: ScrubStage {
         var keep = [Bool](repeating: false, count: F * K)
         var voicedFrames = 0
         if keepVoice {
-            let times = (0..<F).map { stft.centerTime(of: $0, sampleRate: sampleRate) }
+            var times = [Double](repeating: 0, count: F)
+            for m in 0..<F { times[m] = stft.centerTime(of: m, sampleRate: sampleRate) }
             let f0 = pitch.track(x, sampleRate: sampleRate, at: times)
             for m in 0..<F where f0[m] > 0 {
                 voicedFrames += 1
@@ -86,17 +91,24 @@ public struct LowBandRegeneration: ScrubStage {
         // ERB bands over [0, top]; each bin belongs to one band.
         let edges = [0.0] + ERB.bands(from: 20, to: top).dropFirst()
         let B = edges.count - 1
-        let bandOf: [Int] = (0..<K).map { k in
-            let f = Double(k) * binHz
+        var bandOf = [Int](repeating: 0, count: K)
+        for k in 0..<K {
+            let f: Double = Double(k) * binHz
             var b = 0
             while b + 1 < B && f >= edges[b + 1] { b += 1 }
-            return b
+            bandOf[k] = b
         }
 
         // Static per-bin spectral shape (long-term median power): carries no time-varying information.
-        let profile: [Double] = (0..<K).map { k in
-            let powers = (0..<F).map { m in stft.re[m * K + k] * stft.re[m * K + k] + stft.im[m * K + k] * stft.im[m * K + k] }
-            return DSP.median(powers[...]) + 1e-20
+        var profile = [Double](repeating: 0, count: K)
+        var powers = [Double](repeating: 0, count: F)
+        for k in 0..<K {
+            for m in 0..<F {
+                let i = m * K + k
+                let p: Double = stft.re[i] * stft.re[i] + stft.im[i] * stft.im[i]
+                powers[m] = p
+            }
+            profile[k] = DSP.median(powers[...]) + 1e-20
         }
 
         // Band energy per frame (replaced bins only), smoothed, with slow random gain.
@@ -110,15 +122,20 @@ public struct LowBandRegeneration: ScrubStage {
             }
         }
         let smoothFrames = Int((smoothSeconds * framesPerSecond).rounded())
-        let target: [[Double]] = energy.map { e in
-            let s = DSP.smooth(e, length: smoothFrames)
-            let periods = [rng.uniform(10...30), rng.uniform(10...30)]
-            let phases = [rng.uniform(0...(2 * Double.pi)), rng.uniform(0...(2 * Double.pi))]
-            return s.indices.map { m in
-                let t = Double(m) / framesPerSecond
-                let wobble = sin(2 * Double.pi * t / periods[0] + phases[0]) + sin(2 * Double.pi * t / periods[1] + phases[1])
-                return s[m] * pow(10, jitterDB / 2 * wobble / 10)
+        var target: [[Double]] = []
+        target.reserveCapacity(B)
+        for b in 0..<B {
+            var s: [Double] = DSP.smooth(energy[b], length: smoothFrames)
+            let period1: Double = rng.uniform(10...30), period2: Double = rng.uniform(10...30)
+            let phase1: Double = rng.uniform(0...(2 * Double.pi)), phase2: Double = rng.uniform(0...(2 * Double.pi))
+            for m in 0..<F {
+                let t: Double = Double(m) / framesPerSecond
+                let a: Double = sin(2 * Double.pi * t / period1 + phase1)
+                let c: Double = sin(2 * Double.pi * t / period2 + phase2)
+                let decibels: Double = jitterDB / 2 * (a + c)
+                s[m] *= pow(10, decibels / 10)
             }
+            target.append(s)
         }
 
         // Random-phase frames overlap-add incoherently, so their power comes out lower than the
