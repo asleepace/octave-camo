@@ -92,7 +92,8 @@ final class InvariantTests: XCTestCase {
         var phase = 0.0
         for i in 0..<n {
             let t = Double(i) / Double(rate)
-            let f0 = 140 * (1 + 0.08 * sin(2 * .pi * 0.7 * t) + 0.02 * sin(2 * .pi * 5 * t))
+            let wobble: Double = 0.08 * sin(2 * Double.pi * 0.7 * t) + 0.02 * sin(2 * Double.pi * 5 * t)
+            let f0: Double = 140 * (1 + wobble)
             phase += 2 * .pi * f0 / Double(rate)
             let cycle = t.truncatingRemainder(dividingBy: 0.4)
             guard cycle < 0.25 else { continue }
@@ -338,14 +339,18 @@ final class InvariantTests: XCTestCase {
         return FlickerScan.Profiles(frames: K, strips: S, rows: R, values: values, times: (0..<K).map { Double($0) / 30 })
     }
 
+    /// Log-brightness of a 100 Hz rolling band (readout half a frame) at 30 fps.
+    private static func band(_ k: Int, _ r: Int) -> Double {
+        let t: Double = Double(k) / 30 + 0.5 / 30 * Double(r) / 120
+        return -0.5 + 0.04 * cos(2 * Double.pi * 100 * t)
+    }
+
     func testFlickerGainsAreFiniteBoundedAndShaped() {
         var rng = SeededRNG(seed: 6)
         let cases: [(String, FlickerScan.Profiles)] = [
             ("flat", flickerProfiles(frames: 300) { _, _, _ in -1 }),
             ("noise", flickerProfiles(frames: 300) { _, _, _ in rng.normal() }),
-            ("banded", flickerProfiles(frames: 600) { k, _, r in
-                -0.5 + 0.04 * cos(2 * .pi * 100 * (Double(k) / 30 + 0.5 / 30 * Double(r) / 120))
-            }),
+            ("banded", flickerProfiles(frames: 600) { k, _, r in Self.band(k, r) }),
             ("short", flickerProfiles(frames: 8, strips: 1, rows: 8) { _, _, r in Double(r) }),
         ]
         let scan = FlickerScan()
@@ -368,16 +373,19 @@ final class InvariantTests: XCTestCase {
 
     func testFlickerSaysWhenItCouldNotLook() {
         // Fewer frames than one 4 s segment.
-        let short = FlickerScan().scan(flickerProfiles(frames: 90) { k, _, r in
-            -0.5 + 0.04 * cos(2 * .pi * 100 * (Double(k) / 30 + 0.5 / 30 * Double(r) / 120))
-        })
+        let short = FlickerScan().scan(flickerProfiles(frames: 90) { k, _, r in Self.band(k, r) })
         XCTAssertFalse(short.checked)
         XCTAssertFalse(short.detected)
         // 240 fps: a 100/120 Hz band would be under half a cycle per frame.
         var values = [Double](repeating: -0.5, count: 2_400 * 6 * 120)
-        for k in 0..<2_400 { for s in 0..<6 { for r in 0..<120 {
-            values[(k * 6 + s) * 120 + r] += 0.04 * cos(2 * .pi * 120 * (Double(k) / 240 + 0.5 / 240 * Double(r) / 120))
-        } } }
+        for k in 0..<2_400 {
+            for s in 0..<6 {
+                for r in 0..<120 {
+                    let t: Double = Double(k) / 240 + 0.5 / 240 * Double(r) / 120
+                    values[(k * 6 + s) * 120 + r] += 0.04 * cos(2 * Double.pi * 120 * t)
+                }
+            }
+        }
         let fast = FlickerScan().scan(FlickerScan.Profiles(frames: 2_400, strips: 6, rows: 120, values: values,
                                                            times: (0..<2_400).map { Double($0) / 240 }))
         XCTAssertTrue(fast.detected || !fast.checked, "high frame rate read as clean")

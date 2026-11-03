@@ -24,10 +24,10 @@ overall sound.
 | Side channel | What it gives away | What octave-camo does |
 | --- | --- | --- |
 | Doppler curves of planes, trains, ships | Your position, matched against public tracks (ADS-B, transit feeds, AIS) | Cancels long tones, searches blind for flyby-shaped curves and cancels them, regenerates the low band as information-free noise |
-| Mains hum | Recording time and grid region (ENF) | Notches both 50 and 60 Hz harmonic families and refills the notches, so neither the hum nor the notch pattern survives |
+| Mains hum | Recording time and grid region (ENF) | Notches both 50 and 60 Hz harmonic families up to 1 kHz, right to the clip's edges, and refills the notches, so neither the hum nor the notch pattern survives |
 | Light flicker in the picture | The same grid timestamp, as rolling-shutter bands | Scans every frame; if found, divides the bands out (optional: re-encodes the picture) |
 | Multiple mics, spatial-audio tracks | Direction of sounds | Mono output; extra audio tracks dropped |
-| Metadata | GPS, device, timestamps, directly | No container metadata is copied: no tags, no creation time, a random file name |
+| Metadata | GPS, device, timestamps, directly | No container metadata is copied: no tags, no creation time, timestamps rebased to zero, a random file name. Data embedded in H.264/HEVC packets (SEI: encoder settings, camcorder date and GPS) is removed too |
 
 It doesn't touch what the picture shows, what people say, or anything about the account that posts
 it.
@@ -36,8 +36,9 @@ it.
 
 **[asleepace.github.io/octave-camo](https://asleepace.github.io/octave-camo/)**: drop a video, press
 CLOAK, save. Everything runs on your device; the Swift scrubber is compiled to WebAssembly and
-nothing is uploaded. The saved MP4 has the original video stream (bit for bit, unless you remove
-light flicker) and a new mono AAC audio track, with no metadata.
+nothing is uploaded. The saved MP4 has the original video packets (bit for bit, minus any SEI
+data embedded in H.264/HEVC, unless you remove light flicker) and a new mono AAC audio track, with
+no metadata.
 
 ## Verify it yourself
 
@@ -49,11 +50,13 @@ You shouldn't have to take a privacy tool's word for it.
   other origin. A CSP can't stop everything (it doesn't cover navigating the page away or WebRTC),
   so check for yourself: watch the Network tab in your browser's developer tools while you cloak a
   file, or load the page, go offline, and use it.
-- **The picture is untouched.** Compare the video packets of the original and the cloaked file:
+- **The picture is untouched.** Compare the video packets of the original and the cloaked file.
+  For H.264, drop the original's SEI first (`remove_types=39|40` for HEVC; nothing for VP9/AV1),
+  since the cloak removes it:
 
   ```sh
-  ffmpeg -v error -i original.mov -map 0:v:0 -c copy -f streamhash -hash sha256 -
-  ffmpeg -v error -i original.camo.mp4 -map 0:v:0 -c copy -f streamhash -hash sha256 -
+  ffmpeg -v error -i original.mov -map 0:v:0 -c copy -bsf:v filter_units=remove_types=6 -f streamhash -hash sha256 -
+  ffmpeg -v error -i camo-xxxxxx.mp4 -map 0:v:0 -c copy -f streamhash -hash sha256 -
   ```
 
 - **The metadata is gone.** `ffprobe -show_format -show_streams original.camo.mp4` (or `exiftool`)
@@ -95,9 +98,11 @@ The default chain is `mono → hum → subtract → scurve → lowband`, the sam
 web app and the research harness:
 
 1. **mono** averages the channels, which removes direction of arrival.
-2. **hum** notches the 50 and 60 Hz harmonic families (zero-phase, Q = 30) and refills each notch
-   with noise at its neighbours' long-term level. That removes the grid clock without leaving a
-   notch pattern that says which grid the recording came from.
+2. **hum** notches the 50 and 60 Hz harmonic families up to 1 kHz (zero-phase; Q = 30 below
+   400 Hz, 3 Hz wide above, so the voice band survives) and refills each notch with noise at its
+   neighbours' long-term level. Near the clip's edges, where a filter pass would start cold and
+   let the hum through, both passes run in from the inside. That removes the grid clock without
+   leaving a notch pattern that says which grid the recording came from.
 3. **subtract** follows each long tone, cancels a matched copy, re-tracks the residual, repeats.
 4. **scurve** runs the attacker's trick blind: it scores every physically possible straight pass
    (speed, distance, timing) by integrating energy along its pitch curve, and cancels the curves
@@ -120,9 +125,13 @@ and the saved file is decoded and scanned again to confirm.
   [THREAT_MODEL.md](THREAT_MODEL.md).
 - Removing light flicker re-encodes the picture in standard dynamic range, so HDR footage looks a
   little different. Clips under 5 seconds are too short to check for flicker.
-- Without de-flicker, the video stream is copied as is, including any data embedded in the stream
-  itself (some cameras put timecode, user data or telemetry there; container metadata is removed).
-  The codec settings and resolution also say what kind of device recorded it.
+- Without de-flicker, the video packets are copied. SEI (where H.264/HEVC cameras and encoders
+  put user data, timecode and telemetry) is removed; AV1 metadata units are copied as is (VP9 has
+  none). The codec settings and resolution still say what kind of device recorded it.
+- Videos with no audio track are refused (there's nothing for the cloak to do, but it also means
+  their metadata isn't stripped here). Audio is cloaked as mono at up to 48 kHz.
+- Slow-motion pictures (about 200 fps and up), or under 5 seconds, can't be checked for flicker; the page says "not
+  checkable" rather than "none".
 - A cloaked file is recognisable as one (mono AAC audio, regenerated low band). That says the file
   was processed, not where it was recorded.
 - Clips are processed in memory; the web app takes up to 5 minutes.

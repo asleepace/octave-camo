@@ -31,11 +31,11 @@ export function videoHash(file: string, opts: { withoutSei?: "h264" | "hevc" } =
     { encoding: "utf8" }).trim();
 }
 
-/** Decoded duration of the first audio stream, s (container durations can be missing or wrong). */
+/** Decoded length of the first audio stream, s, by counting samples (container durations can be missing or wrong). */
 export function decodedAudioSeconds(file: string): number {
-  const out = execFileSync("ffmpeg", ["-v", "error", "-i", file, "-map", "0:a:0", "-f", "null", "-progress", "pipe:1", "-"], { encoding: "utf8" });
-  const us = [...out.matchAll(/out_time_us=(\d+)/g)].map((m) => Number(m[1]));
-  return (us.at(-1) ?? 0) / 1e6;
+  const pcm = execFileSync("ffmpeg", ["-v", "error", "-i", file, "-map", "0:a:0", "-ac", "1", "-ar", "8000", "-f", "s16le", "-"],
+    { maxBuffer: 1 << 28 });
+  return pcm.length / 2 / 8000;
 }
 
 /** RMS level of the first audio stream in dBFS. */
