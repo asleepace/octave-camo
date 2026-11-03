@@ -1,0 +1,26 @@
+{
+  "name": "octave-camo-web",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@bjorn3/browser_wasi_shim": "0.4.2",
+    "@fontsource/jetbrains-mono": "5.3.0",
+    "@mediabunny/aac-encoder": "1.65.0",
+    "mediabunny": "1.65.0",
+    "zod": "^4"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "4.3.4",
+    "@types/bun": "^1.4.4",
+    "tailwindcss": "4.3.4",
+    "typescript": "^5",
+    "vite": "8.3.5"
+  }
+}

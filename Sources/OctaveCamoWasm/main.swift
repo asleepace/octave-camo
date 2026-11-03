@@ -5,13 +5,14 @@
 //
 // Calling convention (all sizes in elements, all audio Float32):
 //   ptr = camo_alloc(channels * frames)      write planar input samples at ptr
-//   n   = camo_scrub(ptr, channels, frames, sampleRate, stepsMask, seedLo, seedHi)
+//   n   = camo_scrub(ptr, channels, frames, sampleRate, stepsMask, seedLo, seedHi, cutoffHz, keepVoice)
 //   out = camo_output()                       n mono output samples (valid until the next scrub)
 //   log = camo_log(), len = camo_log_length() UTF-8, one line per stage
 //   camo_free(ptr)
 //   st  = camo_analyze(ptr, channels, frames, sampleRate)
 //         4 Int32: long tonal tracks, Doppler-shaped tracks, mains-hum lines, fitted flybys
-// stepsMask bit i enables ScrubStep.allCases[i]; 0 means the default steps.
+// stepsMask bit i enables ScrubStep.allCases[i]; 0 means the default steps. cutoffHz <= 0 keeps the
+// lowband default; keepVoice is 0 or 1.
 
 #if arch(wasm32)
 import OctaveCamoKit
@@ -56,7 +57,8 @@ func camoSteps() -> Int32 {
 @_expose(wasm, "camo_scrub")
 @_cdecl("camo_scrub")
 func camoScrub(_ input: UnsafePointer<Float>, _ channelCount: Int32, _ frames: Int32, _ sampleRate: Int32,
-               _ stepsMask: Int32, _ seedLo: UInt32, _ seedHi: UInt32) -> Int32 {
+               _ stepsMask: Int32, _ seedLo: UInt32, _ seedHi: UInt32,
+               _ cutoffHz: Double, _ keepVoice: Int32) -> Int32 {
     guard let clip = audio(input, channelCount, frames, sampleRate) else { return 0 }
     var pipeline = ScrubPipeline()
     if stepsMask != 0 {
@@ -64,6 +66,8 @@ func camoScrub(_ input: UnsafePointer<Float>, _ channelCount: Int32, _ frames: I
         for (i, step) in ScrubStep.allCases.enumerated() where stepsMask & (1 << i) != 0 { steps.insert(step) }
         pipeline.steps = steps
     }
+    if cutoffHz > 0 { pipeline.lowband.cutoff = cutoffHz }
+    pipeline.lowband.keepVoice = keepVoice != 0
     let seed = UInt64(seedHi) << 32 | UInt64(seedLo)
     if seed != 0 {
         pipeline.lowband.seed = seed

@@ -12,50 +12,72 @@ information and removes it without noticeably changing what a listener hears.
 
 > Status: research prototype. The defenses are validated on synthetic clips, not yet on a real
 > recording with flight-log ground truth. Treat it as "reduces location leakage", never
-> "guarantees privacy".
+> "guarantees privacy". See [THREAT_MODEL.md](THREAT_MODEL.md) for what is and isn't covered.
 
-## Quick start
+## Use it
 
-The Bun/TypeScript harness runs today (attackers, modular defenses, benchmarks):
+**In the browser:** [asleepace.github.io/octave-camo](https://asleepace.github.io/octave-camo/).
+Drop a video, press CLOAK, save. Everything runs on your device: the Swift scrubber is
+compiled to WebAssembly, and nothing is uploaded. The saved file keeps the original video
+stream untouched and gets a new AAC audio track, with no metadata.
 
-```sh
-cd harness && bun install
-bun run scrub clip.mov clip.camo.mp4            # default chain: hum+subtract+lowband (offline)
-bun run scrub --list                            # every defense module and its options
-bun test                                        # 88 tests
-bun run bench:defenses                          # chains × synthetic clips × both attackers
-```
-
-The Swift package is the start of the iOS library. It builds, and its 19 tests pass in CI on
-macOS and Linux. It has the original pipeline (hum, tone subtraction, wobble); the modular
-defenses (`lowband` and friends) live in the harness for now.
+## Quick start (development)
 
 ```sh
-swift build -c release && swift test -c release
-scripts/roundtrip.sh                            # synth → attack → scrub → AAC 128k → attack
-scripts/scrub-video.sh in.mov                   # Swift CLI on a video (picture copied, metadata stripped)
+swift build -c release && swift test -c release      # library + CLI (macOS, Linux)
+scripts/build-wasm.sh                                # WebAssembly build (Swift 6.4.2 + wasm SDK)
+cd web && bun install && bun run dev                 # web app (uses a dev stand-in without the wasm)
+cd harness && bun install && bun test                # attackers, defenses, benchmarks
+bun run bench:defenses                               # chains × synthetic clips × both attackers
 ```
 
-See [harness/README.md](harness/README.md) for the attackers, defenses and results, and
-[IDEAS.md](IDEAS.md) for what's next.
+CI builds and tests all of it on every push (macOS, Linux, WebAssembly, web, harness), and
+deploys the web app from `main`.
+
+## The default chain
+
+`mono → hum → subtract → scurve → lowband`, the same in Swift, the web app and the harness:
+
+1. **mono** averages channels, which removes direction of arrival.
+2. **hum** notches mains harmonics (zero-phase, Q = 30), which removes the ENF clock.
+3. **subtract** tracks long tones and cancels them: heterodyne with the tracked phase, low-pass to
+   get the complex amplitude, resynthesize, subtract, re-track the residual, repeat.
+4. **scurve** runs the attacker's own trick blind: it scores every physically possible flyby
+   curve (speed, distance, closest-approach time) by integrating energy along it in a
+   log-frequency spectrogram, then cancels the best candidates. This catches faint tones
+   above the lowband cutoff, such as train wheels.
+5. **lowband** regenerates everything below the cutoff (300 Hz) as noise that matches each
+   critical band's loudness over time, slowly smoothed and re-gained. It keeps tracked voice
+   harmonics. Nothing narrow survives for a matched filter to lock on to.
+
+`wobble` (per-band random pitch drift) is still available, but it's off by default:
+benchmarks showed it adds little once `lowband` runs.
+
+Results are in [THREAT_MODEL.md](THREAT_MODEL.md) (trains, ships) and
+[harness/README.md](harness/README.md) (aircraft).
 
 ## Layout
 
 ```
 Sources/
-  OctaveCamoKit/              library — what the iOS app imports
-    Audio/      Audio (planar PCM), WAV read/write
-    DSP/        FFT + RealFFT, Biquad, SeededRNG, DSP helpers
-    Model/      FlybyGeometry — the flyby physics, shared by synth and fitter
-    Analysis/   ToneTracker, FlybyAnalyzer (the attacker), NelderMead
-    Scrub/      ScrubPipeline and its stages: HumNotch, ToneSubtraction, BandWobble
-    Synth/      FlybySynth — known-truth test clips
-  octave-camo/                thin CLI: argument parsing, commands, output formatting
-Tests/OctaveCamoKitTests/     DSP correctness, physics, WAV round trip, attacker vs. defense
-reference/                    NumPy prototype the published numbers came from (frozen)
-scripts/                      ffmpeg wrappers
-harness/                      Bun/TypeScript: attackers, modular defenses, benchmarks, ground truth
-IDEAS.md                      backlog: other leaky sources (trains, ships, ENF in video), next steps
+  OctaveCamoKit/      pure-Swift DSP, no Foundation: builds for iOS, macOS, Linux, WebAssembly
+    DSP/              FFT + RealFFT, Biquad, SeededRNG, low-band STFT, ERB scale
+    Model/            FlybyGeometry: the flyby physics, shared by synth, fitter and scurve
+    Analysis/         ToneTracker, FlybyAnalyzer (the blind attacker), PitchTracker (YIN)
+    Scrub/            ScrubPipeline: HumNotch, ToneSubtraction, SCurveCancel,
+                      LowBandRegeneration, BandWobble
+    Synth/            FlybySynth: known-truth test clips
+  OctaveCamoIO/       WAV read/write (Foundation)
+  OctaveCamoWasm/     WebAssembly exports for the web app (WASI reactor)
+  octave-camo/        CLI
+Tests/                Swift tests: DSP, physics, attacker vs. defense, lowband, scurve
+web/                  the web app: Vite + TypeScript + Tailwind, worker, Mediabunny remux
+harness/              Bun/TypeScript: matched (ADS-B) attacker, defense modules, benchmarks,
+                      OpenSky / Flightradar24 ground truth
+reference/            NumPy prototype and synthetic clip generators
+scripts/              wasm build, ffmpeg wrappers
+THREAT_MODEL.md       channels, attacker, evidence, known gaps
+IDEAS.md              backlog
 ```
 
 ## Using the library
@@ -63,8 +85,9 @@ IDEAS.md                      backlog: other leaky sources (trains, ships, ENF i
 ```swift
 import OctaveCamoKit
 
-var pipeline = ScrubPipeline()          // mono → hum → subtract → wobble
+var pipeline = ScrubPipeline()          // mono → hum → subtract → scurve → lowband
 pipeline.hum.mains = 50                 // e.g. for EU footage
+pipeline.lowband.cutoff = 250
 let result = pipeline.run(audio)        // Audio in, mono Audio out
 result.log.forEach { print($0) }
 
@@ -72,58 +95,29 @@ let risk = FlybyAnalyzer().analyze(result.audio)
 print(risk.consensus == nil ? "clean" : "flyby still recoverable")
 ```
 
-To check the attack and the scrub against a real recording and the aircraft's actual ADS-B track,
-see [harness/README.md](harness/README.md).
+Every stage is a plain struct with tunable properties; set `pipeline.steps` to switch stages
+on or off.
 
-Every stage is a plain struct with tunable properties and defaults; set `pipeline.steps` to
-switch stages off.
-
-## Commands
+## CLI
 
 | Command | Role | What it does |
 |---|---|---|
 | `synth out.wav [--hard]` | test data | Known-truth flyby (120 Hz + harmonics, 75 m/s, 1500 m, t₀ = 30 s), 60 Hz hum with ENF wander, pink noise, speech-like syllables |
 | `analyze in.wav [--threshold dB] [--json]` | attacker | Tracks tones lasting > 2 s, fits a straight-line flyby (with propagation delay), reports distance / speed / t₀ |
-| `scrub in.wav out.wav` | defense | Mono → hum notches → tone subtraction (3 passes) → per-band wobble below 600 Hz |
+| `scrub in.wav out.wav` | defense | The default chain above |
 
-`scrub` flags: `--steps mono,hum,subtract,wobble`, `--mains 60|50`, `--passes 3`,
-`--depth 0.015`, `--wobble-top 600` (400 is gentler on voices, see below), `--seed N`.
-
-## How the scrub works
-
-1. **Mono** removes direction of arrival from multi-mic recordings.
-2. **Hum notches** (60 Hz harmonics below 400 Hz, Q = 30, zero-phase) remove the ENF clock.
-3. **Subtraction**: for each long tone, heterodyne with the tracked phase, low-pass (0.15 s,
-   centered) to get its complex amplitude, resynthesize and subtract. Re-track the residual
-   and repeat.
-4. **Wobble**: split 30–600 Hz into 8 bands (crossovers sum to 1) and give each band its own
-   slow random frequency drift (±1.5 %, 1–4 s periods). Harmonics of one plane land in
-   different bands, so the drift can't be estimated from one and divided out of the others.
-   Applied at a decimated rate and summed into one spectrum: two full-size FFTs instead of one
-   per band.
-
-## Results (NumPy reference, after AAC 128 kbps re-encode)
-
-| Case | Before | After scrub |
-|---|---|---|
-| Clean flyby | d = 1500 m on all 3 harmonics (±0.1 %) | no tracks found, even at 3 dB sensitivity; tone cancelled 33–38 dB |
-| `--hard` (turbulence + multipath) | d = 1467–1474 m (−2 %) | ~20 dB cancelled; at 3 dB sensitivity one short fragment with a wrong speed (169 vs 75 m/s) |
-| Speech 500 Hz–4 kHz | — | no measurable change |
-
-**Why the wobble stops at 600 Hz by default.** On 30 s `--hard` clips across 3 seeds, an attacker
-at 6 dB sensitivity recovered a fit within 10 % of the true distance on 1 of 3 seeds when the
-wobble stopped at 400 Hz (a stray 3rd-harmonic fragment: 1510 m, but the wrong speed). At 600 Hz,
-0 of 3 seeds at either 6 or 3 dB, and the leftover fits scatter between 3 and 338 m. Cost: about
-0.5 dB in the 500 Hz–4 kHz speech band.
+`scrub` flags: `--steps mono,hum,subtract,scurve,lowband[,wobble]`, `--mains 60|50`,
+`--passes 3`, `--cutoff 300`, `--lowband-mode regenerate|highpass`, `--no-keep-voice`,
+`--depth 0.015` and `--wobble-top 600` (wobble only), `--seed N`.
+`scripts/scrub-video.sh in.mov` runs it on a video (picture copied, metadata stripped).
 
 ## Limits
 
-- Synthetic flybys only; real recordings will have more than one aircraft, wind, and traffic.
-- The whole clip is processed in memory (the wobble uses one FFT the size of the clip, about
-  64 MB per minute at 48 kHz). The iOS app should process long videos in overlapping blocks.
-- `reference/` is the prototype the numbers above came from. The Swift code mirrors its
-  algorithms and defaults, except the faster wobble (matches the original to better than
-  −60 dB) and different random streams, so exact figures won't match.
+- Every number is from synthetic clips so far. Real recordings, with several aircraft, wind
+  and traffic, are being collected.
+- The whole clip is processed in memory. The web app caps clips at 5 minutes; the iOS app
+  should process long videos in overlapping blocks.
+- The web app's output is mono: averaging channels is itself one of the defenses.
 
 ## License
 

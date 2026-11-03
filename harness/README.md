@@ -84,7 +84,7 @@ Defenses are modules you chain with `+`. Options go in parentheses, and every op
 with Zod, so a typo fails loudly. Run `bun run scrub --list` for the full list with defaults.
 
 ```sh
-bun run scrub clip.mov out.mp4                          # default: hum+subtract+lowband (offline)
+bun run scrub clip.mov out.mp4                          # default: hum+subtract+scurve+lowband (offline)
 bun run scrub clip.mov out.wav --chain "hum+scurve+lowband"
 bun run scrub clip.mov out.mp4 --chain "informed+lowband" --track tracks.json   # online
 bun run bench:defenses                                  # compare chains on synthetic clips
@@ -117,13 +117,16 @@ plus 2 decoy tracks). A "leak" means the true location was recovered.
 | `legacy` (old scrub) | **leak** | **leak** | safe | 2.5–12 dB | 0.5–1.5 dB |
 | `hum+lowband` | safe | safe | **leak** (harmonics above the cutoff) | 3–3.5 dB | 0.2 dB |
 | `hum+scurve` | **leak** | safe | **leak** | 1–7 dB | 0.2–0.6 dB |
-| `hum+subtract+lowband` (default) | safe | safe | safe | 3–10 dB* | 0.2–1.2 dB |
+| `hum+subtract+lowband` | safe | safe | safe | 3–10 dB* | 0.2–1.2 dB |
+| `hum+subtract+scurve+lowband` (default) | safe | safe | safe | 3–10 dB* | 0.2–1.2 dB |
 | `informed+…` (online) | safe | safe | partial | | |
 
 \* 10 dB on the close clip is mostly the plane itself being removed.
 
 - **`scurve`** finds faint curves without flight data, but its 2 s windows are too coarse to
-  cancel fast, close sweeps. Use it as an add-on for faint tones above `lowband`'s cutoff.
+  cancel fast, close sweeps. Use it as an add-on for faint tones above `lowband`'s cutoff:
+  that's why it joined the default chain once train wheels showed up as the hardest case (see
+  [THREAT_MODEL.md](../THREAT_MODEL.md)).
 - **Random `decoy`s** made the matched attacker report a wrong place (7–12 km off) on the distant
   clips. Treat that as promising but unproven: a real attacker sees hundreds of flights and can
   notice inconsistent solutions.

@@ -1,0 +1,63 @@
+/**
+ * Smoke test of the real WebAssembly build through the same binding the web app uses.
+ * CI builds web/public/octave-camo.wasm first; locally it is skipped when the file is missing.
+ */
+import { describe, expect, test } from "bun:test";
+import { existsSync, readFileSync } from "node:fs";
+import { Camo, type Clip } from "../src/engine/camo.ts";
+
+const WASM = new URL("../public/octave-camo.wasm", import.meta.url).pathname;
+const SR = 16_000;
+
+/** 40 s: a jet-like flyby (Doppler-shifted tone + harmonics), 60 Hz mains hum, noise. */
+function flybyClip(): Clip {
+  const n = SR * 40, c = 343, speed = 90, distance = 300, t0 = 20, f0 = 180;
+  const x = new Float32Array(n);
+  let seed = 7;
+  const rand = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 2 ** 32);
+  let phase = 0;
+  for (let i = 0; i < n; i++) {
+    const t = i / SR;
+    // Received frequency ignoring propagation delay is plenty for a smoke test.
+    const dx = speed * (t - t0), r = Math.hypot(dx, distance);
+    phase += (2 * Math.PI * f0 / (1 + (speed * dx) / (r * c))) / SR;
+    const level = 0.08 * Math.min(1, 300 / r);
+    let s = 0;
+    for (let h = 1; h <= 3; h++) s += (level / h) * Math.sin(h * phase);
+    s += 0.01 * Math.sin(2 * Math.PI * 60 * t) + 0.005 * Math.sin(2 * Math.PI * 120 * t);
+    x[i] = s + 0.01 * (rand() + rand() + rand() - 1.5);
+  }
+  return { sampleRate: SR, channels: [x] };
+}
+
+describe.skipIf(!existsSync(WASM))("octave-camo.wasm", () => {
+  test("exposes the default steps", async () => {
+    const camo = await Camo.load(readFileSync(WASM));
+    expect(camo.defaultSteps).toEqual(["mono", "hum", "subtract", "scurve", "lowband"]);
+  });
+
+  test("scrubs a flyby and hum so a blind tracker finds neither", async () => {
+    const camo = await Camo.load(readFileSync(WASM));
+    const clip = flybyClip();
+    const before = camo.analyze(clip);
+    expect(before.doppler).toBeGreaterThan(0);
+    expect(before.hum).toBeGreaterThan(0);
+
+    const { output, log } = camo.scrub(clip, { seed: 42 });
+    expect(output.length).toBe(clip.channels[0]!.length);
+    expect(output.every(Number.isFinite)).toBe(true);
+    expect(log.map((l) => l.split(":")[0])).toEqual(["mono", "hum", "subtract", "scurve", "lowband"]);
+
+    const after = camo.analyze({ sampleRate: SR, channels: [output] });
+    expect(after.doppler).toBe(0);
+    expect(after.hum).toBe(0);
+  }, 120_000);
+
+  test("a seed makes the output deterministic", async () => {
+    const camo = await Camo.load(readFileSync(WASM));
+    const clip = flybyClip();
+    const a = camo.scrub(clip, { steps: ["hum", "lowband"], seed: 5 }).output;
+    const b = camo.scrub(clip, { steps: ["hum", "lowband"], seed: 5 }).output;
+    expect(a).toEqual(b);
+  }, 120_000);
+});

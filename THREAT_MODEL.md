@@ -63,9 +63,13 @@ better; 50 % is chance). Low/high Δ are ERB loudness changes below and above 30
 | Train, close (120 m) | leak z 12 | leak z 13 | no detection (10 %) | no detection (10 %) |
 | Train, distant (900 m, 600 Hz) | leak z 77 | leak z 74 | **leak z 30** | no detection (28 %) |
 | Ship (400 m) | leak z 79 | no detection | no detection | no detection |
+| Aircraft, distant (5.8 km) | leak z 20 | – | no detection (13 %) | no detection (25 %) |
+| Aircraft + speech | leak z 18 | – | no detection (29 %) | no detection (25 %) |
+| Aircraft, close (1.5 km) | blind 1.5 km, z 16 | – | no detection (2 %) | no detection (2 %) |
 
-Audio cost for the default: 2.8–2.9 dB low-band change (where texture is regenerated) and
-0.2–0.4 dB above it.
+Audio cost for the default: about 3 dB of low-band change (where texture is regenerated) and
+0.2–0.4 dB above it. The close aircraft pass costs more (10 dB low, 1.2 dB high), because its
+tones are strong and get cancelled. On the speech clip, 80 % of voice energy below 300 Hz is kept.
 
 What this taught us:
 
@@ -74,8 +78,10 @@ What this taught us:
   what `subtract` misses, which is why it is now in the default chain.
 - **Raising the cutoff is the wrong fix.** `lowband(cutoff=1000)` cleared the train clips but
   leaked the ship (z 10) and cost 0.8–1.1 dB above 300 Hz.
-- Aircraft results (distant jet, speech over a jet, close pass) are in
-  [harness/README.md](harness/README.md).
+- On the close aircraft pass the truth ranks in the top 2 % without crossing the detection
+  threshold. That's the thinnest margin in the table, and the first case to recheck on real
+  recordings.
+- More aircraft chains are in [harness/README.md](harness/README.md).
 
 ## Known gaps
 
