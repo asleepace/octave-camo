@@ -21,6 +21,11 @@ are grouped by milestone, newest first, with the commits that made them.
   50/60 Hz multiple (up there, nearly every tone does).
 - The wasm reports each tone's start, end and frequency range (`camo_tracks`); the CLI's JSON
   gains `start` per track.
+- The new range has its own, stricter settings (a 15 dB threshold, matching within 5% per second
+  of drift): with the low band's, background noise at 16 kHz chained into false 2–5 s "tones".
+- What the snapshot shows now: the 1.2 and 4.5 kHz tones are counted (1 → 1, not yet removed);
+  held notes' harmonics above 1 kHz are counted and stay (59 → 31); and the hum scene shows two
+  leftovers near 1 kHz (19 → 2) that the old check couldn't see.
 
 ### Tests
 
