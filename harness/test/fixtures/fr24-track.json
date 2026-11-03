@@ -1,0 +1,9 @@
+[
+  {
+    "fr24_id": "3cee6c82",
+    "tracks": [
+      { "timestamp": "2026-11-03T02:33:30Z", "lat": 37.75, "lon": -122.40, "alt": 4000, "gspeed": 145, "vspeed": -704, "track": 280, "squawk": "1234", "callsign": "SKW5678", "source": "ADSB" },
+      { "timestamp": "2026-11-03T02:33:40Z", "lat": 37.751, "lon": -122.405, "alt": 3950, "gspeed": 144, "vspeed": -704, "track": 280, "squawk": "1234", "callsign": "SKW5678", "source": "ADSB" }
+    ]
+  }
+]

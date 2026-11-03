@@ -1,0 +1,116 @@
+/**
+ * Defense comparison: every chain × every clip, after an AAC re-encode (like posting to X),
+ * scored by both attackers and by what it costs a listener.
+ *
+ *   bun bench/defenses.ts                      # default chains and clips
+ *   bun bench/defenses.ts --chains "hum+lowband;hum+scurve" --clips distant,speech --no-aac
+ *
+ * Clips (synthetic, known truth):
+ *   distant  quiet 90 s ambience, jet at 5.8 km slant, tone -25 dB below the noise
+ *   speech   the same with speech-like syllables for the first 45 s
+ *   close    60 s, close flyby at 1.5 km (the original blind-attack case)
+ */
+import { parseArgs } from "node:util";
+import { mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { Analyzer } from "../src/analyzer.ts";
+import { run } from "../src/clip.ts";
+import { parseChains, runChain } from "../src/defense/index.ts";
+import { decimate } from "../src/defense/signal.ts";
+import { readMono, writeMonoWav } from "../src/dsp.ts";
+import { defaultMatchedConfig, matchedAttack, whitenedSpectrogram } from "../src/matched.ts";
+import { loudnessChange, voiceRetention } from "../src/quality.ts";
+import type { FlightTrack } from "../src/track.ts";
+import { clipInfo, straightTrack } from "../test/helpers.ts";
+
+const DEFAULT_CHAINS = [
+  "none", "legacy", "hum+lowband(mode=highpass)", "hum+lowband", "hum+scurve", "hum+scurve+lowband",
+  "hum+lowband+decoy", "hum+scurve+lowband+decoy", "informed+legacy", "decoy(mode=spoof)+informed+lowband",
+].join(";");
+
+const { values: opts } = parseArgs({
+  options: {
+    chains: { type: "string", default: DEFAULT_CHAINS },
+    clips: { type: "string", default: "distant,speech,close" },
+    "no-aac": { type: "boolean", default: false },
+  },
+});
+
+const repo = join(import.meta.dir, "..", "..");
+const ref = (f: string) => join(repo, "reference", f);
+const SR = 48_000;
+const analyzer = new Analyzer(process.env.OCTAVE_CAMO_CMD ?? `python3 ${ref("analyze_json.py")}`);
+const dir = await mkdtemp(join(tmpdir(), "octave-camo-defenses-"));
+
+const decoys = [
+  { ...straightTrack({ offsetNorthM: -8_000, heightM: 4_000, speed: 200, t0: 20 }), id: "decoy1", callsign: "DECOY1" },
+  { ...straightTrack({ offsetNorthM: 3_000, heightM: 6_000, speed: 220, t0: 75 }), id: "decoy2", callsign: "DECOY2" },
+];
+
+type Clip = { name: string; wav: string; voice?: string; durationS: number; plane: FlightTrack; truthD: number };
+async function makeClip(name: string): Promise<Clip> {
+  const wav = join(dir, `${name}.wav`);
+  if (name === "close") {
+    await run(["python3", ref("proto.py"), "synth", wav]);
+    return { name, wav, durationS: 60, truthD: 1500,
+             plane: { ...straightTrack({ offsetNorthM: 900, heightM: 1200, speed: 75, t0: 30 }), id: "plane", callsign: "REAL" } };
+  }
+  await run(["python3", ref("synth_background.py"), wav, "--tone-db", "-25", ...(name === "speech" ? ["--speech", "45"] : [])]);
+  return { name, wav, voice: name === "speech" ? wav.replace(".wav", ".speech.wav") : undefined, durationS: 90,
+           truthD: 5831, plane: { ...straightTrack({ offsetNorthM: 5_000, heightM: 3_000, speed: 150, t0: 45 }), id: "plane", callsign: "REAL" } };
+}
+
+async function aacRoundTrip(x: Float32Array, tag: string): Promise<Float32Array> {
+  if (opts["no-aac"]) return x;
+  const a = join(dir, `${tag}.wav`), m = join(dir, `${tag}.m4a`);
+  await writeMonoWav(a, x, SR);
+  await run(["ffmpeg", "-loglevel", "error", "-y", "-i", a, "-c:a", "aac", "-b:a", "128k", m]);
+  return readMono(m, SR);
+}
+
+const pad = (s: string, n: number) => (s.length >= n ? s : s + " ".repeat(n - s.length));
+console.log(`AAC re-encode: ${opts["no-aac"] ? "off" : "128 kbps"}; attackers: blind tracker (6 dB) and matched (ADS-B, true + 2 decoy tracks)\n`);
+
+for (const name of opts.clips!.split(",")) {
+  const clip = await makeClip(name);
+  const info = clipInfo(clip.durationS);
+  const tracks = [clip.plane, ...decoys];
+  const original = await readMono(clip.wav, SR);
+  const voice = clip.voice ? await readMono(clip.voice, SR) : undefined;
+  console.log(`=== ${name} (${clip.durationS} s, true closest approach ${clip.truthD} m)`);
+  console.log(`  ${pad("chain", 38)} ${pad("blind attack", 16)} ${pad("matched attack (ADS-B)", 34)} low Δ   high Δ${voice ? "  voice<300Hz" : ""}`);
+
+  for (const chain of parseChains(opts.chains!.replace(/(^|;)none(;|$)/, "$1hum(mains=0)$2"))) {
+    const label = chain.label === "hum(mains=0)" ? "none" : chain.label;
+    const t = performance.now();
+    const processed = await runChain(chain, original.slice(),
+      { sampleRate: SR, seed: 7, clip: info, tracks, log: () => {} });
+    const posted = await aacRoundTrip(processed, `${name}-${Math.random().toString(36).slice(2)}`);
+
+    const pw = join(dir, `${name}-posted.wav`);
+    await writeMonoWav(pw, posted, SR);
+    const blind = await analyzer.analyze(pw, 6);
+    const blindText = blind.consensus
+      ? `${Math.abs(blind.consensus.distance - clip.truthD) < 0.1 * clip.truthD ? "LEAK" : "wrong"} ${(blind.consensus.distance / 1000).toFixed(1)} km`
+      : "nothing";
+
+    const { x: low, rate } = decimate(posted, SR, 4_000);
+    const cfg = { ...defaultMatchedConfig, sampleRate: rate };
+    const m = matchedAttack(whitenedSpectrogram(low, cfg), tracks, info, cfg);
+    const real = m.aircraft.find((a) => a.id === "plane")!;
+    const located = real.detected && (m.ambiguityAwareErrorM ?? Infinity) <= 1_000;
+    const matchedText = located
+      ? `LEAK ${m.ambiguityAwareErrorM!.toFixed(0)} m (z ${real.peakZ.toFixed(0)})`
+      : m.errorM !== undefined
+        ? `wrong place ${(m.errorM / 1000).toFixed(1)} km off`
+        : `no detection (truth top ${(100 - real.truthPercentile).toFixed(0)}%)`;
+
+    const low300 = loudnessChange(original, processed, SR, 30, 300);
+    const high = loudnessChange(original, processed, SR, 300, 4000);
+    const v = voice ? voiceRetention(voice, processed, SR) : NaN;
+    console.log(`  ${pad(label, 38)} ${pad(blindText, 16)} ${pad(matchedText, 34)} ${low300.toFixed(1).padStart(4)} dB ${high.toFixed(1).padStart(4)} dB` +
+      `${voice ? `  ${(v * 100).toFixed(0).padStart(5)}%` : ""}  [${((performance.now() - t) / 1000).toFixed(0)}s]`);
+  }
+  console.log("");
+}

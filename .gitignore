@@ -1,0 +1,26 @@
+# Swift
+.build/
+.swiftpm/
+*.xcodeproj/
+DerivedData/
+
+# Bun / Node
+node_modules/
+
+# Secrets: copy harness/.env.example to harness/.env
+.env
+.env.*
+!.env.example
+
+# Media and run artifacts (clips have GPS in their metadata; don't commit them by accident)
+*.mov
+*.mp4
+*.m4a
+*.wav
+*.npy
+*-tracks.json
+report.json
+
+# Python / OS
+__pycache__/
+.DS_Store

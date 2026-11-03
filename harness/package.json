@@ -1,0 +1,22 @@
+{
+  "name": "octave-camo-harness",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "verify": "bun src/cli.ts",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit",
+    "matched": "bun src/matched-cli.ts",
+    "bench": "bun bench/distant.ts",
+    "scrub": "bun src/scrub-cli.ts",
+    "bench:defenses": "bun bench/defenses.ts",
+    "test:e2e": "E2E=1 bun test test/e2e.test.ts"
+  },
+  "dependencies": {
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.4.4",
+    "typescript": "^7.0.2"
+  }
+}
