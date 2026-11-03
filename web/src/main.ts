@@ -78,6 +78,8 @@ let fileToken = 0;
 let saveSeq = 0;
 
 const demoData = demo();
+/** The terrain for a silent video: flat. */
+const quiet: Spectrogram = { centers: bandCenters(), hop: 0.05, frames: 1, db: new Float32Array(bandCenters().length).fill(-120) };
 const player = new Player();
 const terrain = new Terrain($<HTMLCanvasElement>("terrain"));
 terrain.cutoff = CUTOFF;
@@ -88,7 +90,10 @@ terrain.cutoff = CUTOFF;
 const worker = new Worker(URL.createObjectURL(new Blob([`import ${JSON.stringify(new URL(workerUrl, location.href).href)};`],
   { type: "text/javascript" })), { type: "module", name: "octave-camo" });
 
-const fresh = () => !!state.outputSamples && state.outputPreset === state.preset;
+/** A silent video: no sound to cloak, only the picture and metadata to handle. */
+const silent = () => !!state.loaded && !state.loaded.clip;
+/** What the button would save is ready: the cloaked audio for this preset, or (silent) the picture as is. */
+const fresh = () => silent() || (!!state.outputSamples && state.outputPreset === state.preset);
 
 // ---------- worker ----------
 
@@ -113,13 +118,13 @@ worker.onmessage = (event) => {
       state.busy = null;
       break;
     case "result": {
-      const loaded = state.loaded;
-      if (!loaded) return;
+      const clip = state.loaded?.clip;
+      if (!clip) return;
       Object.assign(state, {
         busy: null, outputSamples: m.output, outputPreset: state.pendingPreset, after: m.after, log: m.log, ms: m.ms,
         engine: m.engine, output: toSpectrogram(m.spectrum),
       });
-      player.set("out", [m.output], loaded.clip.sampleRate);
+      player.set("out", [m.output], clip.sampleRate);
       setSide("out");
       break;
     }
@@ -175,10 +180,15 @@ async function open(file: File) {
     const loaded = await load(file);
     if (token !== fileToken) return;           // another file was opened while this one decoded
     state.loaded = loaded;
-    player.set("in", loaded.clip.channels, loaded.clip.sampleRate);
-    setSide("in");
-    state.busy = "analyzing";
-    send({ type: "analyze", token, sampleRate: loaded.clip.sampleRate, channels: loaded.clip.channels });
+    if (loaded.clip) {
+      player.set("in", loaded.clip.channels, loaded.clip.sampleRate);
+      setSide("in");
+      state.busy = "analyzing";
+      send({ type: "analyze", token, sampleRate: loaded.clip.sampleRate, channels: loaded.clip.channels });
+    } else {
+      state.busy = null;
+      state.input = quiet;
+    }
     // The scan sums whole 4 s segments; a shorter picture can't be checked (and must not read as clean).
     if (loaded.video && loaded.videoDuration < MIN_PICTURE_SECONDS) state.picture.status = "short";
     else if (loaded.video) void scanPicture(loaded, token);
@@ -236,7 +246,7 @@ const fixingPicture = () => !!state.loaded?.video && state.picture.fix && !!stat
 
 function cloak() {
   const loaded = state.loaded;
-  if (!loaded || state.busy) return;
+  if (!loaded?.clip || state.busy) return;
   // The previous output is no longer what the button would save: if this run fails, there must be
   // nothing left over to save under the new preset's name.
   Object.assign(state, { error: "", busy: "loading", outputSamples: null, outputPreset: null, output: null, after: null,
@@ -257,7 +267,7 @@ const waitingForPicture = () => !!state.loaded?.video && state.picture.status ==
 
 async function download() {
   const { loaded, outputSamples } = state;
-  if (!loaded || !outputSamples || state.busy || waitingForPicture()) return;
+  if (!loaded || (!outputSamples && loaded.clip) || state.busy || waitingForPicture()) return;
   state.busy = "saving";
   render();
   const token = fileToken, seq = ++saveSeq;
@@ -265,7 +275,7 @@ async function download() {
     const scan = state.picture.scan;
     const picture = fixingPicture() && scan?.gains ? { gains: scan.gains, frames: scan.frames } : undefined;
     state.picture.verify = null;
-    const saved = await save(loaded, outputSamples, loaded.clip.sampleRate, (f) => {
+    const saved = await save(loaded, loaded.clip ? outputSamples : null, loaded.clip?.sampleRate ?? 0, (f) => {
       saveProgress = f;
       renderPrimary();
     }, picture);
@@ -303,7 +313,7 @@ function setSide(side: Side) {
 }
 
 function togglePlay() {
-  if (!state.loaded) return;
+  if (!state.loaded?.clip) return;
   if (player.playing) player.pause();
   else void player.play();
   render();
@@ -330,6 +340,7 @@ function renderPrimary() {
   let text: string;
   if (s.error) text = `<span class="text-red-400">${esc(s.error)}</span>`;
   else if (!s.loaded) text = s.busy ? "reading the file…" : "drop a video above · nothing leaves your browser";
+  else if (silent()) text = "no sound to cloak · saving removes the metadata and embedded data";
   else if (fresh() && s.after) {
     const word = s.preset === "full" ? "cloaked" : `partly cloaked (${PRESETS[s.preset].label})`;
     text = `<span class="text-accent">${word}</span> · ${s.after.tones} trackable tone${s.after.tones === 1 ? "" : "s"} left (was ${s.before?.tones ?? "?"}) · ${(s.ms / 1000).toFixed(1)} s · press x to compare`;
@@ -340,7 +351,7 @@ function renderPrimary() {
       ? `exposed · ${t.tones} tone${t.tones === 1 ? "" : "s"} a tracker can follow${t.doppler ? `, ${t.doppler} bending like a passing source` : ""}`
       : "no trackable tones found · cloaking still hides fainter ones";
   } else text = s.busy ? "listening like an attacker…" : "";
-  status.innerHTML = `${text}${s.loaded && !s.error ? ` <span class="text-neutral-700">· ${PRESETS[s.preset].note}</span>` : ""}`;
+  status.innerHTML = `${text}${s.loaded && !s.error && !silent() ? ` <span class="text-neutral-700">· ${PRESETS[s.preset].note}</span>` : ""}`;
   const pic = s.picture;
   const warning = !s.loaded?.video ? ""
     : pic.status === "unchecked" ? pic.message
@@ -366,7 +377,7 @@ function renderTrace() {
     return `<tr class="border-t border-neutral-900">
       <td class="py-2.5"><span class="text-white">${name}</span><span class="block text-[9px] text-neutral-600">${hint}</span></td>
       <td class="w-[34%] py-2.5"><span class="relative block h-[3px] bg-neutral-800">${bar(vin, "bg-neutral-500")}${bar(vout, "bg-accent")}</span></td>
-      <td class="whitespace-nowrap py-2.5 pl-3 text-right tabular-nums text-white">${vin ?? "–"}${vout !== undefined ? ` → <span class="text-accent">${vout}</span>` : ""}</td></tr>`;
+      <td class="whitespace-nowrap py-2.5 pl-3 text-right tabular-nums text-white">${vin ?? (silent() ? `<span class="text-neutral-500">no sound</span>` : "–")}${vout !== undefined ? ` → <span class="text-accent">${vout}</span>` : ""}</td></tr>`;
   }).join("");
   $("trace").insertAdjacentHTML("beforeend", pictureRow());
   $("log").innerHTML = state.log.map((l) => `<li>${esc(l)}</li>`).join("") || "<li>no run yet</li>";
@@ -408,7 +419,7 @@ function renderPicture() {
 }
 
 function renderTransport() {
-  const has = !!state.loaded;
+  const has = !!state.loaded?.clip;
   $("transport").classList.toggle("opacity-40", !has);
   $<HTMLButtonElement>("play").disabled = !has;
   $<HTMLInputElement>("seek").disabled = !has;
@@ -421,9 +432,9 @@ function renderTransport() {
     b.className = `px-3 py-1.5 ${on ? "bg-white text-black" : "text-neutral-400 disabled:text-neutral-700"}`;
     b.setAttribute("aria-pressed", String(on));
   }
-  $("drop").classList.toggle("hidden", has || state.busy === "decoding");
+  $("drop").classList.toggle("hidden", !!state.loaded || state.busy === "decoding");
   $("file-name").textContent = state.loaded
-    ? `${state.loaded.name} · ${clock(state.loaded.duration)} · ${state.loaded.clip.sampleRate / 1000} kHz · ${!state.loaded.video ? "audio only" : fixingPicture() ? "picture re-encoded without flicker" : "picture kept as is, embedded data removed"} · audio replaced · metadata dropped`
+    ? `${state.loaded.name} · ${clock(state.loaded.duration)} · ${state.loaded.clip ? `${state.loaded.clip.sampleRate / 1000} kHz` : "no sound"} · ${!state.loaded.video ? "audio only" : fixingPicture() ? "picture re-encoded without flicker" : "picture kept as is, embedded data removed"}${state.loaded.clip ? " · audio replaced" : ""} · metadata dropped`
     : "";
   $("legend-main").textContent = terrain.show;
   $("legend-ghost").textContent = terrain.show === "in" ? "out" : "in";

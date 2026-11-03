@@ -1,0 +1,52 @@
+name: Perf
+
+# How long a cloak takes in the browser on the real wasm build, up to the 5-minute limit, with
+# and without a phone-like CPU slowdown. Run by hand; prints "perf:" lines (not a gate).
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  wasm:
+    name: Swift (WebAssembly)
+    runs-on: ubuntu-latest
+    container: swift:6.4.2
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Install the Swift SDK for WebAssembly
+        run: >
+          swift sdk install
+          https://download.swift.org/swift-6.4.2-release/wasm-sdk/swift-6.4.2-RELEASE/swift-6.4.2-RELEASE_wasm.artifactbundle.tar.gz
+          --checksum 83baca83553f8c443cda7b84800912e6e709c3acd2e7ebf277794ca5836c0da5
+      - run: scripts/build-wasm.sh web/public/octave-camo.wasm
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: octave-camo-wasm
+          path: web/public/octave-camo.wasm
+
+  perf:
+    name: Browser timing (Chromium, real wasm)
+    needs: wasm
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: octave-camo-wasm
+          path: web/public
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+      - run: bun install --frozen-lockfile
+      - run: bunx playwright install --with-deps chromium
+      - run: bunx vite build
+      - name: Time it
+        run: |
+          bunx vite preview --port 4173 --strictPort &
+          for i in $(seq 1 30); do curl -sf http://localhost:4173/octave-camo/ >/dev/null && break; sleep 1; done
+          E2E_URL=http://localhost:4173/octave-camo/ E2E_PERF=1 bun test e2e/perf.test.ts --timeout 3600000 | tee perf.log
+          grep "^perf:" perf.log >> "$GITHUB_STEP_SUMMARY" || true

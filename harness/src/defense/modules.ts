@@ -156,7 +156,7 @@ export const legacy = defineDefense({
         const inp = join(dir, "in.wav"), out = join(dir, "out.wav");
         await writeMonoWav(inp, x, ctx.sampleRate);
         const steps = o.steps.split("|");
-        await new Analyzer().scrub(inp, out, steps);
+        await new Analyzer().scrub(inp, out, steps, ctx.seed);
         ctx.log(`legacy: ${steps.join(", ")}`);
         return await readMono(out, ctx.sampleRate);
       } finally {

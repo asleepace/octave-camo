@@ -332,6 +332,20 @@ final class InvariantTests: XCTestCase {
         }
     }
 
+    /// Per-stage cost and how it scales with length (printed for CI logs: "perf-stage" lines).
+    func testPerStageTimingsScale() {
+        for seconds in [60.0, 120.0] {
+            let audio = scene(rate: 48_000, seconds: seconds)
+            var line = "perf-stage: \(Int(seconds)) s mono 48 kHz:"
+            for step in [ScrubStep.hum, .subtract, .scurve, .lowband] {
+                let start = Date()
+                _ = seeded([step]).run(audio)
+                line += " \(step.rawValue) \(String(format: "%.1f", Date().timeIntervalSince(start))) s"
+            }
+            print(line)
+        }
+    }
+
     /// Not a benchmark, a tripwire: a minute of audio must cloak in a sane time (printed for CI logs).
     func testOneMinuteCloaksInReasonableTime() {
         let audio = scene(rate: 48_000, seconds: 60, channels: 2)

@@ -41,8 +41,20 @@ export class Analyzer {
     return AnalysisJSON.parse(JSON.parse(out));
   }
 
-  /** `steps` (reference analyzer only) picks scrub stages, e.g. ["mono", "hum", "subtract"]. */
-  async scrub(inWav: string, outWav: string, steps?: string[]): Promise<void> {
-    await run([...this.command, "scrub", inWav, outWav], steps ? { SCRUB_STEPS: steps.join(",") } : undefined);
+  /** True when running the NumPy reference rather than the Swift CLI. */
+  get isReference(): boolean { return this.command === REFERENCE; }
+
+  /**
+   * Scrubs with only `steps` (e.g. ["subtract"]) and a fixed seed. The Swift CLI takes them as
+   * flags, the reference as environment variables. (Until this was fixed, the Swift CLI ignored
+   * the steps and ran its whole default pipeline, unseeded, inside any harness chain using
+   * `subtract`: results varied from run to run.)
+   */
+  async scrub(inWav: string, outWav: string, steps?: string[], seed = 1): Promise<void> {
+    if (this.isReference) {
+      await run([...this.command, "scrub", inWav, outWav], steps ? { SCRUB_STEPS: steps.join(",") } : undefined);
+    } else {
+      await run([...this.command, "scrub", inWav, outWav, "--seed", String(seed), ...(steps ? ["--steps", steps.join(",")] : [])]);
+    }
   }
 }

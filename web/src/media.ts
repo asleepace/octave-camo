@@ -24,13 +24,15 @@ export const MAX_BYTES = 2 * 1024 ** 3;
 
 export type Loaded = {
   name: string;
-  /** Mono (the cloak's first step averages the channels anyway), at most MAX_WORKING_RATE. */
-  clip: Clip;
-  /** Channels in the original audio. */
+  /** Mono (the cloak's first step averages the channels anyway), at most MAX_WORKING_RATE; null for
+   *  a silent video (no audio track: only the picture and metadata are handled). */
+  clip: Clip | null;
+  /** Channels in the original audio (0 when silent). */
   sourceChannels: number;
+  /** The audio's length, or the picture's for a silent video, s. */
   duration: number;
   audioStart: number;
-  audio: InputAudioTrack;
+  audio: InputAudioTrack | null;
   video: InputVideoTrack | null;
   /** The picture's own length (it can differ from the audio's), s. */
   videoDuration: number;
@@ -44,25 +46,34 @@ export async function load(file: File): Promise<Loaded> {
   if (file.size > MAX_BYTES) throw new MediaError(`the file is over ${MAX_BYTES / 1024 ** 3} GB`);
   const input = new Input({ source: new BlobSource(file), formats: ALL_FORMATS });
   let tracks: InputAudioTrack[];
+  let video: InputVideoTrack | null;
   try {
     tracks = await input.getAudioTracks();
+    video = await input.getPrimaryVideoTrack();
   } catch {
     throw new MediaError("this isn't a video or audio file this browser can read");
   }
-  if (!tracks.length) throw new MediaError("no audio track: octave-camo cloaks a video's sound, and this file has none");
+  // computeDuration() is the end timestamp, not the length: a TS stream (a camcorder's .MTS) can
+  // start hours in.
+  const videoStart = video ? await video.getFirstTimestamp() : 0;
+  const videoDuration = video ? (await video.computeDuration()) - videoStart : 0;
+  if (videoDuration > MAX_SECONDS + 1) throw new MediaError(`the picture runs ${Math.round(videoDuration)} s; the limit is ${MAX_SECONDS} s`);
+
+  if (!tracks.length) {
+    if (!video) throw new MediaError("this file has neither sound nor picture");
+    // A silent video: nothing for the audio cloak to do, but its metadata, embedded data and
+    // light flicker still need handling.
+    return { name: file.name, clip: null, sourceChannels: 0, duration: videoDuration, audioStart: 0, audio: null, video,
+             videoDuration, videoStart };
+  }
   // The primary track among those this browser can decode (an undecodable spatial or surround
   // track may outrank a plain one).
   const audio = await input.getPrimaryAudioTrack({ filter: (t) => t.canDecode() });
   if (!audio) throw new MediaError(`this browser can't decode ${tracks[0]!.codec ?? "this"} audio`);
-  const video = await input.getPrimaryVideoTrack();
 
-  // computeDuration() is the end timestamp, not the length: a TS stream (a camcorder's .MTS) can
-  // start hours in.
-  const audioStart = await audio.getFirstTimestamp(), videoStart = video ? await video.getFirstTimestamp() : 0;
+  const audioStart = await audio.getFirstTimestamp();
   const duration = (await audio.computeDuration()) - audioStart;
   if (duration > MAX_SECONDS) throw new MediaError(`clip is ${Math.round(duration)} s; the limit is ${MAX_SECONDS} s`);
-  const videoDuration = video ? (await video.computeDuration()) - videoStart : 0;
-  if (videoDuration > MAX_SECONDS + 1) throw new MediaError(`the picture runs ${Math.round(videoDuration)} s; the limit is ${MAX_SECONDS} s`);
   const channelCount = audio.numberOfChannels;
   if (!(channelCount >= 1 && channelCount <= MAX_CHANNELS)) throw new MediaError(`unsupported channel count (${channelCount})`);
   if (!(audio.sampleRate >= 8_000 && audio.sampleRate <= MAX_SAMPLE_RATE)) throw new MediaError(`unsupported sample rate (${audio.sampleRate} Hz)`);
@@ -218,9 +229,10 @@ async function pictureCodec(width: number, height: number, bitrate: number): Pro
 
 const AUDIO_BITRATE = 160_000;
 
-export async function save(loaded: Loaded, mono: Float32Array, sampleRate: number,
+/** `mono` is the cloaked audio, or null for a silent video (the output then has only the picture). */
+export async function save(loaded: Loaded, mono: Float32Array | null, sampleRate: number,
                            onProgress: (fraction: number) => void = () => {}, picture?: PictureFix): Promise<Saved> {
-  if (!(await canEncodeAudio("aac", { numberOfChannels: 1, sampleRate, bitrate: AUDIO_BITRATE }))) {
+  if (mono && !(await canEncodeAudio("aac", { numberOfChannels: 1, sampleRate, bitrate: AUDIO_BITRATE }))) {
     // Firefox (and some others) can't encode AAC natively: fall back to a WASM build of FFmpeg's encoder.
     const { registerAacEncoder } = await import("@mediabunny/aac-encoder");
     registerAacEncoder();
@@ -235,7 +247,7 @@ export async function save(loaded: Loaded, mono: Float32Array, sampleRate: numbe
     const { video } = loaded;
     // Timestamps start at 0: a source's absolute start (a recorder's clock, hours into a TS
     // stream) would otherwise carry over as an edit list.
-    const origin = video ? Math.min(loaded.audioStart, loaded.videoStart) : loaded.audioStart;
+    const origin = !mono ? loaded.videoStart : video ? Math.min(loaded.audioStart, loaded.videoStart) : loaded.audioStart;
     let videoSource: EncodedVideoPacketSource | null = null;
     let rendered: { source: VideoSampleSource; codec: VideoCodec } | null = null;
     if (video && picture) {
@@ -253,15 +265,20 @@ export async function save(loaded: Loaded, mono: Float32Array, sampleRate: numbe
       videoSource = new EncodedVideoPacketSource(video.codec);
       output.addVideoTrack(videoSource, { rotation: video.rotation });
     }
-    const audioSource = new AudioSampleSource({ codec: "aac", bitrate: AUDIO_BITRATE });
-    output.addAudioTrack(audioSource);
+    const audioSource = mono ? new AudioSampleSource({ codec: "aac", bitrate: AUDIO_BITRATE }) : null;
+    if (audioSource) output.addAudioTrack(audioSource);
     await output.start();
 
     // Interleave by timestamp so neither track has to buffer the whole other one.
     const chunk = Math.round(sampleRate / 2);
     let written = 0;
     const audioTime = () => loaded.audioStart - origin + written / sampleRate;
+    const total = video ? Math.max(1, loaded.videoDuration) : 1;
     const writeAudioUntil = async (t: number) => {
+      if (!mono || !audioSource) {
+        if (Number.isFinite(t)) onProgress(Math.min(1, t / total));      // picture-only: progress by time
+        return;
+      }
       while (written < mono.length && audioTime() <= t) {
         const data = mono.slice(written, Math.min(written + chunk, mono.length));
         const sample = new AudioSample({ data, format: "f32-planar", numberOfChannels: 1, sampleRate, timestamp: audioTime() });

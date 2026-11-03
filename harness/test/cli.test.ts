@@ -68,3 +68,17 @@ describe("scrub CLI", () => {
     for (const name of ["hum", "subtract", "lowband", "scurve", "decoy", "informed", "legacy"]) expect(r.stdout).toContain(name);
   });
 });
+
+describe("analyzer scrub", () => {
+  test("the Swift CLI gets the requested steps and a fixed seed (not its whole default pipeline, unseeded)", async () => {
+    const { mkdtempSync, writeFileSync, readFileSync, chmodSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const { tmpdir } = await import("node:os");
+    const { Analyzer } = await import("../src/analyzer.ts");
+    const dir = mkdtempSync(join(tmpdir(), "analyzer-")), script = join(dir, "fake-cli"), log = join(dir, "args");
+    writeFileSync(script, `#!/bin/sh\necho "$@" > ${log}\n`);
+    chmodSync(script, 0o755);
+    await new Analyzer(script).scrub("in.wav", "out.wav", ["subtract"], 7);
+    expect(readFileSync(log, "utf8").trim()).toBe("scrub in.wav out.wav --seed 7 --steps subtract");
+  });
+});

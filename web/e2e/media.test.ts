@@ -111,6 +111,21 @@ describe.skipIf(!URL_)("media edge cases", () => {
     await roundTrip({ file, video: true, seconds: SECONDS });
   }, 600_000);
 
+  test("a silent video (no audio track): metadata gone, picture copied, flicker checked", async () => {
+    const file = make("PXL_20260101_120000_mute.webm", ...testsrc(), "-t", `${SECONDS}`, ...vp9, ...tags);
+    const s = session();
+    const page = await s.open(file);
+    await s.pictureChecked();
+    expect(await page.textContent("#cloak")).toBe("SAVE CLOAKED FILE");          // nothing to cloak first
+    expect(await page.isDisabled("#play")).toBe(true);
+    const out = await s.save();
+    expect(out).toEndWith(".mp4");
+    expectClean(out, { video: true, audio: false });
+    expect(videoHash(out)).toBe(videoHash(file));
+    expect(s.problems).toEqual([]);
+    await s.close();
+  }, 600_000);
+
   test("WebM · a silent track stays silent", async () => {
     const file = make("silent.webm", ...testsrc(), "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo", "-t", `${SECONDS}`,
       "-map", "0:v", "-map", "1:a", ...vp9, "-c:a", "libopus", ...tags);
@@ -132,7 +147,11 @@ describe.skipIf(!URL_)("media edge cases", () => {
   // ---------- refused ----------
 
   const refused: [string, () => string, RegExp][] = [
-    ["video with no audio track", () => make("PXL_20260101_120000_mute.webm", ...testsrc(), "-t", `${SECONDS}`, ...vp9, ...tags), /no audio/i],
+    ["neither sound nor picture (a subtitle-only file)", () => {
+      const srt = join(dir, "subs.srt");
+      writeFileSync(srt, "1\n00:00:00,000 --> 00:00:02,000\nhello\n");
+      return make("PXL_20260101_120000_subs.mkv", "-i", srt, "-c:s", "srt");
+    }, /neither sound nor picture|isn't a video/i],
     ["random bytes named .mp4", () => {
       const file = join(dir, "PXL_20260101_120000_junk.mp4");
       writeFileSync(file, Buffer.from(Array.from({ length: 50_000 }, (_, i) => (i * 7919 + 13) & 0xff)));

@@ -80,15 +80,17 @@ export async function row(page: Page, label: string): Promise<string> {
 }
 
 /** Things every saved file must satisfy. */
-export function expectClean(out: string, expected: { video: boolean }): Probe {
+/** `audio: false`: a silent video, saved as the picture alone. */
+export function expectClean(out: string, expected: { video: boolean; audio?: boolean }): Probe {
+  const audio = expected.audio ?? true;
   const info = probe(out);
   const tags = JSON.stringify([info.format.tags ?? {}, ...info.streams.map((s) => s.tags ?? {})]);
   expect(tags).not.toContain("location");
   expect(tags).not.toContain("creation_time");
   expect(tags).not.toContain(FAKE_GPS.slice(0, 8));
   expect(readFileSync(out).includes(Buffer.from("Mediabunny"))).toBe(false);       // no tool name in the file
-  expect(info.streams.map((s) => s.codec_type).sort()).toEqual(expected.video ? ["audio", "video"] : ["audio"]);
-  expect(info.streams.find((s) => s.codec_type === "audio")).toMatchObject({ codec_name: "aac", channels: 1 });
+  expect(info.streams.map((s) => s.codec_type).sort()).toEqual([...(audio ? ["audio"] : []), ...(expected.video ? ["video"] : [])]);
+  if (audio) expect(info.streams.find((s) => s.codec_type === "audio")).toMatchObject({ codec_name: "aac", channels: 1 });
   // Timestamps start at zero (a source's absolute start time would carry its clock over).
   expect(Math.min(...info.streams.map((s) => Number(s.start_time ?? 0)))).toBeLessThan(0.1);
   return info;
@@ -127,11 +129,11 @@ export class Session {
   }
 
   /** Opens a file and waits for the analysis to finish. */
-  async open(file: string): Promise<Page> {
+  async open(file: string, timeout = 180_000): Promise<Page> {
     if (!this.page) await this.start();
     await this.page.setInputFiles("#file", file);
     try {
-      await this.page.waitForFunction(() => /exposed|no trackable/.test(document.querySelector("#status")?.textContent ?? ""), null, { timeout: 180_000 });
+      await this.page.waitForFunction(() => /exposed|no trackable|no sound to cloak/.test(document.querySelector("#status")?.textContent ?? ""), null, { timeout });
     } catch {
       throw new Error(`page never finished analysis; status "${await this.status()}"; ${this.problems.join(" | ")}`);
     }
@@ -152,9 +154,9 @@ export class Session {
     return (await this.page.textContent("#status .text-red-400")) ?? "";
   }
 
-  async cloak(): Promise<void> {
+  async cloak(timeout = 300_000): Promise<void> {
     await this.page.click("#cloak");
-    await this.page.waitForFunction(() => /^SAVE/.test(document.querySelector("#cloak")?.textContent ?? ""), null, { timeout: 300_000 });
+    await this.page.waitForFunction(() => /^SAVE/.test(document.querySelector("#cloak")?.textContent ?? ""), null, { timeout });
   }
 
   async save(): Promise<string> {
