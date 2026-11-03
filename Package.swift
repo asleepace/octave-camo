@@ -9,6 +9,7 @@ let package = Package(
         .library(name: "OctaveCamoKit", targets: ["OctaveCamoKit"]),
         .library(name: "OctaveCamoIO", targets: ["OctaveCamoIO"]),
         .executable(name: "octave-camo", targets: ["octave-camo"]),
+        .executable(name: "octave-camo-wasm", targets: ["OctaveCamoWasm"]),
     ],
     targets: [
         // Pure DSP, no Foundation (libc math only): builds for iOS, macOS, Linux and WebAssembly.
@@ -16,6 +17,8 @@ let package = Package(
         // File I/O (WAV) on Foundation, for the CLI and tests.
         .target(name: "OctaveCamoIO", dependencies: ["OctaveCamoKit"]),
         .executableTarget(name: "octave-camo", dependencies: ["OctaveCamoKit", "OctaveCamoIO"]),
+        // WebAssembly exports for the web app (a WASI reactor; see its main.swift).
+        .executableTarget(name: "OctaveCamoWasm", dependencies: ["OctaveCamoKit"]),
         .testTarget(name: "OctaveCamoKitTests", dependencies: ["OctaveCamoKit", "OctaveCamoIO"]),
     ]
 )
