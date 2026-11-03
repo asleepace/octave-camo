@@ -26,11 +26,12 @@ Review is very welcome: [SECURITY.md](SECURITY.md) says how to report privately.
 ### New in this release
 
 - **Silent videos** are accepted: no audio stage, the picture is still checked for light flicker,
-  and the saved MP4 has only the picture, with metadata and embedded data removed.
+  and the saved MP4 has only the picture, with metadata (and, for H.264/HEVC, embedded data)
+  removed.
 - **Verifiable builds.** The page footer shows the version, the commit, and the SHA-256 of the
   wasm it actually loaded (computed in the browser). The site publishes `checksums.txt` for every
   file; after each deploy CI re-downloads the live site and checks every file against its own
-  build; the web build is reproducible, and the release checks the wasm build is too.
+  build; the web build is reproducible, and each release records whether the wasm build was.
 - A release workflow (tag → checked versions → builds → GitHub release with checksums), a Perf
   workflow (browser timings up to the 5-minute limit, with a phone-like CPU slowdown), and
   `octave-camo --version`.
@@ -42,6 +43,31 @@ Review is very welcome: [SECURITY.md](SECURITY.md) says how to report privately.
   harness chain ran the whole Swift pipeline, unseeded, in the middle: its results varied between
   runs (the "flaky" ship). The Swift pipeline's own results, which the README reports, were
   always seeded and unaffected.
+
+### Fixed before release (a final review)
+
+- If the worker failed to load or crashed, the page waited on it forever ("LOADING…",
+  "LISTENING…"); it now says the scrubber failed and stops offering actions. The footer's engine
+  hash is reported only once the engine is instantiated, and a load failure shows as such.
+- "Embedded data removed" was claimed for every codec; it's said only for H.264/HEVC (AV1
+  metadata units are still copied).
+- The fallback AAC encoder (Firefox) was fetched mid-save, so "works offline once loaded" wasn't
+  true there; it's loaded at startup.
+- A failed check of the saved file made the page claim the picture was never scanned.
+- After a preset change or a failed cloak, "out" still played and drew the previous result; for a
+  silent video the "out" button was enabled. The demo spectrum stood in for a file whose analysis
+  hadn't arrived. The picture-scan progress on the button stayed at 0 %. A bar in the levels
+  table could overflow when a count went up.
+- Space toggled playback even with a button focused; it now leaves controls alone.
+- With a file loaded there was no visible way to open another (only drag and drop): an "open
+  another file" link.
+- `checksums.txt` was written relative to the working directory, not Vite's root. A packet with
+  no parseable NAL units is refused rather than copied unchecked.
+- CI: a newer push to `main` no longer cancels a deploy in progress; releases run the typecheck
+  and tests (with the real wasm) before publishing.
+- The CLI help described an old default chain; `scripts/scrub-video.sh` named its output after
+  the input (keeping the capture date), let ffmpeg write its version, and copied SEI.
+- Light-flicker removal: new, plainer wording; if it's unticked the page says the flicker is kept.
 
 Everything before this release is listed below by milestone.
 

@@ -8,7 +8,8 @@ on:
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  # A newer push supersedes a branch's run, but never cuts off a deploy (and its live-site check).
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 # Least privilege: jobs only read the repository unless they say otherwise (deploy).
 permissions:

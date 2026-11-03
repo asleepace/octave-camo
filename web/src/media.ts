@@ -229,11 +229,28 @@ async function pictureCodec(width: number, height: number, bitrate: number): Pro
 
 const AUDIO_BITRATE = 160_000;
 
+let encoderReady: Promise<void> | null = null;
+
+/**
+ * Registers the WASM build of FFmpeg's AAC encoder if this browser can't encode AAC natively
+ * (Firefox, some others). Called at startup so it's loaded before any file is opened, and again
+ * before saving at a rate the native encoder may not take.
+ */
+export function prepareAudioEncoder(sampleRate = 48_000): Promise<void> {
+  encoderReady ??= (async () => {
+    if (await canEncodeAudio("aac", { numberOfChannels: 1, sampleRate, bitrate: AUDIO_BITRATE })) return;
+    const { registerAacEncoder } = await import("@mediabunny/aac-encoder");
+    registerAacEncoder();
+  })().catch((error) => { encoderReady = null; throw error; });
+  return encoderReady;
+}
+
 /** `mono` is the cloaked audio, or null for a silent video (the output then has only the picture). */
 export async function save(loaded: Loaded, mono: Float32Array | null, sampleRate: number,
                            onProgress: (fraction: number) => void = () => {}, picture?: PictureFix): Promise<Saved> {
   if (mono && !(await canEncodeAudio("aac", { numberOfChannels: 1, sampleRate, bitrate: AUDIO_BITRATE }))) {
-    // Firefox (and some others) can't encode AAC natively: fall back to a WASM build of FFmpeg's encoder.
+    // Firefox (and some others) can't encode AAC natively: the WASM build of FFmpeg's encoder
+    // (usually already loaded at startup).
     const { registerAacEncoder } = await import("@mediabunny/aac-encoder");
     registerAacEncoder();
   }

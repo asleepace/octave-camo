@@ -56,7 +56,9 @@ export type Stage = z.infer<typeof Stage>;
 
 export const WorkerMessage = z.discriminatedUnion("type", [
   /** Sent once the scrubber is loaded: SHA-256 of the exact wasm bytes it compiled. */
-  z.object({ type: z.literal("engine"), token, kind: z.enum(["wasm", "stand-in"]), sha256: z.string().regex(/^([0-9a-f]{64}|)$/) }),
+  z.object({ type: z.literal("engine"), token, kind: z.enum(["wasm", "stand-in"]), sha256: z.string().regex(/^([0-9a-f]{64}|)$/),
+    /** Set when the scrubber couldn't be loaded (the page can't cloak anything). */
+    failed: z.string().optional() }),
   z.object({ type: z.literal("stage"), token, stage: Stage }),
   z.object({ type: z.literal("analysis"), token, trace: Trace, spectrum: Spectrum, engine: z.enum(["wasm", "stand-in"]) }),
   z.object({
@@ -83,6 +85,8 @@ export const WorkerMessage = z.discriminatedUnion("type", [
     passesRemoved: z.number(),
     gains: samples.optional(),
   }),
-  z.object({ type: z.literal("error"), token, scope: z.enum(["audio", "picture"]), message: z.string() }),
+  z.object({ type: z.literal("error"), token, scope: z.enum(["audio", "picture"]), message: z.string(),
+    /** For picture errors: which scan failed (the clip's, or a saved file's check, by save seq). */
+    purpose: z.enum(["clip", "verify"]).optional(), seq: z.number().optional() }),
 ]);
 export type WorkerMessage = z.infer<typeof WorkerMessage>;

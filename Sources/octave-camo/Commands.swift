@@ -17,23 +17,24 @@ let commands = [
 ]
 
 let usage = """
-octave-camo — find and remove aircraft Doppler curves from audio
+octave-camo — remove the location and time clues from a recording's sound
 
 USAGE
   octave-camo synth   <out.wav> [--hard] [--f0 120] [--speed 75] [--distance 1500]
                         [--t0 30] [--duration 60] [--seed 1]
   octave-camo analyze <in.wav>  [--threshold 10] [--json]
   octave-camo scrub   <in.wav> <out.wav> [--steps mono,hum,subtract,scurve,lowband[,wobble]]
-                        [--mains 60] [--passes 3] [--cutoff 300] [--lowband-mode regenerate|highpass]
+                        [--mains 50,60] [--passes 3] [--cutoff 300] [--lowband-mode regenerate|highpass]
                         [--no-keep-voice] [--depth 0.015] [--wobble-top 600] [--seed N]
+  octave-camo --version
 
 COMMANDS
   synth    Write a known-truth test clip (one flyby, hum, noise, speech-like syllables).
   analyze  The attacker: track long tones, fit the flyby model, report distance/speed/time.
            Lower --threshold to simulate a more sensitive attacker (try 6 or 3).
-  scrub    The defense: mono downmix, hum notches, tone subtraction, per-band wobble.
-           --wobble-top 400 is gentler on voices but can leave a usable distance (see README).
-           Output is mono 32-bit float WAV. Use scripts/scrub-video.sh for video files.
+  scrub    The defense, by default mono → hum → subtract → scurve → lowband (the web app's
+           Full preset); --steps picks stages (wobble is opt-in). --seed makes the noise
+           repeatable. Output is mono 32-bit float WAV. Use scripts/scrub-video.sh for video.
 """
 
 func synth(_ args: Arguments) throws {

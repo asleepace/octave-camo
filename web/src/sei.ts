@@ -67,8 +67,8 @@ const isAnnexB = (data: Uint8Array) =>
  */
 export function stripSei(codec: NalCodec, data: Uint8Array, prefixSize: number | null): Uint8Array {
   const annexB = prefixSize === null || (isAnnexB(data) && splitLengthPrefixed(data, prefixSize) === null);
-  const units = annexB ? splitAnnexB(data) : splitLengthPrefixed(data, prefixSize!);
-  if (!units) throw new Error("couldn't parse a video packet to remove embedded data");
+  const units = annexB ? (isAnnexB(data) ? splitAnnexB(data) : null) : splitLengthPrefixed(data, prefixSize!);
+  if (!units || !units.length) throw new Error("couldn't parse a video packet to remove embedded data");
   const kept = units.filter((u) => u.length > 0 && !isSei(codec, nalType(codec, u[0]!)));
   if (kept.length === units.length) return data;
   const size = annexB ? 4 : prefixSize!;

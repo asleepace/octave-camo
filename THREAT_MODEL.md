@@ -129,7 +129,8 @@ faint horizontal bands whose drift is the grid timestamp. The web app scans ever
 profile (median over column strips, static part removed, each temporal frequency whitened across
 spatial frequency) for a line at 100 or 120 Hz, the way an attacker would. If it finds one, the
 user can divide the estimated band out of each row on the GPU. That re-encodes the picture in
-standard dynamic range, so it's opt-in.
+standard dynamic range, so the user can untick it (it's on when flicker is found; if it's unticked,
+the page warns that the flicker is kept).
 
 Synthetic clips (20 s, testsrc2 scene, readout 50–70 % of the frame period), scan z (detection
 above 60). The 120 Hz rows are the hard, common case (60 Hz lights at 30 fps): the bands barely

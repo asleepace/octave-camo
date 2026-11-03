@@ -60,13 +60,13 @@ You shouldn't have to take a privacy tool's word for it.
 
   For VP9 and AV1 even the packets are identical (`-c copy -f streamhash` instead of `-f hash`).
 
-- **The metadata is gone.** `ffprobe -show_format -show_streams original.camo.mp4` (or `exiftool`)
+- **The metadata is gone.** `ffprobe -show_format -show_streams camo-xxxxxx.mp4` (or `exiftool`)
   shows no location, device or creation time.
 - **The page is the code in this repository.** The footer shows the version, the commit, and the
   SHA-256 of the WebAssembly the page actually loaded (computed in your browser from the bytes it
   runs). Compare it with the `octave-camo.wasm` checksum in the
   [release](https://github.com/asleepace/octave-camo/releases), or rebuild it yourself (the
-  release notes say how; the build is checked for reproducibility). The site's `checksums.txt`
+  release notes say how, and record whether two clean builds came out identical). The site's `checksums.txt`
   lists every file it serves, and after each deploy CI re-downloads the live site and checks every
   file against its own build:
 
@@ -144,9 +144,9 @@ and the saved file is decoded and scanned again to confirm.
   put user data, timecode and telemetry) is removed; AV1 metadata units are copied as is (VP9 has
   none). The codec settings and resolution still say what kind of device recorded it.
 - Audio is cloaked as mono at up to 48 kHz. A video with no sound is saved with its picture only
-  (metadata and embedded data removed, flicker checked).
-- Slow-motion pictures (about 200 fps and up), or under 5 seconds, can't be checked for flicker; the page says "not
-  checkable" rather than "none".
+  (metadata removed, and embedded data for H.264/HEVC; flicker checked).
+- Slow-motion pictures (about 200 fps and up) and clips under 5 seconds can't be checked for
+  flicker; the page says "not checkable" or "too short" rather than "none".
 - A cloaked file is recognisable as one (mono AAC audio, regenerated low band). That says the file
   was processed, not where it was recorded.
 - Clips are processed in memory; the web app takes up to 5 minutes. A 5-minute clip takes about a

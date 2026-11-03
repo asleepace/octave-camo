@@ -36,6 +36,16 @@ export class Player {
     if (wasPlaying) this.play(at);
   }
 
+  /** Forgets one side (e.g. a cloaked result that no longer matches); playback carries on with the other. */
+  drop(side: Side) {
+    if (!this.buffers[side]) return;
+    const wasPlaying = this.playing, at = this.time;
+    if (wasPlaying) this.stopNodes();
+    delete this.buffers[side];
+    if (this.side === side) this.side = "in";
+    if (wasPlaying && this.buffers.in) void this.play(at);
+  }
+
   clear() {
     this.stop();
     this.buffers = {};

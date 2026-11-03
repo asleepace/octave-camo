@@ -2,7 +2,7 @@ import tailwindcss from "@tailwindcss/vite";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { join, relative } from "node:path";
+import { join, relative, resolve } from "node:path";
 import { defineConfig, type Plugin } from "vite";
 import pkg from "./package.json" with { type: "json" };
 
@@ -39,7 +39,7 @@ function checksumsFile(): Plugin {
   return {
     name: "octave-camo-checksums",
     apply: "build",
-    configResolved: (config) => { outDir = config.build.outDir; },
+    configResolved: (config) => { outDir = resolve(config.root, config.build.outDir); },
     closeBundle: () => writeFileSync(join(outDir, "checksums.txt"), checksums(outDir)),
   };
 }

@@ -4,7 +4,7 @@ import { type Request, type Stage, WorkerMessage } from "./engine/protocol.ts";
 import workerUrl from "./engine/worker.ts?worker&url";
 
 type FlickerScan = { detected: boolean; z: number; flickerHz: number; readoutMs: number; gains?: Float32Array<ArrayBuffer>; frames: number };
-import { load, type Loaded, MediaError, outputName, save } from "./media.ts";
+import { load, type Loaded, MediaError, outputName, prepareAudioEncoder, save } from "./media.ts";
 import { Input, ALL_FORMATS, BlobSource } from "mediabunny";
 import { measureProfiles, ROWS } from "./video.ts";
 import { Player, type Side } from "./player.ts";
@@ -63,13 +63,15 @@ const state = {
     status: "none" as "none" | "scanning" | "done" | "error" | "short" | "unchecked",
     progress: 0,
     scan: null as FlickerScan | null,
-    /** Remove flicker on save (re-encodes the picture). Defaults to on when flicker is found. */
+    /** Remove flicker on save (re-encodes the picture). On when flicker is found; the user can untick it. */
     fix: false,
     /** The same scan on the saved picture. */
     verify: null as { detected: boolean; z: number } | null,
     /** Codec of the last re-encoded picture. */
     codec: "",
     message: "",
+    /** The check of the saved file failed (the clip's own scan is unaffected). */
+    verifyError: "",
   },
 };
 /** Bumped per opened file, so a slow picture scan can't land on the next clip. */
@@ -101,7 +103,14 @@ const fresh = () => silent() || (!!state.outputSamples && state.outputPreset ===
 
 const send = (request: Request, transfer: Transferable[] = []) => worker.postMessage(request, transfer);
 
-worker.onerror = (event) => { event.preventDefault(); fail("the scrubber stopped working; reload the page"); };
+/** The worker can't answer any more (it failed to start or crashed): nothing may wait on it. */
+let workerDead = "";
+const killWorker = (message: string) => {
+  workerDead = message;
+  state.picture.status = state.picture.status === "scanning" ? "error" : state.picture.status;
+  fail(message);
+};
+worker.onerror = (event) => { event.preventDefault(); killWorker("the scrubber stopped working; reload the page"); };
 worker.onmessageerror = () => fail("the scrubber sent a message that couldn't be read");
 
 worker.onmessage = (event) => {
@@ -110,7 +119,8 @@ worker.onmessage = (event) => {
   const m = parsed.data;
   if (m.type === "engine") {
     engineHash = m.sha256;
-    return renderEngine();
+    if (m.failed) return killWorker(m.failed);
+    return render();
   }
   if (m.token !== fileToken) return;          // a reply about a file that's no longer open
   switch (m.type) {
@@ -155,6 +165,10 @@ worker.onmessage = (event) => {
       }
       break;
     case "error":
+      if (m.scope === "picture" && m.purpose === "verify") {
+        if (m.seq === saveSeq) state.picture.verifyError = m.message;
+        break;
+      }
       if (m.scope === "picture") {
         state.picture.status = "error";
         state.picture.message = m.message;
@@ -167,19 +181,20 @@ worker.onmessage = (event) => {
 
 function fail(message: string) {
   state.busy = null;
-  state.error = message;
+  state.error = workerDead || message;
   render();
 }
 
 // ---------- actions ----------
 
 async function open(file: File) {
+  if (workerDead) return fail(workerDead);
   player.clear();
   Object.assign(state, {
     loaded: null, input: null, output: null, outputSamples: null, outputPreset: null, pendingPreset: null, before: null,
     after: null, log: [], busy: "decoding", error: "",
   });
-  state.picture = { status: "none", progress: 0, scan: null, fix: false, verify: null, codec: "", message: "" };
+  state.picture = { status: "none", progress: 0, scan: null, fix: false, verify: null, codec: "", message: "", verifyError: "" };
   const token = ++fileToken;
   render();
   try {
@@ -220,6 +235,7 @@ async function scanPicture(loaded: Loaded, token: number) {
       last = f;
       state.picture.progress = f;
       renderTrace();
+      renderPrimary();
     });
     if (token !== fileToken) return;
     pendingScanFrames = profiles.frames;
@@ -243,16 +259,22 @@ async function verifyPicture(blob: Blob, token: number, seq: number) {
     send({ type: "flicker", token, ...profiles, clean: false, purpose: "verify", seq }, [profiles.values.buffer, profiles.times.buffer]);
   } catch (error) {
     if (token !== fileToken || seq !== saveSeq) return;
-    state.picture.message = `couldn't check the saved picture: ${(error as Error).message}`;
+    state.picture.verifyError = (error as Error).message;
     render();
   }
 }
+
+/** Copying this picture also strips data embedded in its packets (SEI: H.264/HEVC only). */
+const stripsEmbedded = () => state.loaded?.video?.codec === "avc" || state.loaded?.video?.codec === "hevc";
 
 const fixingPicture = () => !!state.loaded?.video && state.picture.fix && !!state.picture.scan?.detected && !!state.picture.scan.gains;
 
 function cloak() {
   const loaded = state.loaded;
-  if (!loaded?.clip || state.busy) return;
+  if (!loaded?.clip || state.busy || workerDead) return;
+  // The old result no longer matches what will be saved: don't let it be played or drawn as "out".
+  player.drop("out");
+  setSide("in");
   // The previous output is no longer what the button would save: if this run fails, there must be
   // nothing left over to save under the new preset's name.
   Object.assign(state, { error: "", busy: "loading", outputSamples: null, outputPreset: null, output: null, after: null,
@@ -281,6 +303,7 @@ async function download() {
     const scan = state.picture.scan;
     const picture = fixingPicture() && scan?.gains ? { gains: scan.gains, frames: scan.frames } : undefined;
     state.picture.verify = null;
+    state.picture.verifyError = "";
     const saved = await save(loaded, loaded.clip ? outputSamples : null, loaded.clip?.sampleRate ?? 0, (f) => {
       saveProgress = f;
       renderPrimary();
@@ -334,7 +357,7 @@ function renderPrimary() {
     verifying: "CHECKING…", saving: "ENCODING…",
   };
   const scanning = fresh() && !s.busy && waitingForPicture();
-  button.disabled = !s.loaded || !!s.busy || scanning;
+  button.disabled = !s.loaded || !!s.busy || scanning || !!workerDead;
   button.textContent = s.busy === "saving" && saveProgress > 0 ? `ENCODING… ${Math.round(saveProgress * 100)}%`
     : s.busy ? stageText[s.busy]!
     : scanning ? `SCANNING PICTURE… ${Math.round(s.picture.progress * 100)}%`
@@ -346,7 +369,7 @@ function renderPrimary() {
   let text: string;
   if (s.error) text = `<span class="text-red-400">${esc(s.error)}</span>`;
   else if (!s.loaded) text = s.busy ? "reading the file…" : "drop a video above · nothing leaves your browser";
-  else if (silent()) text = "no sound to cloak · saving removes the metadata and embedded data";
+  else if (silent()) text = `no sound to cloak · saving removes the metadata${stripsEmbedded() ? " and embedded data" : ""}`;
   else if (fresh() && s.after) {
     const word = s.preset === "full" ? "cloaked" : `partly cloaked (${PRESETS[s.preset].label})`;
     text = `<span class="text-accent">${word}</span> · ${s.after.tones} trackable tone${s.after.tones === 1 ? "" : "s"} left (was ${s.before?.tones ?? "?"}) · ${(s.ms / 1000).toFixed(1)} s · press x to compare`;
@@ -362,7 +385,9 @@ function renderPrimary() {
   const warning = !s.loaded?.video ? ""
     : pic.status === "unchecked" ? pic.message
     : pic.status === "error" || pic.message ? `the picture wasn't checked for light flicker (${pic.message || "the scan failed"})`
+    : pic.verifyError ? `the saved picture couldn't be checked again (${pic.verifyError}); the flicker scan of the clip still applies`
     : pic.status === "short" ? `the clip is too short (under ${MIN_PICTURE_SECONDS} s) to check the picture for light flicker`
+    : pic.scan?.detected && !pic.fix && !pic.verify ? "light flicker found and kept: it can help date the recording (tick \"Remove light flicker\" above)"
     : "";
   if (warning) status.innerHTML += `<br><span class="text-amber-300/80">⚠ ${esc(warning)}</span>`;
 }
@@ -375,7 +400,7 @@ function renderTrace() {
     ["mains hum", "hum", "a clock for the recording time"],
     ["flyby fits", "flybys", "solved speed and distance"],
   ];
-  const max = Math.max(1, ...rows.map(([, k]) => b?.[k] ?? 0));
+  const max = Math.max(1, ...rows.flatMap(([, k]) => [b?.[k] ?? 0, a?.[k] ?? 0]));
   $("trace").innerHTML = rows.map(([name, key, hint]) => {
     const vin = b?.[key], vout = a?.[key];
     const bar = (v: number | undefined, color: string) =>
@@ -399,7 +424,7 @@ function pictureRow(): string {
   else if (p.status === "unchecked") vin = `<span class="text-amber-300/80">not checkable</span>`;
   else if (p.scan) vin = p.scan.detected ? `${Math.round(p.scan.flickerHz)} Hz` : "none";
   if (p.verify) vout = p.verify.detected ? `<span class="text-red-400">left</span>` : `<span class="text-accent">gone</span>`;
-  else if (p.scan?.detected && fresh()) vout = p.fix ? `<span class="text-neutral-500">on save</span>` : `<span class="text-neutral-500">kept</span>`;
+  else if (p.scan?.detected && fresh()) vout = p.fix ? `<span class="text-neutral-500">on save</span>` : `<span class="text-amber-300/80">kept</span>`;
   return `<tr class="border-t border-neutral-900">
     <td class="py-2.5"><span class="text-white">light flicker</span><span class="block text-[9px] text-neutral-600">grid clock in the picture's row bands</span></td>
     <td class="w-[34%] py-2.5 text-[10px] text-neutral-500">${p.scan ? `z ${Math.round(p.scan.z)}${p.verify ? ` → ${Math.round(p.verify.z)}` : ""}` : ""}</td>
@@ -413,9 +438,9 @@ function renderPicture() {
   if (!show || !p.scan) return;
   el.innerHTML = `<label class="flex cursor-pointer items-start gap-3 border border-neutral-800 px-4 py-3 text-[11px] leading-relaxed hover:border-neutral-600">
     <input id="fix-picture" type="checkbox" class="mt-0.5 h-3.5 w-3.5 shrink-0 accent-[#ffd23f]" ${p.fix ? "checked" : ""} ${state.busy ? "disabled" : ""} />
-    <span><span class="text-white">Remove light flicker from the picture.</span>
-    <span class="text-neutral-500">The picture has ${p.scan.flickerHz.toFixed(1)} Hz banding from mains lighting (rolling shutter, ~${p.scan.readoutMs.toFixed(0)} ms readout).
-    Removing it re-encodes the video${p.codec ? ` (${p.codec.toUpperCase()})` : ""} in standard dynamic range: slower, and HDR looks a little different.</span></span>
+    <span><span class="text-white">Remove light flicker</span>
+    <span class="text-neutral-500">Lights in the shot flicker with the power grid, and the camera picked up faint bands that can help
+    date the recording. Removing them re-encodes the video${p.codec ? ` (${p.codec.toUpperCase()})` : ""}, which is slower and can shift colors slightly.</span></span>
   </label>`;
   $<HTMLInputElement>("fix-picture").addEventListener("change", (e) => {
     state.picture.fix = (e.target as HTMLInputElement).checked;
@@ -432,22 +457,23 @@ function renderTransport() {
   $("play").textContent = player.playing ? "❚❚" : "▶";
   $("play").setAttribute("aria-label", player.playing ? "Pause" : "Play");
   const out = $<HTMLButtonElement>("side-out"), inn = $<HTMLButtonElement>("side-in");
-  out.disabled = has && !player.has("out");
+  out.disabled = !!state.loaded && !player.has("out");
   for (const [b, side] of [[inn, "in"], [out, "out"]] as const) {
     const on = terrain.show === side;
     b.className = `px-3 py-1.5 ${on ? "bg-white text-black" : "text-neutral-400 disabled:text-neutral-700"}`;
     b.setAttribute("aria-pressed", String(on));
   }
   $("drop").classList.toggle("hidden", !!state.loaded || state.busy === "decoding");
+  $("open-another").classList.toggle("hidden", !state.loaded || !!state.busy);
   $("file-name").textContent = state.loaded
-    ? `${state.loaded.name} · ${clock(state.loaded.duration)} · ${state.loaded.clip ? `${state.loaded.clip.sampleRate / 1000} kHz` : "no sound"} · ${!state.loaded.video ? "audio only" : fixingPicture() ? "picture re-encoded without flicker" : "picture kept as is, embedded data removed"}${state.loaded.clip ? " · audio replaced" : ""} · metadata dropped`
+    ? `${state.loaded.name} · ${clock(state.loaded.duration)} · ${state.loaded.clip ? `${state.loaded.clip.sampleRate / 1000} kHz` : "no sound"} · ${!state.loaded.video ? "audio only" : fixingPicture() ? "picture re-encoded without flicker" : `picture kept as is${stripsEmbedded() ? ", embedded data removed" : ""}`}${state.loaded.clip ? " · audio replaced" : ""} · metadata dropped`
     : "";
   $("legend-main").textContent = terrain.show;
   $("legend-ghost").textContent = terrain.show === "in" ? "out" : "in";
 }
 
 function renderBands() {
-  const input = state.input ?? demoData.input;
+  const input = state.input ?? (state.loaded ? quiet : demoData.input);
   const output = state.loaded ? (fresh() ? state.output : null) : demoData.output;
   $("bands").innerHTML = bandChart(input.centers, meanBands(input), output ? meanBands(output) : null, CUTOFF);
 }
@@ -456,7 +482,7 @@ function renderSteps() {
   const on = new Set<Step>(PRESETS[state.preset].steps);
   $("steps-explained").innerHTML = (Object.entries(STEP_TEXT) as [Step, [string, string]][]).map(([step, [title, body]], i) =>
     `<li class="${on.has(step) ? "" : "opacity-40"}"><span class="text-neutral-200">${i + 1}. ${title}.</span> ${body}${on.has(step) ? "" : ` <span class="text-neutral-600">(off in ${PRESETS[state.preset].label})</span>`}</li>`,
-  ).join("") + `<li class="${state.loaded && !state.loaded.video ? "opacity-40" : ""}"><span class="text-neutral-200">${Object.keys(STEP_TEXT).length + 1}. Remove light flicker (picture).</span> When the scan finds mains-light bands, each row is divided by its estimated band, which takes the grid clock out of the picture. Optional, because it re-encodes the video.</li>`;
+  ).join("") + `<li class="${state.loaded && !state.loaded.video ? "opacity-40" : ""}"><span class="text-neutral-200">${Object.keys(STEP_TEXT).length + 1}. Remove light flicker (picture).</span> When the scan finds bands from flickering lights, each row is divided by its estimated band, which takes the grid clock out of the picture. On when bands are found (untick it to keep the picture untouched), since it re-encodes the video.</li>`;
 }
 
 const REPO = "https://github.com/asleepace/octave-camo";
@@ -465,7 +491,8 @@ const REPO = "https://github.com/asleepace/octave-camo";
 function renderEngine() {
   const commit = __COMMIT__, short = commit.slice(0, 7);
   const commitLink = /^[0-9a-f]{40}$/.test(commit) ? `<a class="underline decoration-neutral-700 hover:text-neutral-300" href="${REPO}/commit/${commit}">${short}</a>` : esc(short);
-  const engine = state.engine === "stand-in" || engineHash === "" ? "engine: dev stand-in (not a defense)"
+  const engine = workerDead ? `<span class="text-red-400">engine: failed to load</span>`
+    : state.engine === "stand-in" || engineHash === "" ? "engine: dev stand-in (not a defense)"
     : engineHash ? `engine sha256 <span id="engine-hash" class="inline-block max-w-[14ch] truncate select-all align-bottom" title="${engineHash}">${engineHash}</span>`
     : "engine: loading";
   $("engine").innerHTML = `v${esc(__VERSION__)} · ${commitLink} · ${engine} · <a class="underline decoration-neutral-700 hover:text-neutral-300" href="checksums.txt">checksums</a>`;
@@ -479,9 +506,9 @@ function render() {
   renderBands();
   renderSteps();
   renderEngine();
-  terrain.input = state.input ?? demoData.input;
+  terrain.input = state.input ?? (state.loaded ? quiet : demoData.input);
   terrain.output = state.loaded ? state.output : demoData.output;
-  const scale = state.input ?? demoData.input;
+  const scale = state.input ?? (state.loaded ? quiet : demoData.input);
   terrain.range = [percentile(scale, 0.5), percentile(scale, 0.999) + 2];
 }
 
@@ -506,6 +533,9 @@ function frame(now: number) {
 }
 requestAnimationFrame(frame);
 player.onEnd = render;
+// Where the browser can't encode AAC itself, fetch the fallback encoder now rather than mid-save:
+// the page should need no network once loaded.
+void prepareAudioEncoder().catch(() => {});
 
 // ---------- input ----------
 
@@ -544,8 +574,9 @@ window.addEventListener("drop", (e) => {
 });
 
 window.addEventListener("keydown", (e) => {
-  if (e.metaKey || e.ctrlKey || e.altKey || /INPUT|TEXTAREA|SELECT/.test((e.target as HTMLElement).tagName)) return;
-  if (e.code === "Space") { e.preventDefault(); togglePlay(); }
+  // Leave keys alone on controls (Space activates a focused button or summary, scrolls the page).
+  if (e.metaKey || e.ctrlKey || e.altKey || /INPUT|TEXTAREA|SELECT|BUTTON|SUMMARY|^A$/.test((e.target as HTMLElement).tagName)) return;
+  if (e.code === "Space" && state.loaded?.clip) { e.preventDefault(); togglePlay(); }
   else if (e.key === "x") setSide(terrain.show === "in" ? "out" : "in");
   else if (e.key === "c") primary();
 });

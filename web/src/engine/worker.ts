@@ -25,35 +25,36 @@ type Engine = {
 
 let engine: Promise<Engine> | undefined;
 /** Compiled once: after a trap the instance is replaced from this, with no network (offline use). */
-let compiled: Promise<WebAssembly.Module | null> | undefined;
+let compiled: Promise<{ module: WebAssembly.Module; sha256: string } | null> | undefined;
 
 const hex = (buffer: ArrayBuffer) => Array.from(new Uint8Array(buffer), (b) => b.toString(16).padStart(2, "0")).join("");
 
-async function compile(): Promise<WebAssembly.Module | null> {
+async function compile(): Promise<{ module: WebAssembly.Module; sha256: string } | null> {
   const url = new URL(`${import.meta.env.BASE_URL}octave-camo.wasm`, self.location.origin);
   const response = await fetch(url);
   const isWasm = response.ok && (response.headers.get("content-type") ?? "").includes("application/wasm");
   if (!isWasm) {
     // Local development without the Swift toolchain: a crude JS stand-in keeps the UI usable.
-    if (import.meta.env.DEV) {
-      post({ type: "engine", token: 0, kind: "stand-in", sha256: "" });
-      return null;
-    }
+    if (import.meta.env.DEV) return null;
     const type = response.headers.get("content-type") ?? "no content type";
     throw new Error(`could not load the scrubber: octave-camo.wasm is missing or not WebAssembly (HTTP ${response.status}, ${type})`);
   }
   // Hash the bytes that get compiled (not a number baked into the page): what the page shows is
   // what is actually running, to compare against the release's checksums.
   const bytes = await response.arrayBuffer();
-  post({ type: "engine", token: 0, kind: "wasm", sha256: hex(await crypto.subtle.digest("SHA-256", bytes)) });
-  return WebAssembly.compile(bytes);
+  return { module: await WebAssembly.compile(bytes), sha256: hex(await crypto.subtle.digest("SHA-256", bytes)) };
 }
 
 async function loadEngine(): Promise<Engine> {
   compiled ??= compile().catch((error) => { compiled = undefined; throw error; });
-  const module = await compiled;
-  if (!module) return (await import("./stand-in.ts")).standIn;
-  const camo = await Camo.load(module);
+  const built = await compiled;
+  if (!built) {
+    post({ type: "engine", token: 0, kind: "stand-in", sha256: "" });
+    return (await import("./stand-in.ts")).standIn;
+  }
+  const camo = await Camo.load(built.module);
+  // Reported only once it's instantiated and its exports check out: the hash is of a working engine.
+  post({ type: "engine", token: 0, kind: "wasm", sha256: built.sha256 });
   return {
     kind: "wasm",
     analyze: (clip) => camo.analyze(clip),
@@ -65,6 +66,8 @@ async function loadEngine(): Promise<Engine> {
 self.onmessage = async (event: MessageEvent<unknown>) => {
   const data = event.data as { type?: unknown; token?: unknown } | null;
   const picture = data?.type === "flicker";
+  const purpose = (data as { purpose?: unknown } | null)?.purpose === "verify" ? "verify" as const : "clip" as const;
+  const seq = typeof (data as { seq?: unknown } | null)?.seq === "number" ? (data as { seq: number }).seq : 0;
   const token = typeof data?.token === "number" ? data.token : 0;
   try {
     const request = Request.parse(event.data);
@@ -102,11 +105,15 @@ self.onmessage = async (event: MessageEvent<unknown>) => {
     const message = error instanceof z.ZodError ? "the page sent the scrubber a malformed request"
       : error instanceof WebAssembly.RuntimeError ? `the scrubber failed on this clip (${error.message})`
       : error instanceof Error ? error.message : String(error);
-    post({ type: "error", token, scope: picture ? "picture" : "audio", message });
+    post({ type: "error", token, scope: picture ? "picture" : "audio", message, ...(picture ? { purpose, seq } : {}) });
   }
 };
 
 // Load the scrubber as soon as the page starts, so after the first load the page works offline
 // (a quick way to check that nothing needs the network). Errors surface on the first request.
-engine = loadEngine().catch((error) => { engine = undefined; throw error; });
+engine = loadEngine().catch((error) => {
+  engine = undefined;
+  post({ type: "engine", token: 0, kind: "wasm", sha256: "", failed: error instanceof Error ? error.message : String(error) });
+  throw error;
+});
 engine.catch(() => {});

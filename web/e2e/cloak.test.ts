@@ -67,6 +67,10 @@ describe.skipIf(!URL_)("cloak in the browser", () => {
     const page = await fresh().open(input);
     await page.waitForSelector("#picture:not(.hidden)", { timeout: 180_000 });
     expect(await row(page, "light flicker")).toMatch(/^100 Hz/);
+    expect(await page.isChecked("#fix-picture")).toBe(true);                     // on when flicker is found
+    await page.click("#fix-picture");                                             // unticked: the page says it's kept
+    expect(await session.status()).toContain("flicker found and kept");
+    await page.click("#fix-picture");
     expect(await page.isChecked("#fix-picture")).toBe(true);
 
     const out = await session.cloakAndSave();

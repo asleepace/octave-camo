@@ -71,11 +71,13 @@ jobs:
         with:
           path: artifacts
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
-      - name: Build the site with this wasm
+      - name: Test and build the site with this wasm
         working-directory: web
         run: |
           cp ../artifacts/wasm/octave-camo.wasm public/
           bun install --frozen-lockfile
+          bunx tsc --noEmit
+          bun test test/ --timeout 600000
           bunx vite build
       - name: Assets and notes
         run: |
@@ -93,9 +95,10 @@ jobs:
             echo
             echo "- The page footer shows the version, the commit, and the SHA-256 of the wasm it loaded,"
             echo "  computed in your browser from the bytes it runs. It should equal \`octave-camo.wasm\` below."
-            echo "- \`site-checksums.txt\` lists every file of the deployed site; the live site's"
-            echo "  \`checksums.txt\` should be identical. After every deploy, CI also re-downloads the"
-            echo "  live site and checks each file against its own build."
+            echo "- \`site-checksums.txt\` lists every file of the site built from this commit; the site deployed"
+            echo "  from this commit serves an identical \`checksums.txt\` (the live site moves on with \`main\`; its"
+            echo "  footer shows its commit). After every deploy, CI re-downloads the live site and checks each"
+            echo "  file against its own build."
             echo "- Reproducible wasm build (two clean builds in different directories, byte-identical): **$(cat artifacts/wasm/reproducible)**."
             echo "  To rebuild: \`docker run --rm -v \"\$PWD\":/src -w /src swift:6.4.2\`, install the wasm SDK as in"
             echo "  \`.github/workflows/release.yml\`, then \`scripts/build-wasm.sh\` and compare SHA-256."
