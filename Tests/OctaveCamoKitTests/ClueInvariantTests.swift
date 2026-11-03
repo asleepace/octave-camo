@@ -24,7 +24,7 @@ final class ClueInvariantTests: XCTestCase {
     /// the page's counts) looks at. Otherwise the cloak could be widened, leave something behind
     /// up there, and the page would still say 0.
     func testTheCheckSeesEverythingTheCloakReaches() {
-        let check = FlybyAnalyzer().tracker.config.frequencyRange
+        let check = FlybyAnalyzer().tracker.config.coverage
         let p = ScrubPipeline()
         let reach: [(String, ClosedRange<Double>)] = [
             ("tone subtraction", p.subtraction.tracker.config.frequencyRange),
@@ -133,23 +133,55 @@ final class ClueInvariantTests: XCTestCase {
         }
     }
 
-    // MARK: Known gap (enable with the widened tracker)
+    // MARK: Above 1 kHz
 
-    /// A steady 1.2 kHz tone (a jet's fan whine is up there) is a long tone an attacker could
-    /// follow. Today both the check and the cloak stop at 1 kHz, so it is neither counted nor removed.
-    func testAToneAboveOneKilohertzIsFoundAndRemoved() throws {
-        try XCTSkipIf(true, "known gap: the tone tracker covers 40 Hz–1 kHz; enable together with the widened tracker")
-        for name in ["tone-1200", "tone-4500"] {
-            let input = Scenes.make(name, rate: 16_000)
-            XCTAssertGreaterThan(SceneMetrics.counts(input)[0], 0, "\(name): not found")
-            XCTAssertEqual(SceneMetrics.counts(cloak(input))[0], 0, "\(name): not removed")
+    /// The check looks up to 8 kHz: steady tones up there are found where they are, while voices,
+    /// a whistled tune and birdsong (pitch that moves too much, or too briefly) are not.
+    func testTheCheckFindsHighTonesButNotVoicesOrBirds() {
+        for (name, hz) in [("tone-1200", 1_200.0), ("tone-4500", 4_500.0)] {
+            let a = FlybyAnalyzer().analyze(Scenes.make(name, rate: 16_000))
+            let match = a.tracks.first { $0.minFrequency - 5 < hz && $0.maxFrequency + 5 > hz }
+            XCTAssertNotNil(match, "\(name): not found (\(a.tracks.map(\.meanFrequency)))")
+            if let m = match {
+                XCTAssertLessThan(m.start, 1.5, "\(name) starts at \(m.start) s")
+                XCTAssertGreaterThan(m.duration, 12, "\(name) lasts \(m.duration) s")
+                XCTAssertNotEqual(m.kind, .hum, "\(name): a high steady tone isn't called hum")
+            }
+        }
+        for name in ["speech", "singing", "whistle", "birdsong"] {
+            for rate in [16_000, 48_000] {
+                let high = FlybyAnalyzer().analyze(Scenes.make(name, rate: rate)).tracks.filter { $0.meanFrequency > 1_000 }
+                XCTAssertTrue(high.isEmpty, "\(name) at \(rate) Hz: \(high.map { "\($0.meanFrequency) Hz for \($0.duration) s" })")
+            }
         }
     }
 
-    /// The gap above, pinned: if this starts failing, the range changed and the skip above should go.
+    /// The high band has its own peak budget: adding it changes nothing the check found below 1 kHz.
+    func testTheHighBandLeavesTheLowBandAlone() {
+        var lowOnly = FlybyAnalyzer()
+        lowOnly.tracker.config.extraRanges = []
+        for name in ["plane", "plane-hard", "hum-60", "held-notes", "speech"] {
+            let input = Scenes.make(name, rate: 32_000)
+            let low = lowOnly.analyze(input).tracks.map { "\($0.kind) \(Int($0.meanFrequency)) \(Int($0.duration * 10))" }
+            let both = FlybyAnalyzer().analyze(input).tracks.filter { $0.maxFrequency < 1_000 }
+                .map { "\($0.kind) \(Int($0.meanFrequency)) \(Int($0.duration * 10))" }
+            XCTAssertEqual(both.sorted(), low.sorted(), name)
+        }
+    }
+
+    /// Known gap: the cloak's tone subtraction still stops at 1 kHz, so a tone up there is counted
+    /// (and outlined on the page) but not removed. Enable with the widened subtraction.
+    func testAToneAboveOneKilohertzIsRemoved() throws {
+        try XCTSkipIf(true, "known gap: tone subtraction covers 40 Hz–1 kHz; enable together with the widened subtraction")
+        for name in ["tone-1200", "tone-4500"] {
+            XCTAssertEqual(SceneMetrics.counts(cloak(Scenes.make(name, rate: 16_000)))[0], 0, "\(name): not removed")
+        }
+    }
+
+    /// The gap above, pinned: if this starts failing, the cloak reaches higher and the skip should go.
     func testTheKnownGapIsStillThere() {
-        let input = Scenes.make("tone-1200", rate: 16_000)
-        XCTAssertEqual(SceneMetrics.counts(input)[0], 0, "the 1.2 kHz tone is now found: enable testAToneAboveOneKilohertzIsFoundAndRemoved")
-        XCTAssertEqual(FlybyAnalyzer().tracker.config.frequencyRange.upperBound, 1_000)
+        let after = SceneMetrics.counts(cloak(Scenes.make("tone-1200", rate: 16_000)))
+        XCTAssertGreaterThan(after[0], 0, "the 1.2 kHz tone is now removed: enable testAToneAboveOneKilohertzIsRemoved")
+        XCTAssertEqual(ScrubPipeline().subtraction.tracker.config.coverage.upperBound, 1_000)
     }
 }

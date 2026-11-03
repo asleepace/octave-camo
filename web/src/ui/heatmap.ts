@@ -4,6 +4,7 @@
  */
 import type { Detail } from "../spectrum.ts";
 
+import type { Found } from "../engine/camo.ts";
 import type { Side } from "../player.ts";
 
 /** Black → deep amber → the accent → white: one hue, rising lightness (readable with any color vision). */
@@ -49,6 +50,10 @@ export class Heatmap {
   time: number | null = null;
   /** A frequency to mark with a dotted line (the regeneration cutoff), Hz. */
   cutoff = 0;
+  /** Tones to outline (time × frequency boxes). */
+  marks: readonly Found[] = [];
+  /** "found": dashed (everything in the original); "left": solid (what survived the cloak). */
+  markStyle: "found" | "left" = "found";
 
   private readonly ctx: CanvasRenderingContext2D;
   private cache = new Map<Side, { data: Detail; key: string; image: HTMLCanvasElement }>();
@@ -84,7 +89,8 @@ export class Heatmap {
     const w = Math.max(1, Math.round(canvas.clientWidth * dpr)), h = Math.max(1, Math.round(canvas.clientHeight * dpr));
     const data = this.current, side = data === this.output ? "out" : "in";
     const playhead = data && this.time !== null ? Math.round((this.time / Math.max(data.seconds, 1e-9)) * w) : -1;
-    const signature = `${w}x${h}|${side}|${this.range.join(",")}|${playhead}|${this.cutoff}|${data?.db.length ?? 0}`;
+    const marks = this.marks.map((m) => `${m.start},${m.end},${m.lo},${m.hi}`).join(";");
+    const signature = `${w}x${h}|${side}|${this.range.join(",")}|${playhead}|${this.cutoff}|${data?.db.length ?? 0}|${this.markStyle}|${marks}`;
     if (signature === this.drawn && data && this.cache.get(side)?.data === data) return;
     this.drawn = signature;
     if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
@@ -102,6 +108,17 @@ export class Heatmap {
       ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
       ctx.setLineDash([]);
     }
+    for (const box of markBoxes(this.marks, data, w, h, dpr)) {
+      // A dark halo under a white line keeps the outline visible on black and on bright amber.
+      ctx.setLineDash(this.markStyle === "found" ? [4 * dpr, 3 * dpr] : []);
+      ctx.lineWidth = 3 * dpr;
+      ctx.strokeStyle = "rgba(0, 0, 0, 0.6)";
+      ctx.strokeRect(box.x, box.y, box.w, box.h);
+      ctx.lineWidth = 1.25 * dpr;
+      ctx.strokeStyle = this.markStyle === "found" ? "rgba(255, 255, 255, 0.75)" : "#ffffff";
+      ctx.strokeRect(box.x, box.y, box.w, box.h);
+    }
+    ctx.setLineDash([]);
     if (playhead >= 0) {
       ctx.fillStyle = "rgba(255, 255, 255, 0.9)";
       ctx.fillRect(Math.min(w - dpr, playhead), 0, Math.max(1, Math.round(dpr)), h);
@@ -117,4 +134,15 @@ export function timeTicks(seconds: number, max = 6): number[] {
   const ticks: number[] = [];
   for (let t = 0; t <= seconds + 1e-9; t += step) ticks.push(t);
   return ticks;
+}
+
+/** Outline rectangles (device pixels) for found tones: a little wider than the track, at least 8 px tall. */
+export function markBoxes(marks: readonly Found[], d: Pick<Detail, "seconds" | "fLo" | "fHi">, w: number, h: number, dpr = 1) {
+  const y = (f: number) => h * (1 - Math.log(Math.min(d.fHi, Math.max(d.fLo, f)) / d.fLo) / Math.log(d.fHi / d.fLo));
+  const x = (t: number) => (w * Math.min(d.seconds, Math.max(0, t))) / Math.max(d.seconds, 1e-9);
+  return marks.filter((m) => m.hi >= d.fLo && m.lo <= d.fHi).map((m) => {
+    const top = y(m.hi * 1.04), bottom = y(m.lo / 1.04), pad = Math.max(0, 8 * dpr - (bottom - top)) / 2;
+    const left = x(m.start), right = x(m.end);
+    return { x: Math.round(left) + 0.5, y: Math.round(top - pad) + 0.5, w: Math.max(4 * dpr, Math.round(right - left)), h: Math.round(bottom - top + 2 * pad) };
+  });
 }

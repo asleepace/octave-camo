@@ -3,7 +3,7 @@ import { Request, WorkerMessage } from "../src/engine/protocol.ts";
 import { neutralize, outputName } from "../src/media.ts";
 import { hasSei, lengthSize, stripSei, stripSeiFromConfig } from "../src/sei.ts";
 import { BAND_COUNT, bandCenters, DETAIL_MAX_COLUMNS, DETAIL_ROWS, demoDetail, detail, detailHz, detailPercentile, F_HI, F_LO, logX, meanBands, mix, percentile, spectrogram } from "../src/spectrum.ts";
-import { LUT, paint, timeTicks } from "../src/ui/heatmap.ts";
+import { LUT, markBoxes, paint, timeTicks } from "../src/ui/heatmap.ts";
 import { bandChart } from "../src/ui/bands.ts";
 import { formatHz } from "../src/ui/terrain.ts";
 import { CONTENT_SECURITY_POLICY } from "../vite.config.ts";
@@ -60,6 +60,20 @@ describe("heatmap spectrogram", () => {
     expect(px[3]).toBe(255);
     // Lightness only rises along the ramp.
     for (let i = 1; i < 256; i++) expect(LUT[i * 3]! + LUT[i * 3 + 1]! + LUT[i * 3 + 2]!).toBeGreaterThanOrEqual(LUT[(i - 1) * 3]! + LUT[(i - 1) * 3 + 1]! + LUT[(i - 1) * 3 + 2]!);
+  });
+
+  test("outlines: a found tone becomes a box at its time and frequency, at least 8 px tall", () => {
+    const d = { seconds: 10, fLo: 30, fHi: 8_000 };
+    const [box] = markBoxes([{ start: 2, end: 6, lo: 1_190, hi: 1_210, kind: "steady" }], d, 1000, 240);
+    expect(box!.x).toBeCloseTo(200.5, 0);
+    expect(box!.w).toBe(400);
+    expect(box!.h).toBeGreaterThanOrEqual(8);
+    const yOf = (f: number) => 240 * (1 - Math.log(f / 30) / Math.log(8_000 / 30));
+    expect(box!.y).toBeLessThan(yOf(1_200));
+    expect(box!.y + box!.h).toBeGreaterThan(yOf(1_200));
+    // Outside the view: dropped; past the end of the clip: clamped.
+    expect(markBoxes([{ start: 0, end: 1, lo: 10, hi: 20, kind: "hum" }], d, 1000, 240)).toEqual([]);
+    expect(markBoxes([{ start: 8, end: 30, lo: 100, hi: 110, kind: "noFit" }], d, 1000, 240)[0]!.w).toBe(200);
   });
 
   test("time ticks are round and span the clip", () => {
@@ -138,9 +152,16 @@ describe("worker protocol", () => {
     expect(WorkerMessage.safeParse({ type: "demo", token: 0, input: heat(2), output: heat(2) }).success).toBe(true);
     expect(WorkerMessage.safeParse({ type: "demo", token: 0, input: heat(3), output: heat(2) }).success).toBe(false); // size mismatch
     const spectrum = { db: new Float32Array(96), frames: 1, hop: 0.05 };
-    const trace = { tones: 0, doppler: 0, hum: 0, flybys: 0 };
+    const trace = { tones: 0, doppler: 0, hum: 0, flybys: 0, found: [] };
     expect(WorkerMessage.safeParse({ type: "analysis", token: 1, trace, spectrum, engine: "wasm" }).success).toBe(false); // detail required
     expect(WorkerMessage.safeParse({ type: "analysis", token: 1, trace, spectrum, detail: heat(2), engine: "wasm" }).success).toBe(true);
+    const box = { start: 1, end: 3, lo: 1_190, hi: 1_210, kind: "steady" };
+    const withFound = (found: unknown[]) => WorkerMessage.safeParse({ type: "analysis", token: 1, trace: { ...trace, found }, spectrum, detail: heat(2), engine: "wasm" }).success;
+    expect(withFound([box])).toBe(true);
+    expect(withFound([{ ...box, end: 0.5 }])).toBe(false);                 // ends before it starts
+    expect(withFound([{ ...box, kind: "ufo" }])).toBe(false);
+    expect(withFound([{ ...box, lo: -5 }])).toBe(false);
+    expect(WorkerMessage.safeParse({ type: "analysis", token: 1, trace: { tones: 0, doppler: 0, hum: 0, flybys: 0 }, spectrum, detail: heat(2), engine: "wasm" }).success).toBe(false); // found is required
   });
 });
 

@@ -20,7 +20,12 @@ export const standIn = {
     let low = 0, prev = 0;
     for (let i = 0; i < x.length; i++) { prev += (x[i]! - prev) * 0.02; low += prev * prev; }
     const tones = Math.min(9, Math.round(Math.sqrt(low / x.length) * 400));
-    return { tones, doppler: Math.round(tones / 3), hum: tones > 2 ? 2 : 0, flybys: tones > 4 ? 1 : 0 };
+    // One made-up box per tone (dev only), so the spectrogram's outlines have something to show.
+    const seconds = x.length / clip.sampleRate;
+    const found = Array.from({ length: tones }, (_, i) => ({
+      start: seconds * 0.1, end: seconds * 0.9, lo: 120 * (i + 1) * 0.97, hi: 120 * (i + 1) * 1.03, kind: "steady" as const,
+    }));
+    return { tones, doppler: Math.round(tones / 3), hum: tones > 2 ? 2 : 0, flybys: tones > 4 ? 1 : 0, found };
   },
   flicker(p: Profiles, clean: boolean): Flicker {
     // With VITE_STANDIN_FLICKER=1 it always "finds" flicker (no-op gains), to exercise the

@@ -37,7 +37,7 @@ type Preset = keyof typeof PRESETS;
 
 const STEP_TEXT: Partial<Record<Step, [string, string]>> = {
   hum: ["Notch the mains hum", "Narrow filters at 50/60 Hz and their harmonics remove the grid's clock."],
-  subtract: ["Cancel long tones", "Follows each steady tone and subtracts a matched copy, pass after pass."],
+  subtract: ["Cancel long tones", "Follows each steady tone below 1 kHz and subtracts a matched copy, pass after pass. Tones from 1 to 8 kHz are counted and outlined on the spectrogram, but not removed yet."],
   scurve: ["Hunt for flyby curves", "Tries every physically possible pass (speed, distance, timing), the way an attacker would, and cancels the ones that fit."],
   lowband: ["Regenerate the low end", `Below ${CUTOFF} Hz, where distant engines live, the sound is rebuilt as noise matching each hearing band's loudness. Voices are tracked and kept.`],
 };
@@ -413,8 +413,8 @@ function renderPrimary() {
 
 function renderTrace() {
   const b = state.before, a = fresh() ? state.after : null;
-  const rows: [string, keyof Trace, string][] = [
-    ["long tones", "tones", "narrow tones it can follow for seconds"],
+  const rows: [string, Exclude<keyof Trace, "found">, string][] = [
+    ["long tones", "tones", "narrow tones it can follow for seconds, 40 Hz–8 kHz"],
     ["doppler curves", "doppler", "pitch bends like a passing source"],
     ["mains hum", "hum", "a clock for the recording time"],
     ["flyby fits", "flybys", "solved speed and distance"],
@@ -558,11 +558,17 @@ function renderHeatmap() {
   }
 
   const shown = heatmap.current;
+  // Outline what the attacker model found: everything in the original, what's left after.
+  const marks = example ? [] : shown === output ? state.after?.found ?? [] : state.before?.found ?? [];
+  heatmap.marks = marks;
+  heatmap.markStyle = shown === output ? "left" : "found";
   const silentClip = !!state.loaded && !state.loaded.clip;
+  const tones = (n: number) => `${n} long tone${n === 1 ? "" : "s"}`;
   $("spec-note").textContent = silentClip ? "no sound in this video"
     : !shown ? (state.loaded ? "listening…" : "")
     : example ? (shown === output ? "plane and hum removed · voices kept" : "a passing plane · mains hum · voices")
-    : shown === output ? "after cloaking" : "the original";
+    : shown === output ? (marks.length ? `after cloaking · ${tones(marks.length)} a tracker can still follow (outlined)` : "after cloaking · nothing left a tracker can follow")
+    : marks.length ? `the original · ${tones(marks.length)} found (outlined)` : "the original";
   const what = shown === output ? "after cloaking" : example ? "before cloaking" : "the original sound";
   $("spec").setAttribute("aria-label", shown
     ? `Spectrogram${example ? " (example)" : ""}, ${what}: frequency from ${Math.round(shown.fLo)} Hz to ${(shown.fHi / 1000).toFixed(1)} kHz over ${clock(shown.seconds)}; brighter is louder.`

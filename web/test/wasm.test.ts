@@ -81,6 +81,26 @@ for (const [name, WASM] of BUILDS) describe.skipIf(!existsSync(WASM))(`octave-ca
     expect(after.hum).toBe(0);
   }, 600_000);
 
+  test("reports each long tone's time and frequency, from 40 Hz up to 8 kHz", async () => {
+    const camo = await Camo.load(readFileSync(WASM));
+    const x = new Float32Array(SR * 12);
+    let seed = 3;
+    for (let i = 0; i < x.length; i++) {
+      seed = (seed * 1664525 + 1013904223) >>> 0;
+      x[i] = 0.02 * Math.sin((2 * Math.PI * 1_200 * i) / SR) + 0.004 * (seed / 2 ** 32 - 0.5);
+    }
+    const trace = camo.analyze({ sampleRate: SR, channels: [x] });
+    expect(trace.tones).toBe(trace.found.length);
+    const tone = trace.found.find((f) => f.lo < 1_200 && f.hi > 1_200);
+    expect(tone).toBeDefined();
+    expect(tone!.hi - tone!.lo).toBeLessThan(10);
+    expect(tone!.start).toBeLessThan(1);
+    expect(tone!.end).toBeGreaterThan(10);
+    // Counted but not removed yet (the cloak's tone subtraction stops at 1 kHz).
+    const after = camo.analyze({ sampleRate: SR, channels: [camo.scrub({ sampleRate: SR, channels: [x] }, { seed: 5 }).output] });
+    expect(after.found.some((f) => f.lo < 1_200 && f.hi > 1_200)).toBe(true);
+  }, 600_000);
+
   test("finds rolling-shutter flicker, removes it, and leaves clean video alone", async () => {
     const camo = await Camo.load(readFileSync(WASM));
     const flickering = camo.flicker(flickerProfiles(true), true);

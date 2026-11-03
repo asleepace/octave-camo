@@ -27,6 +27,8 @@ public struct DopplerFit: Codable {
 
 public struct TrackReport: Codable {
     public let kind: TrackKind
+    /// When the track begins, seconds into the clip.
+    public let start: Double
     public let meanFrequency: Double
     public let minFrequency: Double
     public let maxFrequency: Double
@@ -61,6 +63,9 @@ public struct FlybyAnalyzer {
     public struct Config {
         public var humBaseFrequencies: [Double] = [50, 60]
         public var humToleranceHz = 1.0
+        /// Above this, a steady tone near a 50/60 Hz multiple is not called hum: multiples are
+        /// so dense up there that ±1 Hz would catch many unrelated tones.
+        public var humMaxFrequency = 1_000.0
         public var humMaxStandardDeviation = 0.6
         public var humMaxSweep = 0.05
         /// Below this sweep a tone carries no usable Doppler shape.
@@ -82,7 +87,16 @@ public struct FlybyAnalyzer {
     public var tracker: ToneTracker
     var optimizer = NelderMead()
 
-    public init(config: Config = Config(), tracker: ToneTracker = ToneTracker()) {
+    /// The attacker's tracker: the scrubber's range (40 Hz–1 kHz), plus 1–8 kHz with its own peak
+    /// budget, where a jet's fan whine or an electrical whine can sit. The page's counts come
+    /// from this, so they cover more than the cloak removes: a tone up there is counted, not hidden.
+    public static var attackerTracker: ToneTracker {
+        var t = ToneTracker()
+        t.config.extraRanges = [1_000...8_000]
+        return t
+    }
+
+    public init(config: Config = Config(), tracker: ToneTracker = FlybyAnalyzer.attackerTracker) {
         self.config = config
         self.tracker = tracker
     }
@@ -94,7 +108,7 @@ public struct FlybyAnalyzer {
 
     public func classify(_ track: Track) -> TrackReport {
         func report(_ kind: TrackKind, _ fit: DopplerFit? = nil) -> TrackReport {
-            TrackReport(kind: kind, meanFrequency: track.meanFrequency, minFrequency: track.minFrequency,
+            TrackReport(kind: kind, start: track.times.first ?? 0, meanFrequency: track.meanFrequency, minFrequency: track.minFrequency,
                         maxFrequency: track.maxFrequency, duration: track.duration, fit: fit)
         }
         if isHum(track) { return report(.hum) }
@@ -111,7 +125,7 @@ public struct FlybyAnalyzer {
 
     func isHum(_ track: Track) -> Bool {
         let m = track.meanFrequency
-        guard DSP.standardDeviation(track.frequencies) <= config.humMaxStandardDeviation,
+        guard m <= config.humMaxFrequency, DSP.standardDeviation(track.frequencies) <= config.humMaxStandardDeviation,
               track.sweep <= config.humMaxSweep else { return false }
         return config.humBaseFrequencies.contains { abs(m - $0 * (m / $0).rounded()) < config.humToleranceHz }
     }

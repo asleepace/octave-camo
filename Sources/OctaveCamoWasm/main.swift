@@ -12,6 +12,8 @@
 //   st  = camo_analyze(ptr, channels, frames, sampleRate)
 //         4 Int32: long tonal tracks, Doppler-shaped tracks, mains-hum lines, fitted flybys
 //         (all -1: the input was rejected, which is not the same as clean)
+//   t   = camo_tracks(), n = camo_tracks_length()   after camo_analyze: n Float32, 5 per long tone
+//         found: start s, end s, lowest Hz, highest Hz, kind (0 hum, 1 steady, 2 doppler, 3 no fit)
 // camo_scrub returns 0 and leaves an empty output when it rejects its input (no stale result).
 //
 // Video flicker (the picture's ENF clock), on row profiles the page measures:
@@ -59,6 +61,7 @@ enum Shared {
     nonisolated(unsafe) static let stats = Outbox<Int32>()
     nonisolated(unsafe) static let flicker = Outbox<Double>()
     nonisolated(unsafe) static let gains = Outbox<Float>()
+    nonisolated(unsafe) static let tracks = Outbox<Float>()
 }
 
 /// `a × b × …` if it fits in Int (32 bits in wasm32), else nil: sizes come from JavaScript.
@@ -142,11 +145,18 @@ func camoScrub(_ input: UnsafePointer<Float>, _ channelCount: Int32, _ frames: I
 func camoAnalyze(_ input: UnsafePointer<Float>, _ channelCount: Int32, _ frames: Int32,
                  _ sampleRate: Int32) -> UnsafePointer<Int32> {
     var stats = [Int32](repeating: -1, count: 4)
+    var tracks: [Float] = []
     if let clip = audio(input, channelCount, frames, sampleRate) {
         let analysis = FlybyAnalyzer().analyze(clip)
         stats = [Int32(analysis.tracks.count), Int32(analysis.flybys.count), Int32(analysis.hum.count),
                  Int32(analysis.flybys.filter { $0.fit != nil }.count)]
+        let kinds: [TrackKind] = [.hum, .steady, .doppler, .noFit]
+        for t in analysis.tracks {
+            tracks += [Float(t.start), Float(t.start + t.duration), Float(t.minFrequency), Float(t.maxFrequency),
+                       Float(kinds.firstIndex(of: t.kind) ?? 3)]
+        }
     }
+    Shared.tracks.set(tracks)
     Shared.stats.set(stats)
     return UnsafePointer(Shared.stats.pointer)
 }
@@ -207,6 +217,18 @@ func camoFlickerGains() -> UnsafePointer<Float> {
 @_cdecl("camo_flicker_gains_length")
 func camoFlickerGainsLength() -> Int32 {
     Int32(Shared.gains.count)
+}
+
+@_expose(wasm, "camo_tracks")
+@_cdecl("camo_tracks")
+func camoTracks() -> UnsafePointer<Float> {
+    UnsafePointer(Shared.tracks.pointer)
+}
+
+@_expose(wasm, "camo_tracks_length")
+@_cdecl("camo_tracks_length")
+func camoTracksLength() -> Int32 {
+    Int32(Shared.tracks.count)
 }
 
 @_expose(wasm, "camo_output")

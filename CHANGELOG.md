@@ -9,6 +9,19 @@ are grouped by milestone, newest first, with the commits that made them.
 
 ## [Unreleased]
 
+### The check looks up to 8 kHz
+
+- The attacker model behind "what a tracker finds" now searches 1–8 kHz as well as 40 Hz–1 kHz
+  (a separate peak budget, so nothing it found below 1 kHz changes). A steady tone up there, such
+  as a jet's fan whine or an electrical whine, is counted instead of hidden behind a "→ 0".
+- The cloak doesn't remove those yet (tone subtraction still stops at 1 kHz), so the page says so:
+  the spectrogram outlines every long tone found, dashed on the original and solid for what a
+  tracker can still follow after cloaking, with a count under it.
+- A steady tone above 1 kHz is no longer called mains hum just because it sits within 1 Hz of a
+  50/60 Hz multiple (up there, nearly every tone does).
+- The wasm reports each tone's start, end and frequency range (`camo_tracks`); the CLI's JSON
+  gains `start` per track.
+
 ### Tests
 
 - **Behavior snapshots** (`Tests/OctaveCamoKitTests/Snapshots/behavior.json`): 13 synthetic scenes,
@@ -25,8 +38,7 @@ are grouped by milestone, newest first, with the commits that made them.
 
 ### Known issues (found by the new tests, targets written and skipped)
 
-- **Tones above 1 kHz are neither counted nor removed** (the tone tracker covers 40 Hz–1 kHz), so
-  "long tones → 0" can hide one. A jet's fan whine can be up there.
+- **Tones above 1 kHz are counted but not removed yet** (tone subtraction covers 40 Hz–1 kHz).
 - **Cloaked speech can show a "long tone" at the voice's own pitch** (with about half the seeds):
   not a location clue, but the page would show "long tones 0 → 1".
 - **Held musical notes are removed** like engine tones (the snapshot keeps 8% of a chord scene's

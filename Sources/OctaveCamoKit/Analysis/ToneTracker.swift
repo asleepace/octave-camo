@@ -33,6 +33,9 @@ public struct ToneTracker {
         public var window = 16_384
         public var hop = 2_048
         public var frequencyRange: ClosedRange<Double> = 40...1_000
+        /// More ranges to search, each with its own `maxPeaksPerFrame` budget (so loud peaks in
+        /// one can't crowd out tones in another). Tracks may cross between ranges.
+        public var extraRanges: [ClosedRange<Double>] = []
         /// Tracks shorter than this are discarded.
         public var minDuration = 2.0
         /// How far a peak must stand above the local median floor.
@@ -47,6 +50,12 @@ public struct ToneTracker {
         public var relativeTolerance = 0.02
 
         public init() {}
+
+        /// Lowest to highest frequency searched, Hz.
+        public var coverage: ClosedRange<Double> {
+            let all = [frequencyRange] + extraRanges
+            return all.map(\.lowerBound).min()!...all.map(\.upperBound).max()!
+        }
     }
 
     public var config: Config
@@ -63,9 +72,12 @@ public struct ToneTracker {
         let fft = RealFFT(size: c.window)
         let window = DSP.hann(c.window)
         let binHz = Double(sampleRate) / Double(c.window)
-        let lowBin = max(Int(c.frequencyRange.lowerBound / binHz), 1)
-        let highBin = min(Int(c.frequencyRange.upperBound / binHz), fft.binCount - c.floorHalfWidth - 2)
-        guard highBin > lowBin else { return [] }
+        let ranges: [Range<Int>] = ([c.frequencyRange] + c.extraRanges).compactMap { r in
+            let lowBin = max(Int(r.lowerBound / binHz), 1)
+            let highBin = min(Int(r.upperBound / binHz), fft.binCount - c.floorHalfWidth - 2)
+            return highBin > lowBin ? lowBin..<highBin : nil
+        }
+        guard let highBin = ranges.map(\.upperBound).max() else { return [] }
 
         var frame = [Double](repeating: 0, count: c.window)
         var re = [Double](repeating: 0, count: fft.binCount)
@@ -81,7 +93,7 @@ public struct ToneTracker {
                 levelDB[k] = 20 * log10((re[k] * re[k] + im[k] * im[k]).squareRoot() + 1e-12)
             }
 
-            let peaks = findPeaks(levelDB, bins: lowBin..<highBin, binHz: binHz)
+            let peaks = ranges.flatMap { findPeaks(levelDB, bins: $0, binHz: binHz) }
             let time = (Double(start) + Double(c.window) / 2) / Double(sampleRate)
             let used = associate(peaks, with: &open, at: time)
 
