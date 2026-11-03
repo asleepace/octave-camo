@@ -107,6 +107,32 @@ describe("pitch tracking", () => {
     expect(Array.from(trackPitch(x, SR, q).f0).filter((v) => v > 0).length).toBe(0);
   });
 
+  test("in heavy noise, with sparse queries, machines are still rejected and a phrase still kept", () => {
+    // 8 kHz (no decimation, full-band noise) queried at lowband's frame centres, 0.256 s apart:
+    // the estimator jitters by ±50 cents, which once chopped a steady tone into kept pieces.
+    const sr = 8_000, rng = new Rng(8);
+    const synth = (seconds: number, noiseRms: number, f: (t: number) => number, gate: (t: number) => boolean = () => true) => {
+      const n = sr * seconds, x = new Float32Array(n);
+      let phase = 0;
+      for (let i = 0; i < n; i++) {
+        const t = i / sr;
+        x[i] = noiseRms * rng.gaussian();
+        phase += (2 * Math.PI * f(t)) / sr;
+        if (gate(t)) for (let h = 1; h <= 4; h++) x[i]! += (0.05 / h) * Math.sin(h * phase);
+      }
+      return x;
+    };
+    const frames = (x: Float32Array) => Float64Array.from({ length: Math.floor((x.length + 8192) / 2048) + 1 }, (_, m) => (m * 2048 - 4096) / sr);
+    const kept = (x: Float32Array) => Array.from(trackPitch(x, sr, frames(x)).f0).filter((v) => v > 0).length;
+    expect(kept(synth(6, 0.02, () => 137.3))).toBe(0);                                          // steady
+    expect(kept(synth(24, 0.02, (t) => 120 + 40 / (1 + Math.exp((t - 12) * 0.5))))).toBe(0);  // a slow pass
+    const phrase = synth(8, 0.004, (t) => {
+      const accent = [0, 3, -1, 5, 1, -2, 4, 0, 2, -3][Math.floor(t / 0.33) % 10]!;
+      return 160 * 2 ** ((accent - 0.8 * (t % 2.6)) / 12) * (1 + 0.02 * Math.sin(37 * t));      // falling, with accents
+    }, (t) => t % 0.33 < 0.25);
+    expect(kept(phrase)).toBeGreaterThan(10);
+  });
+
   test("rejects a steady engine tone as not-voice", () => {
     const x = noise(SR * 5, 0.002);
     for (let h = 1; h <= 4; h++) addTone(x, () => h * 95, 0.1 / h);

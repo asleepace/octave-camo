@@ -19,16 +19,20 @@ export type PitchOptions = {
   threshold: number;
   /** Machine-like (steady or one-way) stretches longer than this are rejected. */
   maxSteadyS: number;
-  /** "Steady": the smoothed pitch moves less than this over the stretch. */
+  /** "Steady": the middle half of the stretch's pitches lies within this. */
   steadyCents: number;
   /** Unvoiced gaps up to this (or 2.5 query spacings) don't end a stretch. */
   maxGapS: number;
   /** Unbroken voiced runs longer than this are not speech. */
   maxRunS: number;
+  /** A voiced frame joins a stretch if within this of the stretch's recent median pitch. */
+  joinCents: number;
+  /** |Kendall's τ| between time and pitch at or above this, over a real change, is a glide. */
+  glideTau: number;
 };
 
 export const defaultPitchOptions: PitchOptions = {
-  minHz: 70, maxHz: 400, threshold: 0.3, maxSteadyS: 1.5, steadyCents: 50, maxGapS: 0.3, maxRunS: 2,
+  minHz: 70, maxHz: 400, threshold: 0.3, maxSteadyS: 1.5, steadyCents: 80, maxGapS: 0.3, maxRunS: 2, joinCents: 300, glideTau: 0.7,
 };
 
 export function trackPitch(x: Float32Array, sampleRate: number, times: Float64Array,
@@ -86,29 +90,36 @@ function rejectSteadyRuns(f0: Float64Array, times: Float64Array, o: PitchOptions
     if (times[end]! - times[start]! > o.maxRunS) reject.fill(1, start, end + 1);
     start = end + 1;
   }
-  // Stretches joined across short gaps (relative to the query spacing too), judged on the pitch
-  // smoothed by a ~0.25 s running median (the estimator's jitter would hide a machine).
+  // Stretches joined across short gaps (relative to the query spacing too). In noise the
+  // estimator jitters by tens of cents, so membership compares against the stretch's recent
+  // median, and the tests are rank- and quartile-based.
   const spacings: number[] = [];
   for (let i = 1; i < times.length; i++) if (times[i]! > times[i - 1]!) spacings.push(times[i]! - times[i - 1]!);
   const spacing = spacings.length ? median(spacings) : 0.05, maxGap = Math.max(o.maxGapS, 2.5 * spacing);
-  const window = Math.max(3, Math.round(0.25 / spacing) | 1);
   let group: number[] = [];
   const judge = () => {
     const g = group;
     group = [];
     if (g.length < 5 || times[g.at(-1)!]! - times[g[0]!]! <= o.maxSteadyS) return;
-    const raw = g.map((i) => cents(f0[i]!, f0[g[0]!]!));
-    const track = raw.map((_, k) => median(raw.slice(Math.max(0, k - (window >> 1)), Math.min(raw.length, k + (window >> 1) + 1))));
-    const range = Math.max(...track) - Math.min(...track);
-    let up = 0, down = 0;
-    for (let k = 1; k < track.length; k++) { const step = track[k]! - track[k - 1]!; if (step > 1) up++; else if (step < -1) down++; }
-    const oneWay = up + down >= 3 && Math.max(up, down) >= 0.9 * (up + down);
-    if (range < o.steadyCents || oneWay) reject.fill(1, g[0]!, g.at(-1)! + 1);
+    const c = g.map((i) => cents(f0[i]!, f0[g[0]!]!));
+    // Steady: the middle half of the pitches lies within steadyCents.
+    const sorted = [...c].sort((a, b) => a - b);
+    const iqr = sorted[Math.floor(0.75 * (sorted.length - 1))]! - sorted[Math.floor(0.25 * (sorted.length - 1))]!;
+    // Gliding: pitch ranks follow time ranks (Kendall's τ), and it moves by more than steadyCents.
+    let concordant = 0, discordant = 0;
+    for (let a = 0; a < c.length; a++) for (let b = a + 1; b < c.length; b++) {
+      if (c[b]! > c[a]!) concordant++; else if (c[b]! < c[a]!) discordant++;
+    }
+    const tau = (concordant - discordant) / Math.max(1, (c.length * (c.length - 1)) / 2);
+    const k = Math.max(1, Math.floor(c.length / 4));
+    const change = Math.abs(median(c.slice(-k)) - median(c.slice(0, k)));
+    if (iqr < o.steadyCents || (Math.abs(tau) >= o.glideTau && change >= o.steadyCents)) reject.fill(1, g[0]!, g.at(-1)! + 1);
   };
   for (let i = 0; i < f0.length; i++) {
     if (f0[i] === 0) continue;
     const previous = group.at(-1);
-    if (previous !== undefined && (times[i]! - times[previous]! > maxGap || Math.abs(cents(f0[i]!, f0[previous]!)) >= 100)) judge();
+    const recent = group.length ? median(group.slice(-3).map((j) => f0[j]!)) : 0;
+    if (previous !== undefined && (times[i]! - times[previous]! > maxGap || Math.abs(cents(f0[i]!, recent)) >= o.joinCents)) judge();
     group.push(i);
   }
   judge();
