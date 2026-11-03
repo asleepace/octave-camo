@@ -2,8 +2,9 @@
 import { logX } from "../spectrum.ts";
 import { formatHz } from "./terrain.ts";
 
-const W = 1000, H = 300;
-const TICKS = [31.5, 63, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
+// Sized for about half the page width, so 10-unit text renders near 10 px.
+const W = 560, H = 220;
+const TICKS = [31.5, 125, 500, 2000, 8000];
 
 function smoothPath(pts: [number, number][]): string {
   if (!pts.length) return "";
@@ -24,14 +25,14 @@ export function bandChart(centers: Float64Array, input: Float32Array, output: Fl
   const y = (d: number) => (Math.min(1, Math.max(0, (top - d) / (top - floor))) * H);
   const curve = (vals: Float32Array) => smoothPath(Array.from(vals, (d, i) => [logX(centers[i]!) * W, y(d)]));
   const xc = logX(cutoff) * W;
-  const grid = [0, 1, 2, 3].map((k) => {
-    const d = top - k * 20, yy = y(d);
+  const grid = [0, 1, 2].map((k) => {
+    const d = top - k * 30, yy = y(d);
     return `<line x1="0" x2="${W}" y1="${yy}" y2="${yy}" stroke="#1f1f1f" stroke-dasharray="2 6"/>
       <text x="-10" y="${yy + 3}" text-anchor="end" class="fill-neutral-600" font-size="10">${d}</text>`;
   }).join("");
   const ticks = TICKS.map((f) => `<text x="${logX(f) * W}" y="${H + 18}" text-anchor="middle" class="fill-neutral-500" font-size="10">${formatHz(f)}</text>`).join("");
   const out = output ? curve(output) : "";
-  return `<svg viewBox="-40 -24 ${W + 48} ${H + 48}" class="w-full h-auto overflow-visible font-mono" role="img"
+  return `<svg viewBox="-34 -22 ${W + 40} ${H + 44}" class="w-full h-auto overflow-visible font-mono" role="img"
       aria-label="Average level per frequency band, original${output ? " and cloaked" : ""}">
     ${compact ? "" : grid}
     <line x1="0" x2="${W}" y1="${H}" y2="${H}" stroke="#333" stroke-dasharray="2 4"/>

@@ -1,3 +1,5 @@
+<img src="web/public/icon.svg" width="72" alt="" />
+
 # octave-camo
 
 [![CI](https://github.com/asleepace/octave-camo/actions/workflows/ci.yml/badge.svg)](https://github.com/asleepace/octave-camo/actions/workflows/ci.yml)

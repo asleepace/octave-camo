@@ -8,14 +8,6 @@
   --color-accent: #ffd23f;
 }
 
-/* Draggable numbers in the config block. */
-.num {
-  @apply cursor-ew-resize border-b border-neutral-500 text-white select-none hover:border-accent hover:text-accent;
-}
-.tok {
-  @apply cursor-pointer select-none hover:text-accent;
-}
-
 input[type="range"]::-webkit-slider-thumb {
   @apply h-3 w-3 appearance-none bg-white;
 }
