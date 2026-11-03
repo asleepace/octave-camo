@@ -251,3 +251,79 @@ describe("embedded video data (SEI)", () => {
     expect(stripSeiFromConfig("avc", config)).toBe(config);
   });
 });
+
+describe("message validation under garbage", () => {
+  // A seeded generator of hostile values: wrong types, NaN, huge numbers, nested junk, typed arrays.
+  let seed = 1234;
+  const rand = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 2 ** 32);
+  const pick = <T,>(xs: readonly T[]): T => xs[Math.floor(rand() * xs.length)]!;
+  const junk = (depth = 0): unknown => {
+    const kinds = ["num", "nan", "inf", "str", "bool", "null", "undef", "arr", "obj", "f32", "big"] as const;
+    switch (pick(depth > 2 ? kinds.slice(0, 7) : kinds)) {
+      case "num": return Math.floor(rand() * 2e6) - 1e6;
+      case "nan": return NaN;
+      case "inf": return -Infinity;
+      case "str": return pick(["", "wasm", "analysis", "x".repeat(1000), "__proto__"]);
+      case "bool": return rand() < 0.5;
+      case "null": return null;
+      case "undef": return undefined;
+      case "arr": return Array.from({ length: Math.floor(rand() * 4) }, () => junk(depth + 1));
+      case "obj": return Object.fromEntries(Array.from({ length: Math.floor(rand() * 4) }, () => [pick(["type", "token", "db", "columns", "rows", "channels", "x"]), junk(depth + 1)]));
+      case "f32": return new Float32Array(Math.floor(rand() * 8));
+      case "big": return 2 ** 60;
+    }
+  };
+  const types = ["engine", "stage", "demo", "analysis", "result", "flicker", "error", "analyze", "scrub", "x"];
+
+  test("5,000 hostile messages are rejected cleanly (no throw), each way", () => {
+    for (let i = 0; i < 5_000; i++) {
+      const message = { ...(junk() as object), type: pick(types), token: rand() < 0.5 ? 1 : junk() };
+      expect(() => WorkerMessage.safeParse(message)).not.toThrow();
+      expect(() => Request.safeParse(message)).not.toThrow();
+      expect(() => WorkerMessage.safeParse(junk())).not.toThrow();
+    }
+  });
+
+  test("one wrong field spoils an otherwise valid heatmap message", () => {
+    const heat = () => ({ db: new Float32Array(8), columns: 2, rows: 4, seconds: 1, fLo: 30, fHi: 8_000 });
+    const valid = { type: "demo", token: 0, input: heat(), output: heat() };
+    expect(WorkerMessage.safeParse(valid).success).toBe(true);
+    const breakers: [string, unknown][] = [["columns", 0], ["columns", 2.5], ["rows", 1], ["fLo", -1], ["fHi", 10], ["seconds", -1], ["db", [0, 0]], ["db", new Float64Array(8)]];
+    for (const [field, value] of breakers) {
+      expect(WorkerMessage.safeParse({ ...valid, input: { ...heat(), [field]: value } }).success).toBe(false);
+    }
+  });
+});
+
+describe("spectrogram invariants", () => {
+  const noisy = (sr: number, seconds: number) => {
+    let s = 9;
+    const rand = () => ((s = (s * 1664525 + 1013904223) >>> 0) / 2 ** 32) - 0.5;
+    const x = new Float32Array(Math.round(sr * seconds));
+    for (let i = 0; i < x.length; i++) x[i] = 0.3 * Math.sin((2 * Math.PI * 220 * i) / sr) + 0.05 * rand();
+    return x;
+  };
+
+  // (Above the 1e-12 power floor, i.e. cells louder than -60 dB, which stay well above it at -100 dB when quieter.)
+  test("scaling the sound shifts every cell by the same dB (the colors are relative)", () => {
+    const x = noisy(16_000, 3), quiet = x.map((v) => v * 0.01);
+    for (const view of [detail(x, 16_000).db, spectrogram(x, 16_000).db]) expect(view.length).toBeGreaterThan(0);
+    const a = detail(x, 16_000), b = detail(quiet, 16_000);
+    let worst = 0;
+    for (let i = 0; i < a.db.length; i++) if (a.db[i]! > -60) worst = Math.max(worst, Math.abs(a.db[i]! - b.db[i]! - 40));
+    expect(worst).toBeLessThan(0.05);
+  });
+
+  test("deterministic, and the same at any rate for the same sound", () => {
+    const a = detail(noisy(16_000, 2), 16_000), b = detail(noisy(16_000, 2), 16_000);
+    expect(Array.from(a.db)).toEqual(Array.from(b.db));
+    // 220 Hz peaks in the same row at 16, 44.1 and 48 kHz.
+    const peakRow = (sr: number) => {
+      const d = detail(noisy(sr, 2), sr), c = Math.floor(d.columns / 2);
+      const col = Array.from(d.db.subarray(c * d.rows, (c + 1) * d.rows));
+      return col.indexOf(Math.max(...col));
+    };
+    const r16 = peakRow(16_000);
+    for (const sr of [44_100, 48_000]) expect(Math.abs(peakRow(sr) - r16)).toBeLessThanOrEqual(1);
+  });
+});
