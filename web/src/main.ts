@@ -457,7 +457,6 @@ function renderPicture() {
 
 function renderTransport() {
   const has = !!state.loaded?.clip;
-  $("transport").classList.toggle("opacity-40", !has);
   $<HTMLButtonElement>("play").disabled = !has;
   $<HTMLInputElement>("seek").disabled = !has;
   $("play").textContent = player.playing ? "❚❚" : "▶";
@@ -487,8 +486,8 @@ function renderBands() {
 function renderSteps() {
   const on = new Set<Step>(PRESETS[state.preset].steps);
   $("steps-explained").innerHTML = (Object.entries(STEP_TEXT) as [Step, [string, string]][]).map(([step, [title, body]], i) =>
-    `<li class="${on.has(step) ? "" : "opacity-40"}"><span class="text-neutral-200">${i + 1}. ${title}.</span> ${body}${on.has(step) ? "" : ` <span class="text-neutral-600">(off in ${PRESETS[state.preset].label})</span>`}</li>`,
-  ).join("") + `<li class="${state.loaded && !state.loaded.video ? "opacity-40" : ""}"><span class="text-neutral-200">${Object.keys(STEP_TEXT).length + 1}. Remove light flicker (picture).</span> When the scan finds bands from flickering lights, each row is divided by its estimated band, which takes the grid clock out of the picture. On when bands are found (untick it to keep the picture untouched), since it re-encodes the video.</li>`;
+    `<li class="${on.has(step) ? "" : "text-neutral-500"}"><span class="${on.has(step) ? "text-neutral-200" : "text-neutral-400"}">${i + 1}. ${title}.</span> ${body}${on.has(step) ? "" : ` <span class="text-neutral-500">(off in ${PRESETS[state.preset].label})</span>`}</li>`,
+  ).join("") + `<li class="${state.loaded && !state.loaded.video ? "text-neutral-500" : ""}"><span class="${state.loaded && !state.loaded.video ? "text-neutral-400" : "text-neutral-200"}">${Object.keys(STEP_TEXT).length + 1}. Remove light flicker (picture).</span> When the scan finds bands from flickering lights, each row is divided by its estimated band, which takes the grid clock out of the picture. On when bands are found (untick it to keep the picture untouched), since it re-encodes the video.</li>`;
 }
 
 const REPO = "https://github.com/asleepace/octave-camo";

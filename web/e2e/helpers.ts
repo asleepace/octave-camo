@@ -221,7 +221,7 @@ export async function lowContrast(page: Page): Promise<string[]> {
     const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
     for (let n = walker.nextNode(); n; n = walker.nextNode()) {
       const el = n.parentElement!;
-      if (!n.textContent?.trim() || el.closest("[aria-hidden=true], .sr-only, .opacity-40, :disabled, [aria-disabled=true], script, style, noscript")) continue;
+      if (!n.textContent?.trim() || el.closest("[aria-hidden=true], .sr-only, :disabled, [aria-disabled=true], script, style, noscript")) continue;
       const box = el.getBoundingClientRect();
       if (!box.width || !box.height || getComputedStyle(el).visibility === "hidden") continue;
       let opacity = 1;

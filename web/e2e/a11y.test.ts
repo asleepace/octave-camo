@@ -14,6 +14,9 @@ const AXE = readFileSync(require.resolve("axe-core/axe.min.js"), "utf8");
 type Violation = { id: string; impact: string; help: string; nodes: { target: string[] }[] };
 
 async function audit(page: Page): Promise<Violation[]> {
+  // Measure the resting page: no hover state, and transition-colors finished.
+  await page.mouse.move(0, 0);
+  await page.waitForTimeout(400);
   await page.evaluate(AXE);
   return page.evaluate(async () => {
     // @ts-expect-error injected
