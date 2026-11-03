@@ -112,21 +112,49 @@ class Flicker:
         best["detected"] = best["z"] > self.detect_z
         return best
 
-    def model(self, y, times, flicker, cycles):
-        """Smoothed band estimate (log brightness), frames × rows, depth capped."""
+    def amplitudes(self, y, cycles, fps):
+        """Per-frame band amplitude at `cycles`, complex, K: least squares jointly with the
+        gradient terms (unbiased even with one or two band cycles per frame, where a windowed
+        projection picks up the band's mirror image), median over strips, minus its moving mean
+        over `static_s` (static scene, or flicker too steady to carry a clock)."""
         R = y.shape[-1]
-        c, wsum = self.projections(y, np.array([cycles]))
-        a = (2 / wsum) * c[:, 0] * np.exp(-2j * np.pi * flicker * times)
+        u = np.linspace(-1, 1, R)
+        th = 2 * np.pi * cycles * np.arange(R) / R
+        X = np.stack([np.ones(R), u, u * u, np.cos(th), np.sin(th)], axis=1)
+        coef = y @ np.linalg.pinv(X).T                                       # K × S × 5
+        a = np.median(coef[..., 3], axis=1) - 1j * np.median(coef[..., 4], axis=1)
+        L = max(1, int(round(self.static_s * fps)))
+        kernel = np.ones(L) / L
+        slow = np.convolve(a, kernel, mode="same") / np.convolve(np.ones(len(a)), kernel, mode="same")
+        return a - slow
+
+    def refine(self, y, times, fps, flicker, cycles):
+        """Fine (F, C) around a detection, maximizing segment-summed coherent power."""
+        seg = max(4, int(round(self.segment_s * fps)))
+        best = (-1.0, flicker, cycles)
+        for C in cycles + np.arange(-0.3, 0.3 + 1e-9, 0.01):
+            a = self.amplitudes(y, C, fps)
+            for F in flicker + np.arange(-0.06, 0.06 + 1e-9, 0.005):
+                d = a * np.exp(-2j * np.pi * F * times)
+                P = sum(abs(d[s:s + seg].sum()) ** 2 for s in range(0, len(d) - seg + 1, seg))
+                if P > best[0]:
+                    best = (P, F, C)
+        return best[1], best[2]
+
+    def model(self, y, times, flicker, cycles):
+        """Smoothed band estimate (log brightness), frames × 1 × rows, depth capped."""
+        R = y.shape[-1]
         fps = 1 / np.median(np.diff(times))
+        a = self.amplitudes(y, cycles, fps) * np.exp(-2j * np.pi * flicker * times)
         L = max(1, int(round(self.smooth_s * fps)))
         kernel = np.ones(L) / L
-        a = np.convolve(a, kernel, mode="same")
+        a = np.convolve(a, kernel, mode="same") / np.convolve(np.ones(len(a)), kernel, mode="same")
         mag = np.abs(a)
         a = np.where(mag > self.max_depth, a * self.max_depth / np.maximum(mag, 1e-12), a)
         phase = np.exp(2j * np.pi * (np.outer(flicker * times, np.ones(R)) + np.outer(np.ones(len(times)), cycles * np.arange(R) / R)))
         return np.real(a[:, None] * phase)[:, None, :]          # same model for every strip
 
-    def clean(self, y, times, fps, passes=2):
+    def clean(self, y, times, fps, passes=3):
         """Iteratively remove detected flicker components. Returns corrected y, total model, scans."""
         total = np.zeros_like(y)
         scans = []
@@ -135,7 +163,9 @@ class Flicker:
             scans.append(s)
             if not s["detected"]:
                 break
-            total += self.model(y - total, times, s["flicker"], s["cycles"])
+            F, C = self.refine(y - total, times, fps, s["flicker"], s["cycles"])
+            s["refined"] = dict(flicker=float(F), cycles=float(C))
+            total += self.model(y - total, times, F, C)
         return y - total, total, scans
 
 
@@ -143,9 +173,11 @@ def synth(out, flicker, fps, readout, depth, seconds, drift_hz, size):
     """testsrc2 with rolling-shutter banding whose phase wanders like ENF."""
     w, h = size.split("x")
     period = 17.0
-    # φ(t) = 2π ∫ δ dt with δ = drift·sin(2πt/period)  →  −drift·period·cos(2πt/period) (in cycles)
+    # Grid frequency wanders as δ(t) = drift·sin(2πt/period), so the phase (in cycles) is
+    # ∫ δ dt = −drift·period/(2π)·cos(2πt/period).
+    wander = drift_hz * period / (2 * np.pi)
     expr = (f"clip(lum(X,Y)*(1+{depth}*cos(2*PI*({flicker}*(T+Y/H*{readout}/{fps})"
-            f"-{drift_hz}*{period}*cos(2*PI*T/{period})))),0,255)")
+            f"-{wander:.6f}*cos(2*PI*T/{period})))),0,255)")
     subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", f"testsrc2=size={w}x{h}:rate={fps}",
                     "-t", str(seconds), "-vf", f"format=yuv420p,geq=lum='{expr}':cb='cb(X,Y)':cr='cr(X,Y)'",
                     "-c:v", "libx264", "-crf", "16", "-preset", "veryfast", "-pix_fmt", "yuv420p", out], check=True)
@@ -161,7 +193,7 @@ def main():
     s.add_argument("--readout", type=float, default=0.5, help="fraction of the frame period")
     s.add_argument("--depth", type=float, default=0.03)
     s.add_argument("--seconds", type=float, default=20)
-    s.add_argument("--drift", type=float, default=0.04, help="ENF wander amplitude, Hz")
+    s.add_argument("--drift", type=float, default=0.05, help="ENF wander amplitude, Hz")
     s.add_argument("--size", default="640x360")
     c = sub.add_parser("scan")
     c.add_argument("path")
