@@ -181,5 +181,5 @@ same pipeline.
 - Found a way to recover location from a cloaked file, or anything leaving the browser? See
   [SECURITY.md](SECURITY.md) for private reporting.
 - [CONTRIBUTING.md](CONTRIBUTING.md): real recordings with ground truth help most.
-- [IDEAS.md](IDEAS.md): the backlog.
+- [IDEAS.md](IDEAS.md): the backlog. [CHANGELOG.md](CHANGELOG.md): what changed.
 - MIT, see [LICENSE](LICENSE).
