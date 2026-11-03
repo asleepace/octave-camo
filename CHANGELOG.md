@@ -9,6 +9,8 @@ are grouped by milestone, newest first, with the commits that made them.
 
 ## [Unreleased]
 
+## [0.1.1] — 2026-11-03
+
 ### Accessibility
 
 - Text meets WCAG AA contrast (4.5:1) everywhere: the two dimmest greys were 4.4:1 and 2.7:1 on
@@ -20,6 +22,7 @@ are grouped by milestone, newest first, with the commits that made them.
   3D spectrogram, decorative symbols hidden from screen readers; the status line is only rewritten
   when it changes, so screen readers don't re-announce it; the demo animation holds still with
   "reduce motion".
+- Inactive player controls and steps that are off use readable greys instead of being faded.
 - Tests: axe-core (WCAG 2.2 A/AA) on the page empty, loaded and cloaked; a contrast check that
   reads the real colors (axe can't parse Tailwind's oklch); keyboard-only open, cloak and save.
 
@@ -28,8 +31,6 @@ are grouped by milestone, newest first, with the commits that made them.
 - A descriptive title and description, a one-line intro under the name, canonical URL, Open
   Graph and X/Twitter tags with a 1200×630 preview image (`web/scripts/og-image.ts` renders it),
   and schema.org `WebApplication` data.
-
-## [0.1.1] — 2026-11-03
 
 ### Reproducible builds
 
