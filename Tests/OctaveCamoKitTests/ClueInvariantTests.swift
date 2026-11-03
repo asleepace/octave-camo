@@ -43,11 +43,29 @@ final class ClueInvariantTests: XCTestCase {
     func testCloakingNeverAddsAClue() {
         for name in Scenes.names {
             let input = Scenes.make(name, rate: 16_000)
-            let before = SceneMetrics.counts(input), after = SceneMetrics.counts(cloak(input))
+            let output = cloak(input)
+            let before = SceneMetrics.counts(input), after = SceneMetrics.counts(output)
             for (k, kind) in ["long tones", "doppler", "hum", "flybys"].enumerated() {
-                XCTAssertLessThanOrEqual(after[k], before[k], "\(name): \(kind) \(before[k]) → \(after[k])")
+                XCTAssertLessThanOrEqual(after[k], before[k], "\(name): \(kind) \(before[k]) → \(after[k]); found after: \(Self.describe(output))")
             }
         }
+    }
+
+    /// Diagnostic (prints only): which tones a cloak adds to speech, over seeds and rates.
+    func testWhatACloakAddsToSpeech() {
+        for rate in [16_000, 32_000, 48_000] {
+            let input = Scenes.make("speech", rate: rate)
+            for seed: UInt64 in [1, 2, 3, 7, 9, 11] {
+                let tracks = FlybyAnalyzer().analyze(cloak(input, seed: seed)).tracks
+                if !tracks.isEmpty { print("ADDED speech \(rate) Hz seed \(seed): \(Self.describe(cloak(input, seed: seed)))") }
+            }
+        }
+    }
+
+    static func describe(_ audio: Audio) -> String {
+        FlybyAnalyzer().analyze(audio).tracks.map { t in
+            String(format: "%@ %.1f Hz (%.1f–%.1f) for %.1f s", "\(t.kind)", t.meanFrequency, t.minFrequency, t.maxFrequency, t.duration)
+        }.joined(separator: "; ")
     }
 
     func testASecondCloakFindsNothingTheFirstLeft() {
