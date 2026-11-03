@@ -16,18 +16,14 @@
 
 #if arch(wasm32)
 import OctaveCamoKit
-import WASILibc
 
-/// Debug builds trace the analyzer to stderr (unbuffered, so lines survive a trap).
-func trace(_ message: @autoclosure () -> String) {
-    #if DEBUG
-    fputs(message() + "\n", stderr)
-    #endif
+/// Results handed back to JavaScript. Static, not top-level: top-level variables in main.swift
+/// are initialized by main(), which a WASI reactor never runs (they'd stay zeroed, i.e. empty).
+enum Shared {
+    nonisolated(unsafe) static var output: [Float] = []
+    nonisolated(unsafe) static var logBytes: [UInt8] = []
+    nonisolated(unsafe) static var stats = [Int32](repeating: 0, count: 4)
 }
-
-nonisolated(unsafe) var output: [Float] = []
-nonisolated(unsafe) var logBytes: [UInt8] = []
-nonisolated(unsafe) var stats = [Int32](repeating: 0, count: 4)
 
 func audio(_ input: UnsafePointer<Float>, _ channelCount: Int32, _ frames: Int32, _ sampleRate: Int32) -> Audio? {
     let c = Int(channelCount), n = Int(frames)
@@ -84,57 +80,43 @@ func camoScrub(_ input: UnsafePointer<Float>, _ channelCount: Int32, _ frames: I
 
     let result = pipeline.run(clip)
     let mono = result.audio.channels[0]
-    output = [Float](repeating: 0, count: mono.count)
-    for i in 0..<mono.count { output[i] = Float(mono[i]) }
-    logBytes = Array(result.log.joined(separator: "\n").utf8)
-    return Int32(output.count)
+    Shared.output = [Float](repeating: 0, count: mono.count)
+    for i in 0..<mono.count { Shared.output[i] = Float(mono[i]) }
+    Shared.logBytes = Array(result.log.joined(separator: "\n").utf8)
+    return Int32(Shared.output.count)
 }
 
 @_expose(wasm, "camo_analyze")
 @_cdecl("camo_analyze")
 func camoAnalyze(_ input: UnsafePointer<Float>, _ channelCount: Int32, _ frames: Int32,
                  _ sampleRate: Int32) -> UnsafePointer<Int32>? {
-    for i in 0..<stats.count { stats[i] = 0 }
+    for i in 0..<Shared.stats.count { Shared.stats[i] = 0 }
     if let clip = audio(input, channelCount, frames, sampleRate) {
-        #if DEBUG
-        let analyzer = FlybyAnalyzer()
-        trace("analyze: \(clip.frameCount) frames @ \(clip.sampleRate) Hz")
-        let found = analyzer.tracker.tracks(in: clip.mono, sampleRate: clip.sampleRate)
-        trace("analyze: \(found.count) tracks")
-        for (i, track) in found.enumerated() {
-            trace("analyze: track \(i): n=\(track.times.count) t=\(track.times.first ?? -1)…\(track.times.last ?? -1) f=\(track.minFrequency)…\(track.maxFrequency)")
-            trace("analyze:   times \(track.times)")
-            trace("analyze:   freqs \(track.frequencies)")
-            _ = analyzer.classify(track)
-            trace("analyze:   classified")
-        }
-        trace("analyze: classified")
-        #endif
         let analysis = FlybyAnalyzer().analyze(clip)
-        stats[0] = Int32(analysis.tracks.count)
-        stats[1] = Int32(analysis.flybys.count)
-        stats[2] = Int32(analysis.hum.count)
-        stats[3] = Int32(analysis.flybys.filter { $0.fit != nil }.count)
+        Shared.stats[0] = Int32(analysis.tracks.count)
+        Shared.stats[1] = Int32(analysis.flybys.count)
+        Shared.stats[2] = Int32(analysis.hum.count)
+        Shared.stats[3] = Int32(analysis.flybys.filter { $0.fit != nil }.count)
     }
-    return stats.withUnsafeBufferPointer { $0.baseAddress }
+    return Shared.stats.withUnsafeBufferPointer { $0.baseAddress }
 }
 
 @_expose(wasm, "camo_output")
 @_cdecl("camo_output")
 func camoOutput() -> UnsafePointer<Float>? {
-    output.withUnsafeBufferPointer { $0.baseAddress }
+    Shared.output.withUnsafeBufferPointer { $0.baseAddress }
 }
 
 @_expose(wasm, "camo_log")
 @_cdecl("camo_log")
 func camoLog() -> UnsafePointer<UInt8>? {
-    logBytes.withUnsafeBufferPointer { $0.baseAddress }
+    Shared.logBytes.withUnsafeBufferPointer { $0.baseAddress }
 }
 
 @_expose(wasm, "camo_log_length")
 @_cdecl("camo_log_length")
 func camoLogLength() -> Int32 {
-    Int32(logBytes.count)
+    Int32(Shared.logBytes.count)
 }
 #else
 print("octave-camo-wasm: build for WebAssembly (see the comment at the top of main.swift)")
