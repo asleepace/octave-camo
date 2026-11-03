@@ -75,11 +75,11 @@ describe("output", () => {
 
 describe("content security policy", () => {
   test("only the page's own origin can be contacted", () => {
-    const directives = Object.fromEntries(CONTENT_SECURITY_POLICY.split("; ").map((d) => [d.split(" ")[0], d.split(" ").slice(1)]));
+    const directives: Record<string, string[]> = Object.fromEntries(CONTENT_SECURITY_POLICY.split("; ").map((d) => [d.split(" ")[0]!, d.split(" ").slice(1)]));
     expect(directives["default-src"]).toEqual(["'none'"]);
     expect(directives["connect-src"]).toEqual(["'self'", "blob:"]);
     expect(directives["script-src"]).not.toContain("'unsafe-eval'");
     expect(directives["script-src"]).not.toContain("'unsafe-inline'");
-    for (const sources of Object.values(directives)) for (const s of sources!) expect(s).not.toMatch(/^https?:|\*/);
+    for (const sources of Object.values(directives)) for (const s of sources) expect(s).not.toMatch(/^https?:|\*/);
   });
 });

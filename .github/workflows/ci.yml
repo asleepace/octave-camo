@@ -109,13 +109,13 @@ jobs:
       - run: bun install --frozen-lockfile
       - name: Chromium
         run: bunx playwright install --with-deps chromium
-      - name: Build (production, with the Content-Security-Policy)
-        run: BASE_PATH=/ bunx vite build
+      - name: Build (exactly as deployed, with the Content-Security-Policy)
+        run: bunx vite build
       - name: Test
         run: |
           bunx vite preview --port 4173 --strictPort &
-          for i in $(seq 1 30); do curl -sf http://localhost:4173/ >/dev/null && break; sleep 1; done
-          E2E_URL=http://localhost:4173/ bun test e2e/ --timeout 900000
+          for i in $(seq 1 30); do curl -sf http://localhost:4173/octave-camo/ >/dev/null && break; sleep 1; done
+          E2E_URL=http://localhost:4173/octave-camo/ bun test e2e/ --timeout 900000
 
   bench:
     name: Benchmark gate (both attackers, 6 clips)

@@ -25,7 +25,8 @@ async function loadEngine(): Promise<Engine> {
   if (!isWasm) {
     // Local development without the Swift toolchain: a crude JS stand-in keeps the UI usable.
     if (import.meta.env.DEV) return (await import("./stand-in.ts")).standIn;
-    throw new Error(`could not load the scrubber (HTTP ${response.status})`);
+    const type = response.headers.get("content-type") ?? "no content type";
+    throw new Error(`could not load the scrubber: octave-camo.wasm is missing or not WebAssembly (HTTP ${response.status}, ${type})`);
   }
   const camo = await Camo.load(response);
   return {

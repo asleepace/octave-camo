@@ -12,9 +12,11 @@ import WASILibc
 /// fluctuations that can timestamp a recording against grid logs.
 ///
 /// Both 50 and 60 Hz families are notched by default, and each notch is refilled with a narrow
-/// band of noise that follows the neighbouring bands' level over time. Notching only the local
-/// grid, or leaving holes, would say which grid (and so which part of the world) the recording
-/// came from. The refill is independent noise, so it carries none of the grid's drift.
+/// band of noise at the neighbouring bands' long-term level. Notching only the local grid, or
+/// leaving holes, would say which grid (and so which part of the world) the recording came from.
+/// The refill is independent noise at a constant level: it carries none of the grid's drift, and
+/// (unlike a level that followed the neighbours over time) no trace of when a moving tone swept
+/// past the notch, which is the timing a matched attacker integrates.
 public struct HumNotch: ScrubStage {
     var step: ScrubStep { .hum }
 
@@ -53,8 +55,8 @@ public struct HumNotch: ScrubStage {
         return (y, "hum: \(what) \(freqs.count) harmonics of \(families.isEmpty ? "nothing" : families + " Hz")")
     }
 
-    /// Adds, for each notch, a narrow band of noise (white noise minus its own notch) whose RMS over
-    /// time follows the notched signal's bands two bandwidths either side.
+    /// Adds, for each notch, a narrow band of noise (white noise minus its own notch) at the median
+    /// level of the notched signal's bands two bandwidths either side.
     func refilled(_ y: [Double], _ freqs: [Double], sampleRate: Int) -> [Double] {
         let n = y.count
         let length = max(1, Int((0.25 * Double(sampleRate)).rounded()))
@@ -68,23 +70,23 @@ public struct HumNotch: ScrubStage {
                 if !freqs.contains(where: { abs($0 - g) < 1.5 * $0 / q }) { sides.append(g) }
             }
             if sides.isEmpty { continue }
-            var level = [Double](repeating: 0, count: n)
+            var level = 0.0
             for g in sides {
                 let notched = Biquad.notch(frequency: g, q: q, sampleRate: sampleRate).applyZeroPhase(y)
                 var band = [Double](repeating: 0, count: n)
                 for i in 0..<n { band[i] = y[i] - notched[i] }
                 let e = Self.envelope(band, length: length)
-                let scale: Double = f / g / Double(sides.count)          // bandwidth grows with frequency
-                for i in 0..<n { level[i] += e[i] * e[i] * scale }
+                var powers: [Double] = []
+                var i = 0
+                while i < n { powers.append(e[i] * e[i]); i += length }
+                level += DSP.median(powers[...]) * (f / g) / Double(sides.count)   // bandwidth grows with f
             }
             let whiteNotched = Biquad.notch(frequency: f, q: q, sampleRate: sampleRate).applyZeroPhase(white)
             var fill = [Double](repeating: 0, count: n)
-            for i in 0..<n { fill[i] = white[i] - whiteNotched[i] }
-            let own = Self.envelope(fill, length: length)
-            for i in 0..<n {
-                let norm = own[i] > 0 ? own[i] : 1
-                out[i] += fill[i] / norm * level[i].squareRoot()
-            }
+            var own = 0.0
+            for i in 0..<n { fill[i] = white[i] - whiteNotched[i]; own += fill[i] * fill[i] }
+            let gain = (level / max(own / Double(n), 1e-30)).squareRoot()
+            for i in 0..<n { out[i] += fill[i] * gain }
         }
         return out
     }

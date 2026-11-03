@@ -1,9 +1,10 @@
 /**
  * Browser end-to-end test of the built site with the real WebAssembly scrubber.
  *
- * CI builds the site (Content-Security-Policy on), serves it, and points E2E_URL at it. Locally:
- *   scripts/build-wasm.sh && BASE_PATH=/ bunx vite build && bunx vite preview --port 4173 &
- *   E2E_URL=http://localhost:4173/ bun test e2e/
+ * CI builds the site exactly as deployed (Content-Security-Policy on), serves it, and points
+ * E2E_URL at it. Locally:
+ *   scripts/build-wasm.sh && (cd web && bunx vite build && bunx vite preview --port 4173 &)
+ *   E2E_URL=http://localhost:4173/octave-camo/ bun test e2e/
  * Needs ffmpeg and Playwright's Chromium.
  */
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
@@ -91,9 +92,14 @@ describe.skipIf(!URL_)("cloak in the browser", () => {
     page.on("pageerror", (e) => problems.push(`page error: ${e.message}`));
     page.on("console", (m) => { if (/Content Security Policy|Refused to/i.test(m.text())) problems.push(`csp: ${m.text()}`); });
     page.on("request", (r) => { if (!r.url().startsWith(URL_!) && !/^(blob|data):/.test(r.url())) problems.push(`external request: ${r.url()}`); });
+    page.on("console", (m) => { if (m.type() === "error") problems.push(`console error: ${m.text()}`); });
     await page.goto(URL_!);
     await page.setInputFiles("#file", file);
-    await page.waitForFunction(() => /exposed|no trackable/.test(document.querySelector("#status")?.textContent ?? ""), null, { timeout: 180_000 });
+    try {
+      await page.waitForFunction(() => /exposed|no trackable/.test(document.querySelector("#status")?.textContent ?? ""), null, { timeout: 180_000 });
+    } catch (error) {
+      throw new Error(`page never finished analysis; status "${await page.textContent("#status")}"; ${problems.join(" | ")}`);
+    }
     return page;
   }
 

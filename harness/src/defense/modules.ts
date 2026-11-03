@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Analyzer } from "../analyzer.ts";
 import { informedCancel } from "../cancel.ts";
-import { readMono, writeMonoWav } from "../dsp.ts";
+import { median, readMono, writeMonoWav } from "../dsp.ts";
 import { defaultMatchedConfig, whitenedSpectrogram } from "../matched.ts";
 import { decimate, Rng } from "./signal.ts";
 import { defineDefense } from "./types.ts";
@@ -66,8 +66,10 @@ export const hum = defineDefense({
       let y = x;
       for (const f of freqs) y = notch(y, f, o.q, sr);
       if (o.refill && freqs.length) {
-        // For each notch: a narrow band of noise (white noise minus its own notch), whose RMS over
-        // time follows the notched signal's neighbouring bands, two bandwidths either side.
+        // For each notch: a narrow band of noise (white noise minus its own notch) at the long-term
+        // median level of the notched signal's neighbouring bands, two bandwidths either side.
+        // The level is constant on purpose: following the neighbours over time would re-imprint
+        // when a moving tone swept past them, which is the timing a matched attacker integrates.
         const rng = new Rng(ctx.seed ^ 0x5eed), L = Math.max(1, Math.round(0.25 * sr));
         const white = Float32Array.from({ length: x.length }, () => rng.gaussian());
         const out = Float32Array.from(y);
@@ -75,17 +77,20 @@ export const hum = defineDefense({
           const bw = f / o.q;
           const sides = [f - 2 * bw, f + 2 * bw].filter((g) => g > 0 && !freqs.some((h) => Math.abs(h - g) < 1.5 * h / o.q));
           if (!sides.length) continue;
-          const level = new Float32Array(x.length);
+          let level = 0;
           for (const g of sides) {
             const n = notch(y, g, o.q, sr), band = new Float32Array(x.length);
             for (let i = 0; i < x.length; i++) band[i] = y[i]! - n[i]!;
-            const e = envelope(band, L);
-            for (let i = 0; i < x.length; i++) level[i]! += (e[i]! * e[i]! * (f / g)) / sides.length;   // bandwidth ∝ f
+            const e = envelope(band, L), power = new Float64Array(Math.ceil(x.length / L));
+            for (let j = 0; j < power.length; j++) power[j] = e[Math.min(x.length - 1, j * L)]! ** 2;
+            level += (median(power) * (f / g)) / sides.length;                // bandwidth ∝ f
           }
           const nn = notch(white, f, o.q, sr), fill = new Float32Array(x.length);
           for (let i = 0; i < x.length; i++) fill[i] = white[i]! - nn[i]!;
-          const own = envelope(fill, L);
-          for (let i = 0; i < x.length; i++) out[i]! += (fill[i]! / (own[i]! || 1)) * Math.sqrt(level[i]!);
+          let own = 0;
+          for (let i = 0; i < x.length; i++) own += fill[i]! * fill[i]!;
+          const gain = Math.sqrt(level / (own / x.length || 1));
+          for (let i = 0; i < x.length; i++) out[i]! += fill[i]! * gain;
         }
         y = out;
       }
