@@ -9,6 +9,8 @@
 //   out = camo_output()                       n mono output samples (valid until the next scrub)
 //   log = camo_log(), len = camo_log_length() UTF-8, one line per stage
 //   camo_free(ptr)
+//   st  = camo_analyze(ptr, channels, frames, sampleRate)
+//         4 Int32: long tonal tracks, Doppler-shaped tracks, mains-hum lines, fitted flybys
 // stepsMask bit i enables ScrubStep.allCases[i]; 0 means the default steps.
 
 #if arch(wasm32)
@@ -16,6 +18,20 @@ import OctaveCamoKit
 
 nonisolated(unsafe) var output: [Float] = []
 nonisolated(unsafe) var logBytes: [UInt8] = []
+nonisolated(unsafe) var stats = [Int32](repeating: 0, count: 4)
+
+func audio(_ input: UnsafePointer<Float>, _ channelCount: Int32, _ frames: Int32, _ sampleRate: Int32) -> Audio? {
+    let c = Int(channelCount), n = Int(frames)
+    guard c > 0, n > 0, sampleRate > 0 else { return nil }
+    var channels: [[Double]] = []
+    for ch in 0..<c {
+        var samples = [Double](repeating: 0, count: n)
+        let base = input + ch * n
+        for i in 0..<n { samples[i] = Double(base[i]) }
+        channels.append(samples)
+    }
+    return Audio(sampleRate: Int(sampleRate), channels: channels)
+}
 
 @_expose(wasm, "camo_alloc")
 @_cdecl("camo_alloc")
@@ -41,16 +57,7 @@ func camoSteps() -> Int32 {
 @_cdecl("camo_scrub")
 func camoScrub(_ input: UnsafePointer<Float>, _ channelCount: Int32, _ frames: Int32, _ sampleRate: Int32,
                _ stepsMask: Int32, _ seedLo: UInt32, _ seedHi: UInt32) -> Int32 {
-    let c = Int(channelCount), n = Int(frames)
-    guard c > 0, n > 0, sampleRate > 0 else { return 0 }
-    var channels: [[Double]] = []
-    for ch in 0..<c {
-        var samples = [Double](repeating: 0, count: n)
-        let base = input + ch * n
-        for i in 0..<n { samples[i] = Double(base[i]) }
-        channels.append(samples)
-    }
-
+    guard let clip = audio(input, channelCount, frames, sampleRate) else { return 0 }
     var pipeline = ScrubPipeline()
     if stepsMask != 0 {
         var steps = Set<ScrubStep>()
@@ -63,12 +70,27 @@ func camoScrub(_ input: UnsafePointer<Float>, _ channelCount: Int32, _ frames: I
         pipeline.wobble.seed = seed
     }
 
-    let result = pipeline.run(Audio(sampleRate: Int(sampleRate), channels: channels))
+    let result = pipeline.run(clip)
     let mono = result.audio.channels[0]
     output = [Float](repeating: 0, count: mono.count)
     for i in 0..<mono.count { output[i] = Float(mono[i]) }
     logBytes = Array(result.log.joined(separator: "\n").utf8)
     return Int32(output.count)
+}
+
+@_expose(wasm, "camo_analyze")
+@_cdecl("camo_analyze")
+func camoAnalyze(_ input: UnsafePointer<Float>, _ channelCount: Int32, _ frames: Int32,
+                 _ sampleRate: Int32) -> UnsafePointer<Int32>? {
+    for i in 0..<stats.count { stats[i] = 0 }
+    if let clip = audio(input, channelCount, frames, sampleRate) {
+        let analysis = FlybyAnalyzer().analyze(clip)
+        stats[0] = Int32(analysis.tracks.count)
+        stats[1] = Int32(analysis.flybys.count)
+        stats[2] = Int32(analysis.hum.count)
+        stats[3] = Int32(analysis.flybys.filter { $0.fit != nil }.count)
+    }
+    return stats.withUnsafeBufferPointer { $0.baseAddress }
 }
 
 @_expose(wasm, "camo_output")
