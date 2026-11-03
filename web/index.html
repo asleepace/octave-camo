@@ -26,8 +26,18 @@
       </nav>
     </header>
 
+    <!-- Disclaimer -->
+    <aside class="mt-6 flex flex-col gap-1 sm:flex-row sm:gap-3 border border-accent/30 bg-accent/[0.04] px-4 py-3 text-[11px] leading-relaxed text-neutral-400 md:mt-8" role="note">
+      <span class="shrink-0 text-accent">proof of concept</span>
+      <p>
+        Octave Camo is in active development and provides <span class="text-white">no guarantee of anonymity</span>.
+        It has only been tested on synthetic recordings and needs more testing and independent verification.
+        Don't rely on it to protect your location.
+      </p>
+    </aside>
+
     <!-- Visualizer + drop zone -->
-    <section class="mt-6 border border-neutral-900 md:mt-8">
+    <section class="mt-4 border border-neutral-900">
       <div id="stage" class="relative h-[42vh] min-h-[260px] max-h-[620px] select-none sm:h-[52vh] sm:min-h-[320px]">
         <canvas id="terrain" class="absolute inset-0 h-full w-full cursor-grab active:cursor-grabbing"></canvas>
         <div class="pointer-events-none absolute inset-x-0 top-0 flex justify-between p-3 text-[10px] text-neutral-500">
@@ -121,7 +131,8 @@
           <ol id="steps-explained" class="mt-2 space-y-2 text-neutral-400"></ol>
           <h3 class="mt-6 text-white">What it can't do</h3>
           <p class="mt-2 text-neutral-400">
-            It reduces location leakage from sound. It doesn't guarantee anything: the picture, the words spoken
+            This is a proof of concept. At best it reduces location leakage from sound; it doesn't make you
+            anonymous: the picture, the words spoken
             or your account can still give the place away. So far it's tested on synthetic recordings. Posting
             later helps too, because every hour multiplies the flights an attacker has to check.
             <a class="text-neutral-300 underline decoration-neutral-700 underline-offset-4 hover:text-white" href="https://github.com/asleepace/octave-camo/blob/main/THREAT_MODEL.md">Threat model</a>.
@@ -132,7 +143,7 @@
 
     <!-- Footer -->
     <footer class="mt-12 flex flex-wrap justify-between gap-3 border-t border-neutral-900 pt-5 text-[10px] text-neutral-600">
-      <p>octave camo · acoustic cloak · MIT · runs entirely in your browser</p>
+      <p>octave camo · proof of concept, no guarantee of anonymity · MIT · runs entirely in your browser</p>
       <p id="engine">engine: swift → wasm</p>
     </footer>
   </main>

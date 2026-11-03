@@ -12,9 +12,10 @@ curves against historical flight logs after you post. Faint, distant planes work
 along a predicted curve recovers tones far below what you can hear. octave-camo finds that
 information and removes it without noticeably changing what a listener hears.
 
-> Status: research prototype. The defenses are validated on synthetic clips, not yet on a real
-> recording with flight-log ground truth. Treat it as "reduces location leakage", never
-> "guarantees privacy". See [THREAT_MODEL.md](THREAT_MODEL.md) for what is and isn't covered.
+> **Proof of concept.** octave-camo is in active development and provides no guarantee of
+> anonymity. It has only been tested on synthetic recordings and needs more testing and
+> independent verification. Don't rely on it to protect your location. See
+> [THREAT_MODEL.md](THREAT_MODEL.md) for what is and isn't covered.
 
 ## Use it
 
