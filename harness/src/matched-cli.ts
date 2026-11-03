@@ -16,7 +16,7 @@ const USAGE = `matched — background-aircraft attack (ADS-B informed), before a
 usage: bun run matched <clip.mov> --track tracks.json [--chains "a+b;c"] [--radius-km 10] [--out out.mp4]
 
 Attacks the original audio, then the output of each defense chain (see \`bun run scrub --list\`).
-Default chains: hum+subtract+lowband; hum+lowband; informed+lowband.
+Default chains: hum+subtract+scurve+lowband; hum+lowband; informed+lowband.
 --out writes the last chain's audio into a copy of the video (metadata stripped).
 Get tracks with: bun run verify <clip.mov> --save-track tracks.json --radius-km 30`;
 
@@ -26,7 +26,7 @@ const { values: opts, positionals } = parseArgs({
     track: { type: "string" },
     "radius-km": { type: "string", default: "10" },
     out: { type: "string" },
-    chains: { type: "string", default: "hum+subtract+lowband;hum+lowband;informed+lowband" },
+    chains: { type: "string", default: "hum+subtract+scurve+lowband;hum+lowband;informed+lowband" },
     help: { type: "boolean", short: "h", default: false },
   },
 });

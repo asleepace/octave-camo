@@ -41,6 +41,6 @@ final class ModelAndIOTests: XCTestCase {
     }
 
     func testScrubStepNamesMatchCLI() {
-        XCTAssertEqual(ScrubStep.allCases.map(\.rawValue), ["mono", "hum", "subtract", "lowband", "wobble"])
+        XCTAssertEqual(ScrubStep.allCases.map(\.rawValue), ["mono", "hum", "subtract", "scurve", "lowband", "wobble"])
     }
 }

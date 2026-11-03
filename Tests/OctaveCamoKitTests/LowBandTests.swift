@@ -148,7 +148,7 @@ final class LowBandTests: XCTestCase {
     }
 
     func testDefaultPipelineIncludesLowband() {
-        XCTAssertEqual(ScrubPipeline.defaultSteps, [.mono, .hum, .subtract, .lowband])
+        XCTAssertEqual(ScrubPipeline.defaultSteps, [.mono, .hum, .subtract, .scurve, .lowband])
         var pipeline = ScrubPipeline()
         pipeline.lowband.seed = 1
         pipeline.subtraction.passes = 1

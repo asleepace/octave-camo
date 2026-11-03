@@ -5,6 +5,8 @@ public enum ScrubStep: String, CaseIterable, Codable {
     case hum
     /// Track and cancel long tones.
     case subtract
+    /// Blind search for flyby pitch curves (no flight data), cancelled.
+    case scurve
     /// Regenerate the band below the cutoff as information-free texture.
     case lowband
     /// Per-band random pitch drift on whatever is left.
@@ -25,15 +27,17 @@ public struct ScrubResult {
     public let log: [String]
 }
 
-/// mono → hum → subtract → lowband (→ wobble). Each stage is configurable and can be switched off.
-/// The default matches the harness's recommended chain `hum+subtract+lowband`; the pitch wobble
+/// mono → hum → subtract → scurve → lowband (→ wobble). Each stage is configurable and can be
+/// switched off. The default matches the harness's recommended chain `hum+subtract+scurve+lowband`
+/// (scurve catches faint tones above the lowband cutoff, such as train wheels); the pitch wobble
 /// is opt-in, since benchmarks showed it adds little once `lowband` runs.
 public struct ScrubPipeline {
-    public static let defaultSteps: Set<ScrubStep> = [.mono, .hum, .subtract, .lowband]
+    public static let defaultSteps: Set<ScrubStep> = [.mono, .hum, .subtract, .scurve, .lowband]
 
     public var steps: Set<ScrubStep> = ScrubPipeline.defaultSteps
     public var hum = HumNotch()
     public var subtraction = ToneSubtraction()
+    public var scurve = SCurveCancel()
     public var lowband = LowBandRegeneration()
     public var wobble = BandWobble()
     /// Output is scaled down if it would exceed this peak.
@@ -52,7 +56,7 @@ public struct ScrubPipeline {
             if input.channels.count > 1 { log.append("mono: off, kept channel 0 of \(input.channels.count)") }
         }
 
-        let stages: [any ScrubStage] = [hum, subtraction, lowband, wobble]
+        let stages: [any ScrubStage] = [hum, subtraction, scurve, lowband, wobble]
         for stage in stages where steps.contains(stage.step) {
             let result = stage.process(y, sampleRate: input.sampleRate)
             y = result.output

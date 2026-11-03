@@ -13,9 +13,9 @@ usage: bun run scrub <in.mov|in.wav> <out.mp4|out.wav> [--chain CHAIN] [--track 
        bun run scrub --list
 
 CHAIN joins modules with "+", options in parentheses, e.g.
-  hum+subtract+lowband                recommended default: offline, handles close and distant aircraft
+  hum+subtract+scurve+lowband         recommended default: offline; aircraft, trains, ships
   hum+lowband                         lightest: distant/background aircraft only
-  hum+subtract+scurve+lowband         adds the blind flyby-curve search (faint tones above the cutoff)
+  hum+subtract+lowband                faster; misses faint tones above the cutoff (train wheels)
   hum+lowband(mode=highpass,cutoff=250)
   informed+lowband                    online: needs --track (and the clip's metadata)
 
@@ -27,7 +27,7 @@ ${describeModules()}`;
 const { values: opts, positionals } = parseArgs({
   allowPositionals: true,
   options: {
-    chain: { type: "string", default: "hum+subtract+lowband" },
+    chain: { type: "string", default: "hum+subtract+scurve+lowband" },
     track: { type: "string" },
     seed: { type: "string" },
     list: { type: "boolean", default: false },

@@ -23,7 +23,7 @@ USAGE
   octave-camo synth   <out.wav> [--hard] [--f0 120] [--speed 75] [--distance 1500]
                         [--t0 30] [--duration 60] [--seed 1]
   octave-camo analyze <in.wav>  [--threshold 10] [--json]
-  octave-camo scrub   <in.wav> <out.wav> [--steps mono,hum,subtract,lowband[,wobble]]
+  octave-camo scrub   <in.wav> <out.wav> [--steps mono,hum,subtract,scurve,lowband[,wobble]]
                         [--mains 60] [--passes 3] [--cutoff 300] [--lowband-mode regenerate|highpass]
                         [--no-keep-voice] [--depth 0.015] [--wobble-top 600] [--seed N]
 
