@@ -5,6 +5,7 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { Camo, type Clip, type Profiles } from "../src/engine/camo.ts";
+import { seededRandom } from "../src/random.ts";
 
 const BUILDS = [
   ["release", new URL("../public/octave-camo.wasm", import.meta.url).pathname],
@@ -17,8 +18,7 @@ const SR = 16_000;
 function flybyClip(): Clip {
   const n = SR * 40, c = 343, speed = 90, distance = 300, t0 = 20, f0 = 180;
   const x = new Float32Array(n);
-  let seed = 7;
-  const rand = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 2 ** 32);
+  const rand = seededRandom(7);
   let phase = 0;
   for (let i = 0; i < n; i++) {
     const t = i / SR;
@@ -37,8 +37,7 @@ function flybyClip(): Clip {
 /** 20 s of row profiles: a panning scene plus 100 Hz rolling-shutter flicker with ENF-like wander. */
 function flickerProfiles(withFlicker: boolean): Profiles {
   const fps = 30, frames = 600, strips = 6, rows = 120;
-  let seed = 11;
-  const rand = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 2 ** 32);
+  const rand = seededRandom(11);
   const features = Array.from({ length: strips }, () =>
     Array.from({ length: 6 }, () => ({ c: rand(), w: 0.02 + 0.18 * rand(), a: 0.6 * rand() - 0.3 })));
   const values = new Float32Array(frames * strips * rows), times = new Float32Array(frames);
@@ -84,11 +83,8 @@ for (const [name, WASM] of BUILDS) describe.skipIf(!existsSync(WASM))(`octave-ca
   test("reports each long tone's time and frequency, from 40 Hz up to 8 kHz", async () => {
     const camo = await Camo.load(readFileSync(WASM));
     const x = new Float32Array(SR * 12);
-    let seed = 3;
-    for (let i = 0; i < x.length; i++) {
-      seed = (seed * 1664525 + 1013904223) >>> 0;
-      x[i] = 0.02 * Math.sin((2 * Math.PI * 1_200 * i) / SR) + 0.004 * (seed / 2 ** 32 - 0.5);
-    }
+    const rand = seededRandom(3);
+    for (let i = 0; i < x.length; i++) x[i] = 0.02 * Math.sin((2 * Math.PI * 1_200 * i) / SR) + 0.004 * (rand() - 0.5);
     const trace = camo.analyze({ sampleRate: SR, channels: [x] });
     expect(trace.tones).toBe(trace.found.length);
     expect(trace.found.filter((f) => f.lo > 1_300)).toEqual([]);            // the background noise is not a tone

@@ -6,13 +6,7 @@ import XCTest
 /// must see at least as far as the cloak reaches, cloaking never adds a clue, and what's found
 /// doesn't depend on how loud the clip is or the rate it was recorded at.
 final class ClueInvariantTests: XCTestCase {
-    private func cloak(_ audio: Audio, seed: UInt64 = 9) -> Audio {
-        var p = ScrubPipeline()
-        p.hum.seed = seed
-        p.lowband.seed = seed
-        p.wobble.seed = seed
-        return p.run(audio).audio
-    }
+    private func cloak(_ audio: Audio, seed: UInt64 = 9) -> Audio { cloaked(audio, seed: seed) }
 
     private func scaled(_ audio: Audio, _ gain: Double) -> Audio {
         Audio(sampleRate: audio.sampleRate, channels: audio.channels.map { $0.map { $0 * gain } })

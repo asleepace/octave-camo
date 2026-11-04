@@ -70,7 +70,7 @@ noise-only scenes stay under the false alarm budget.
 
 ## Housekeeping
 
-- Delete the merged `test-net` and `tone-check` branches.
-- Tag `v0.1.1` at `19e6902` if not done; the next release collects the work since then.
+- Delete the merged branches: `review-tests`, `test-net`, `tone-check`, `detection-baseline`, `tidy`.
+- The next release (after v0.1.1, at `19e6902`) collects the work since then.
 - Allowlisting `download.swift.org` would let Swift tests and wasm builds run outside CI, which
   would shorten every round trip above.

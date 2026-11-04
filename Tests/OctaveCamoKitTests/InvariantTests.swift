@@ -8,12 +8,7 @@ final class InvariantTests: XCTestCase {
     static let rates = [8_000, 11_025, 16_000, 22_050, 32_000, 44_100, 48_000, 88_200, 96_000, 176_400, 192_000]
 
     private func seeded(_ steps: Set<ScrubStep> = ScrubPipeline.defaultSteps, seed: UInt64 = 11) -> ScrubPipeline {
-        var p = ScrubPipeline()
-        p.steps = steps
-        p.hum.seed = seed
-        p.lowband.seed = seed
-        p.wobble.seed = seed
-        return p
+        seededPipeline(steps, seed: seed)
     }
 
     /// Noise, a voice-ish harmonic stack and mains hum (both families), per channel.
@@ -74,15 +69,8 @@ final class InvariantTests: XCTestCase {
         Self.lineToNeighboursDB(x, f, rate: rate)
     }
 
-    /// Energy between `lo` and `hi` Hz (whole-signal FFT).
     private func bandEnergy(_ x: [Double], rate: Int, _ lo: Double, _ hi: Double) -> Double {
-        let size = DSP.nextPowerOfTwo(atLeast: x.count)
-        var re = x + [Double](repeating: 0, count: size - x.count), im = [Double](repeating: 0, count: size)
-        FFT(size: size).forward(&re, &im)
-        let binHz = Double(rate) / Double(size)
-        var e = 0.0
-        for k in Int(lo / binHz)...min(Int(hi / binHz), size / 2) { e += re[k] * re[k] + im[k] * im[k] }
-        return e
+        Spectra.bandEnergy(x, rate: rate, lo, hi)
     }
 
     /// Syllables of a gliding harmonic voice (f0 ≈ 140 Hz, 0.25 s on, 0.15 s off) over light noise.
@@ -137,7 +125,7 @@ final class InvariantTests: XCTestCase {
             ("clipped noise", rng.normals(n).map { max(-1, min(1, 3 * $0)) }),
             ("impulse", (0..<n).map { $0 == n / 2 ? 1 : 0 }),
             ("nyquist", (0..<n).map { $0 % 2 == 0 ? 0.5 : -0.5 }),
-            ("denormal", [Double](repeating: 1e-310, count: n)),
+            ("denormal", [Double](repeating: Double.leastNormalMagnitude / 1_000, count: n)),
             ("over full scale", rng.normals(n).map { 8 * $0 }),
         ]
         for (name, x) in cases {

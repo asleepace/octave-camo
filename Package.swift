@@ -19,6 +19,7 @@ let package = Package(
         .executableTarget(name: "octave-camo", dependencies: ["OctaveCamoKit", "OctaveCamoIO"]),
         // WebAssembly exports for the web app (a WASI reactor; see its main.swift).
         .executableTarget(name: "OctaveCamoWasm", dependencies: ["OctaveCamoKit"]),
-        .testTarget(name: "OctaveCamoKitTests", dependencies: ["OctaveCamoKit", "OctaveCamoIO"]),
+        // Snapshots/*.json are read by path (#filePath), not bundled as resources.
+        .testTarget(name: "OctaveCamoKitTests", dependencies: ["OctaveCamoKit", "OctaveCamoIO"], exclude: ["Snapshots"]),
     ]
 )

@@ -4,7 +4,6 @@ import { describeModules, modules, needs, parseChain, parseChains, runChain } fr
 import { notch, swiftBinary } from "../src/defense/modules.ts";
 import { Rng } from "../src/defense/signal.ts";
 import type { DefenseContext } from "../src/defense/types.ts";
-import { fft } from "../src/dsp.ts";
 import { defaultMatchedConfig, matchedAttack, whitenedSpectrogram } from "../src/matched.ts";
 import { loudnessChange, voiceRetention } from "../src/quality.ts";
 import { predictedDopplerRatio } from "../src/track.ts";

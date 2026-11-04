@@ -182,7 +182,7 @@ enum Spectra {
         FFT(size: size).forward(&re, &im)
         let binHz = Double(rate) / Double(size)
         var e = 0.0
-        for k in max(1, Int(lo / binHz))...min(Int(hi / binHz), size / 2) { e += re[k] * re[k] + im[k] * im[k] }
+        for k in Int(lo / binHz)...min(Int(hi / binHz), size / 2) { e += re[k] * re[k] + im[k] * im[k] }
         return e
     }
 

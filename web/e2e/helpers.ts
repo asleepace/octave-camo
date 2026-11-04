@@ -5,6 +5,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Browser, Page } from "playwright";
+import { seededRandom } from "../src/random.ts";
 
 export const URL_ = process.env.E2E_URL;
 export const FAKE_GPS = "+37.7749-122.4194/";
@@ -52,8 +53,8 @@ export function audioLevelDB(file: string): number {
 export function flybyWav(path: string, seconds = 20, sr = 48_000) {
   const n = sr * seconds, c = 343, speed = 90, distance = 300, t0 = seconds / 2, f0 = 180;
   const pcm = new Int16Array(n);
-  let seed = 7, phase = 0;
-  const rand = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 2 ** 32);
+  let phase = 0;
+  const rand = seededRandom(7);
   for (let i = 0; i < n; i++) {
     const t = i / sr, dx = speed * (t - t0), r = Math.hypot(dx, distance);
     phase += (2 * Math.PI * f0) / (1 + (speed * dx) / (r * c)) / sr;

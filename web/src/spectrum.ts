@@ -1,4 +1,5 @@
 /** Log-frequency band spectrogram for the terrain and the band chart. */
+import { seededRandom } from "./random.ts";
 
 export const F_LO = 20;
 export const F_HI = 16_000;
@@ -107,14 +108,17 @@ export function meanBands(s: Spectrogram): Float32Array {
   return out;
 }
 
-/** dB value at the given percentile over the whole spectrogram (for scaling the views). */
-export function percentile(s: Spectrogram, q: number): number {
+/** dB value at percentile q of a spectrogram's cells (sampled to ~20,000), for scaling the views. */
+export function dbPercentile(db: Float32Array, q: number): number {
   const sample: number[] = [];
-  const step = Math.max(1, Math.floor(s.db.length / 20_000));
-  for (let i = 0; i < s.db.length; i += step) sample.push(s.db[i]!);
+  const step = Math.max(1, Math.floor(db.length / 20_000));
+  for (let i = 0; i < db.length; i += step) sample.push(db[i]!);
   sample.sort((a, b) => a - b);
   return sample[Math.min(sample.length - 1, Math.floor(q * sample.length))] ?? -60;
 }
+
+/** dB value at the given percentile over the whole spectrogram (for scaling the views). */
+export const percentile = (s: Spectrogram, q: number) => dbPercentile(s.db, q);
 
 /**
  * A synthetic "street with a passing plane" for the landing view, before any file is dropped:
@@ -123,8 +127,7 @@ export function percentile(s: Spectrogram, q: number): number {
 export function demo(seconds = 40): { input: Spectrogram; output: Spectrogram } {
   const centers = bandCenters(), B = centers.length, frames = Math.round(seconds / HOP_SECONDS);
   const input = new Float32Array(frames * B), output = new Float32Array(frames * B);
-  let seed = 3;
-  const rand = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 2 ** 32);
+  const rand = seededRandom(3);
   const c = 343, v = 110, d = 900, f0 = 92;
   const bump = (lf: number, center: number, width: number) => Math.exp(-((lf - center) ** 2) / (2 * width * width));
   for (let f = 0; f < frames; f++) {
@@ -225,13 +228,7 @@ export function detail(x: Float32Array, sampleRate: number): Detail {
 }
 
 /** dB at percentile q of a heatmap (for a color range shared by before and after). */
-export function detailPercentile(d: Detail, q: number): number {
-  const sample: number[] = [];
-  const step = Math.max(1, Math.floor(d.db.length / 20_000));
-  for (let i = 0; i < d.db.length; i += step) sample.push(d.db[i]!);
-  sample.sort((a, b) => a - b);
-  return sample[Math.min(sample.length - 1, Math.floor(q * sample.length))] ?? -60;
-}
+export const detailPercentile = (d: Detail, q: number) => dbPercentile(d.db, q);
 
 /**
  * The landing heatmap, before any file is dropped: a synthetic street (a passing plane with
@@ -241,8 +238,7 @@ export function detailPercentile(d: Detail, q: number): number {
 export function demoDetail(): { input: Detail; output: Detail } {
   const sr = 16_000, seconds = 24, n = sr * seconds;
   const input = new Float32Array(n), output = new Float32Array(n);
-  let seed = 11;
-  const rand = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 2 ** 32);
+  const rand = seededRandom(11);
   const c = 343, v = 95, d = 350, f0 = 96, t0 = 12;
   const speaking = (t: number) => ((t > 3 && t < 8) || (t > 16 && t < 21)) && Math.sin(t * 9.5) > -0.2;
   let phase = 0, voicePhase = 0, b0 = 0, b1 = 0, b2 = 0, l0 = 0, l1 = 0;

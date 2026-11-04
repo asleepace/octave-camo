@@ -1,6 +1,6 @@
 /** Messages between the page and the scrub worker, validated on both sides. */
 import { z } from "zod";
-import { FOUND_KINDS, STEPS } from "./camo.ts";
+import { FOUND_KINDS, MAX_FOUND, STEPS } from "./camo.ts";
 
 const samples = z.instanceof(Float32Array);
 
@@ -51,7 +51,7 @@ const Found = z.object({
   start: z.number().nonnegative(), end: z.number().nonnegative(), lo: z.number().nonnegative(), hi: z.number().nonnegative(),
   kind: z.enum(FOUND_KINDS),
 }).refine((f) => f.end >= f.start && f.hi >= f.lo, { message: "inverted box" });
-const Trace = z.object({ tones: z.number(), doppler: z.number(), hum: z.number(), flybys: z.number(), found: z.array(Found).max(1_000) });
+const Trace = z.object({ tones: z.number(), doppler: z.number(), hum: z.number(), flybys: z.number(), found: z.array(Found).max(MAX_FOUND) });
 /** Display spectrogram (computed in the worker so a long clip doesn't freeze the page). */
 const Spectrum = z.object({ db: samples, frames: z.number().int().nonnegative(), hop: z.number().positive() });
 /** The 2D heatmap's spectrogram (see spectrum.ts detail()). */

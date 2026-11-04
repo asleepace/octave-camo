@@ -8,8 +8,7 @@ import XCTest
 ///
 /// Re-record on purpose with:  OCTAVE_CAMO_RECORD=1 swift test -c release --filter DetectionBaselineTests
 final class DetectionBaselineTests: XCTestCase {
-    static let file = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
-        .appendingPathComponent("Snapshots").appendingPathComponent("detection.json")
+    static let snapshot = SnapshotFile<[String: Double]>("detection")
 
     static let rates = [16_000, 48_000]
     static let seeds: [UInt64] = [1, 2, 3]
@@ -76,24 +75,7 @@ final class DetectionBaselineTests: XCTestCase {
         // Sanity, whatever the baseline: a clear low tone is found.
         for rate in Self.rates { XCTAssertEqual(now["steady 300 Hz 20 dB @\(label(rate)) found"], 1, "a 20 dB tone at 300 Hz, \(rate) Hz") }
 
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        let json = String(decoding: try encoder.encode(now), as: UTF8.self)
-        if ProcessInfo.processInfo.environment["OCTAVE_CAMO_RECORD"] == "1" {
-            try FileManager.default.createDirectory(at: Self.file.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try (json + "\n").write(to: Self.file, atomically: true, encoding: .utf8)
-            return
-        }
-        guard let data = try? Data(contentsOf: Self.file) else {
-            print("BEGIN SNAPSHOT\n\(json)\nEND SNAPSHOT")
-            return XCTFail("no detection baseline at \(Self.file.path): record one (see the top of this file)")
-        }
-        let recorded = try JSONDecoder().decode([String: Double].self, from: data)
-        let problems = Self.differences(recorded: recorded, now: now)
-        if !problems.isEmpty {
-            print("BEGIN SNAPSHOT\n\(json)\nEND SNAPSHOT")
-            XCTFail("detection changed:\n" + problems.joined(separator: "\n"))
-        }
+        try Self.snapshot.check(now, what: "detection", differences: Self.differences)
     }
 
     /// Allowed drift: one seed in three for found rates, a quarter for coverage, one line for counts.

@@ -7,6 +7,7 @@ import { LUT, markBoxes, paint, timeTicks } from "../src/ui/heatmap.ts";
 import { bandChart } from "../src/ui/bands.ts";
 import { formatHz } from "../src/ui/terrain.ts";
 import { CONTENT_SECURITY_POLICY } from "../vite.config.ts";
+import { seededRandom } from "../src/random.ts";
 
 describe("heatmap spectrogram", () => {
   const sine = (sr: number, seconds: number, hz: number, amp = 0.5) => {
@@ -275,8 +276,7 @@ describe("embedded video data (SEI)", () => {
 
 describe("message validation under garbage", () => {
   // A seeded generator of hostile values: wrong types, NaN, huge numbers, nested junk, typed arrays.
-  let seed = 1234;
-  const rand = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 2 ** 32);
+  const rand = seededRandom(1234);
   const pick = <T,>(xs: readonly T[]): T => xs[Math.floor(rand() * xs.length)]!;
   const junk = (depth = 0): unknown => {
     const kinds = ["num", "nan", "inf", "str", "bool", "null", "undef", "arr", "obj", "f32", "big"] as const;
@@ -318,8 +318,7 @@ describe("message validation under garbage", () => {
 
 describe("spectrogram invariants", () => {
   const noisy = (sr: number, seconds: number) => {
-    let s = 9;
-    const rand = () => ((s = (s * 1664525 + 1013904223) >>> 0) / 2 ** 32) - 0.5;
+    const random = seededRandom(9), rand = () => random() - 0.5;
     const x = new Float32Array(Math.round(sr * seconds));
     for (let i = 0; i < x.length; i++) x[i] = 0.3 * Math.sin((2 * Math.PI * 220 * i) / sr) + 0.05 * rand();
     return x;

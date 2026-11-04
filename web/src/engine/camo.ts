@@ -26,6 +26,8 @@ export type Trace = {
 };
 
 export const FOUND_KINDS = ["hum", "steady", "doppler", "noFit"] as const;
+/** Most tones reported for outlining (the worker message's limit). */
+export const MAX_FOUND = 1_000;
 export type Found = { start: number; end: number; lo: number; hi: number; kind: (typeof FOUND_KINDS)[number] };
 
 export type ScrubResult = { output: Samples; log: string[] };
@@ -131,7 +133,9 @@ export class Camo {
       if (tones! < 0) throw new Error("the analyzer rejected this audio");
       const raw = new Float32Array(this.x.memory.buffer, this.x.camo_tracks(), this.x.camo_tracks_length());
       const found: Found[] = [];
-      for (let i = 0; i + 4 < raw.length; i += 5) {
+      // Longest first (the analyzer sorts them); the page outlines at most MAX_FOUND, while the
+      // counts above stay complete.
+      for (let i = 0; i + 4 < raw.length && found.length < MAX_FOUND; i += 5) {
         found.push({ start: raw[i]!, end: raw[i + 1]!, lo: raw[i + 2]!, hi: raw[i + 3]!, kind: FOUND_KINDS[raw[i + 4]!] ?? "noFit" });
       }
       return { tones: tones!, doppler: doppler!, hum: hum!, flybys: flybys!, found };

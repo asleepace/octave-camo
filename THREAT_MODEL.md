@@ -181,6 +181,23 @@ In order of how much we think they matter:
    the benchmark gate's close train leaked.
 7. **High-frame-rate video** (slow motion) can't be checked for flicker, and AV1 metadata units
    are copied with the picture.
+8. **Tones above 1 kHz are counted, not removed.** The check looks from 40 Hz to 8 kHz, but tone
+   subtraction stops at 1 kHz, so a jet's fan whine or an electrical whine up there survives.
+   The page counts it and outlines it on the spectrogram.
+9. **The check is weaker than an attacker who averages.** It judges each frame on its own. At
+   48 kHz, which is what phones record, it misses steady tones above 1 kHz even at 20 dB over the
+   noise in a 1 Hz band, and drifting tones are found only in pieces. An attacker who averages
+   over seconds sees more, so "→ 0" can be optimistic. [ACOUSTICS.md](ACOUSTICS.md) measures this
+   and plans the fix.
+10. **Steady sounds can link videos.** A fridge, an air conditioner or a computer fan gives no
+    location on its own, but its tones can tie an anonymous video to a known one made in the same
+    room. So can the room's reverberation.
+11. **Music and voices.** Held musical notes are removed like engine tones. In about half of runs,
+    cloaked speech shows a "long tone" at the speaker's own pitch: not a location clue, but the
+    count goes up.
+12. **Cloaking is detectable.** Regenerated and refilled noise is statistically cleaner than a real
+    recording, so someone could tell a clip was processed. That says nothing about where or when
+    it was made, and hiding it is not a goal.
 
 ## Guarantees
 

@@ -1,19 +1,18 @@
 import "./style.css";
+import { ALL_FORMATS, BlobSource, Input } from "mediabunny";
 import type { Step, Trace } from "./engine/camo.ts";
 import { type Request, type Stage, WorkerMessage } from "./engine/protocol.ts";
 import workerUrl from "./engine/worker.ts?worker&url";
-
-type FlickerScan = { detected: boolean; z: number; flickerHz: number; readoutMs: number; gains?: Float32Array<ArrayBuffer>; frames: number };
 import { load, type Loaded, MediaError, outputName, prepareAudioEncoder, save } from "./media.ts";
-import { Input, ALL_FORMATS, BlobSource } from "mediabunny";
-import { measureProfiles, ROWS } from "./video.ts";
 import { Player, type Side } from "./player.ts";
 import { bandCenters, demo, type Detail, detailPercentile, meanBands, percentile, type Spectrogram } from "./spectrum.ts";
-
-const toSpectrogram = (s: { db: Float32Array; frames: number; hop: number }): Spectrogram => ({ centers: bandCenters(), ...s });
 import { bandChart } from "./ui/bands.ts";
+import { Heatmap, rampCss, renderHeatmapAxes } from "./ui/heatmap.ts";
 import { Terrain } from "./ui/terrain.ts";
-import { Heatmap, rampCss, timeTicks } from "./ui/heatmap.ts";
+import { measureProfiles, ROWS } from "./video.ts";
+
+type FlickerScan = { detected: boolean; z: number; flickerHz: number; readoutMs: number; gains?: Float32Array<ArrayBuffer>; frames: number };
+const toSpectrogram = (s: { db: Float32Array; frames: number; hop: number }): Spectrogram => ({ centers: bandCenters(), ...s });
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -574,33 +573,7 @@ function renderHeatmap() {
     ? `Spectrogram${example ? " (example)" : ""}, ${what}: frequency from ${Math.round(shown.fLo)} Hz to ${(shown.fHi / 1000).toFixed(1)} kHz over ${clock(shown.seconds)}; brighter is louder.`
     : "Spectrogram: nothing to show yet");
 
-  // Axes, rebuilt only when the span changes.
-  const axisKey = shown ? `${shown.fLo}|${shown.fHi}|${shown.seconds}` : "";
-  const y = $("spec-y"), x = $("spec-x");
-  if (y.dataset.key !== axisKey) {
-    y.dataset.key = axisKey;
-    y.replaceChildren();
-    x.replaceChildren();
-    if (shown) {
-      for (const [f, label] of [[63, "63"], [250, "250"], [1000, "1k"], [4000, "4k"]] as const) {
-        if (f <= shown.fLo || f >= shown.fHi) continue;
-        const tick = document.createElement("span");
-        tick.className = "absolute right-0 -translate-y-1/2";
-        tick.style.top = `${(1 - Math.log(f / shown.fLo) / Math.log(shown.fHi / shown.fLo)) * 100}%`;
-        tick.textContent = label;
-        y.append(tick);
-      }
-      const ticks = timeTicks(shown.seconds);
-      for (const t of ticks) {
-        const tick = document.createElement("span");
-        const at = t / Math.max(shown.seconds, 1e-9);
-        tick.className = `absolute ${at > 0.97 ? "-translate-x-full" : at > 0.03 ? "-translate-x-1/2" : ""}`;
-        tick.style.left = `${at * 100}%`;
-        tick.textContent = shown.seconds < 60 ? `${t}s` : clock(t);
-        x.append(tick);
-      }
-    }
-  }
+  renderHeatmapAxes($("spec-y"), $("spec-x"), shown, clock);
   heatmap.draw();
 }
 

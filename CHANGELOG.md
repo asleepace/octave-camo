@@ -9,6 +9,17 @@ are grouped by milestone, newest first, with the commits that made them.
 
 ## [Unreleased]
 
+### Tidying
+
+- The worker reports at most the 1,000 longest tones for outlining (the counts stay complete), so a
+  dense clip can no longer fail the message check and lose its whole analysis.
+- One seeded generator (`web/src/random.ts`) instead of eight copies, one percentile helper, and
+  the spectrogram's axes moved into its module. Swift tests share their seeded pipeline,
+  band-energy and snapshot record-and-compare code (`TestSupport.swift`).
+- SwiftPM no longer warns about the snapshot files; a test's denormal literal no longer warns.
+- THREAT_MODEL.md's known gaps: tones above 1 kHz, the check's sensitivity, room fingerprints,
+  music and voices, and that cloaking is detectable.
+
 ### The check looks up to 8 kHz
 
 - The attacker model behind "what a tracker finds" now searches 1–8 kHz as well as 40 Hz–1 kHz

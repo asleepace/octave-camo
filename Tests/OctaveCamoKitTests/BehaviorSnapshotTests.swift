@@ -12,19 +12,12 @@ import XCTest
 /// (A run that fails prints the new snapshot between BEGIN/END SNAPSHOT lines, so it can also be
 /// copied from a CI log.)
 final class BehaviorSnapshotTests: XCTestCase {
-    static let file = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
-        .appendingPathComponent("Snapshots").appendingPathComponent("behavior.json")
+    static let snapshot = SnapshotFile<[String: SceneMetrics]>("behavior")
 
     /// Allowed drift: counts may move by one (but not to or from zero), levels by 1.5 dB, kept by 0.03.
     static let countSlack = 1, levelSlackDB = 1.5, keptSlack = 0.03
 
-    func cloak(_ audio: Audio) -> Audio {
-        var p = ScrubPipeline()
-        p.hum.seed = 7
-        p.lowband.seed = 7
-        p.wobble.seed = 7
-        return p.run(audio).audio
-    }
+    func cloak(_ audio: Audio) -> Audio { cloaked(audio, seed: 7) }
 
     func testBehaviorMatchesTheSnapshot() throws {
         var now: [String: SceneMetrics] = [:]
@@ -32,25 +25,7 @@ final class BehaviorSnapshotTests: XCTestCase {
             let input = Scenes.make(name)
             now[name] = SceneMetrics.measure(input, cloak(input))
         }
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        let json = String(decoding: try encoder.encode(now), as: UTF8.self)
-
-        if ProcessInfo.processInfo.environment["OCTAVE_CAMO_RECORD"] == "1" {
-            try FileManager.default.createDirectory(at: Self.file.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try (json + "\n").write(to: Self.file, atomically: true, encoding: .utf8)
-            return
-        }
-        guard let data = try? Data(contentsOf: Self.file) else {
-            print("BEGIN SNAPSHOT\n\(json)\nEND SNAPSHOT")
-            return XCTFail("no snapshot at \(Self.file.path): record one (see the comment at the top of this file)")
-        }
-        let recorded = try JSONDecoder().decode([String: SceneMetrics].self, from: data)
-        let problems = Self.differences(recorded: recorded, now: now)
-        if !problems.isEmpty {
-            print("BEGIN SNAPSHOT\n\(json)\nEND SNAPSHOT")
-            XCTFail("behavior changed:\n" + problems.joined(separator: "\n"))
-        }
+        try Self.snapshot.check(now, what: "behavior", differences: Self.differences)
     }
 
     static func differences(recorded: [String: SceneMetrics], now: [String: SceneMetrics]) -> [String] {

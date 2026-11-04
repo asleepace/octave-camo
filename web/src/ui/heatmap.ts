@@ -146,3 +146,33 @@ export function markBoxes(marks: readonly Found[], d: Pick<Detail, "seconds" | "
     return { x: Math.round(left) + 0.5, y: Math.round(top - pad) + 0.5, w: Math.max(4 * dpr, Math.round(right - left)), h: Math.round(bottom - top + 2 * pad) };
   });
 }
+
+const FREQUENCY_TICKS = [[63, "63"], [250, "250"], [1_000, "1k"], [4_000, "4k"]] as const;
+
+/**
+ * Frequency labels (left, on the log axis) and time labels (below) for a heatmap. Rebuilt only
+ * when the span changes; `clock` formats seconds for clips of a minute or more.
+ */
+export function renderHeatmapAxes(y: HTMLElement, x: HTMLElement, shown: Detail | null, clock: (seconds: number) => string) {
+  const key = shown ? `${shown.fLo}|${shown.fHi}|${shown.seconds}` : "";
+  if (y.dataset.key === key) return;
+  y.dataset.key = key;
+  y.replaceChildren();
+  x.replaceChildren();
+  if (!shown) return;
+  for (const [f, label] of FREQUENCY_TICKS) {
+    if (f <= shown.fLo || f >= shown.fHi) continue;
+    const tick = document.createElement("span");
+    tick.className = "absolute right-0 -translate-y-1/2";
+    tick.style.top = `${(1 - Math.log(f / shown.fLo) / Math.log(shown.fHi / shown.fLo)) * 100}%`;
+    tick.textContent = label;
+    y.append(tick);
+  }
+  for (const t of timeTicks(shown.seconds)) {
+    const tick = document.createElement("span"), at = t / Math.max(shown.seconds, 1e-9);
+    tick.className = `absolute ${at > 0.97 ? "-translate-x-full" : at > 0.03 ? "-translate-x-1/2" : ""}`;
+    tick.style.left = `${at * 100}%`;
+    tick.textContent = shown.seconds < 60 ? `${t}s` : clock(t);
+    x.append(tick);
+  }
+}
