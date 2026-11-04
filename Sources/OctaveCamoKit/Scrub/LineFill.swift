@@ -13,7 +13,7 @@ import WASILibc
 /// at the level of the spectrum just beside it; then the check looks again, up to `passes` times.
 ///
 /// The other stages each remove what their own detector sees (tone subtraction below 1 kHz, the
-/// flyby search below ~600 Hz base frequency and its harmonics). Real recordings carry lines they
+/// flyby search below ~600 Hz base frequency). Real recordings carry lines they
 /// miss: faint car tones the subtraction's tracker never targets, an electrical whine at 5 kHz, an
 /// engine's fan tone at 1–2 kHz sweeping with a climbing jet. This stage is driven by the check itself, so what the
 /// page counts is what gets removed.

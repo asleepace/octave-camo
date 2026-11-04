@@ -77,9 +77,10 @@ final class LineFillTests: XCTestCase {
         }
     }
 
-    /// The real-world case: a fan tone sweeping 1.7 → 0.9 kHz. With `lines`, it's gone. (Full's flyby
-    /// search can also catch this clean, modelled version, as the 2nd harmonic of a ~617 Hz
-    /// fundamental; whether it catches the real one is untested, so Full's result is only printed.)
+    /// The real-world case: a fan tone sweeping 1.7 → 0.9 kHz. With `lines`, it's gone. (Full also
+    /// removed this clean, modelled version in CI, by a route not yet pinned down: its flyby search
+    /// cancelled curves at 102 and 470 Hz, not this one. Whether Full catches the real tone is
+    /// untested, so Full's result is only printed.)
     func testRemovesAJetFanTone() {
         let input = Self.fanTone(rate: 16_000)
         XCTAssertFalse(found(input, from: 1_000, to: 1_800).isEmpty, "the check should find the fan tone")
