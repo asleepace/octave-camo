@@ -243,6 +243,10 @@ final class LowBandTests: XCTestCase {
         XCTAssertEqual(LowBandRegeneration.flatten([], window: 9), [])
         XCTAssertEqual(LowBandRegeneration.flatten([1, 2, 3], window: 1), [1, 2, 3])
         XCTAssertEqual(LowBandRegeneration.flatten([0, 0, 0, 0], window: 3), [0, 0, 0, 0])
+        // Silent frames stay silent and don't drag their neighbours up.
+        let gaps = LowBandRegeneration.flatten([4, 4, 0, 0, 0, 4, 4, 4, 4, 4], window: 3)
+        XCTAssertEqual(gaps[2], 0)
+        XCTAssertEqual(gaps[8], 4, accuracy: 1e-9)
         // A constant stays constant; a step becomes flat away from the edge.
         XCTAssertEqual(LowBandRegeneration.flatten([Double](repeating: 4, count: 20), window: 5), [Double](repeating: 4, count: 20))
         let step = LowBandRegeneration.flatten([Double](repeating: 1, count: 30) + [Double](repeating: 100, count: 30), window: 9)

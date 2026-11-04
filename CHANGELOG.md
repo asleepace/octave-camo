@@ -17,8 +17,11 @@ are grouped by milestone, newest first, with the commits that made them.
   and fall over tens of seconds goes straight through: simulated, the cloak only lowered the true
   start to 8th, while flattening swells slower than 5 s put it at 1,613th (chance).
 - `LowBandRegeneration.flattenSeconds` (0 = off, the default, so Full and every snapshot are
-  unchanged): each band's loudness, in dB, minus a centered running median that many seconds wide,
-  plus the band's median. Quick sounds (thumps, doors) keep their contrast.
+  unchanged): each band's loudness, in dB, minus a centered triangular running average (a box that
+  many seconds wide, twice), plus the band's median. Quick sounds (thumps, doors) keep their
+  contrast. (A running median was tried first: with thumps every 2 s it ate 4 dB of their contrast,
+  because a 5 s window holds two or three of them in turn; the triangle's sinc² response cancels
+  anything that recurs within the window.)
 - The page's **Experimental** preset is Full plus `flattenSeconds = 5`; the CLI takes `--flatten 5`;
   the wasm `camo_scrub` takes it as a last argument.
 - Tests: a 12 dB swell over ~30 s survives plain regeneration (> 8 dB, the leak pinned) and is gone

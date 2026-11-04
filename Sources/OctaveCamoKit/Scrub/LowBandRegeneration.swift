@@ -32,8 +32,9 @@ public struct LowBandRegeneration: ScrubStage {
     public var smoothSeconds = 0.75
     /// Slow random gain per band, ±dB, with 10–30 s periods.
     public var jitterDB = 1.5
-    /// Off at 0. Otherwise each band's loudness loses every swell slower than this many seconds: it
-    /// keeps the band's median level and anything quicker (a thump, a door), but not the rise and fall
+    /// Off at 0. Otherwise each band's loudness loses its swells slower than about this many seconds
+    /// (see `flatten`): it keeps the band's median level and anything quicker (a thump, a door,
+    /// footsteps), but not the rise and fall
     /// of a passing plane over tens of seconds, which the smoothing above lets through and an
     /// attacker can line up with flight tracks (ACOUSTICS.md, the envelope attack).
     public var flattenSeconds = 0.0
@@ -177,21 +178,20 @@ public struct LowBandRegeneration: ScrubStage {
         return (stft.render(re: outRe, im: outIm), "lowband: regenerated below \(Int(cutoff)) Hz in \(B) ERB bands\(voice)\(flat)")
     }
 
-    /// A band's power over time with its slow part taken out: in decibels, minus a centered running
-    /// median `window` frames wide, plus the whole run's median. What changes faster than the window
-    /// stays; a swell longer than about half of it is gone. Zeros (frames where every bin was kept
-    /// voice) stay at a floor far below the median.
+    /// A band's power over time with its slow part taken out: in decibels, minus a centered
+    /// triangular running average (a box `window` frames wide, applied twice), plus the band's
+    /// median. A triangle's response is sinc², so sounds that recur faster than the window (footsteps,
+    /// a ticking motor) cancel out of the average instead of being eaten into, while a swell slower
+    /// than the window is followed and removed. Silent frames (every bin kept as voice) stay silent
+    /// and don't pull the average down.
     static func flatten(_ power: [Double], window: Int) -> [Double] {
         guard window > 2, power.count > 2 else { return power }
         let positive = power.filter { $0 > 0 }
         guard !positive.isEmpty else { return power }
-        let floor = DSP.median(positive[...]) * 1e-6
-        let levels = power.map { log(max($0, floor)) }
-        let typical = DSP.median(levels[...]), h = window / 2
-        return levels.indices.map { i in
-            let slow = DSP.median(levels[max(0, i - h)...min(levels.count - 1, i + h)])
-            return exp(levels[i] - slow + typical)
-        }
+        let typical = DSP.median(positive.map { log($0) }[...])
+        let levels = power.map { $0 > 0 ? log($0) : typical }
+        let slow = DSP.smooth(DSP.smooth(levels, length: window), length: window)
+        return power.indices.map { i in power[i] > 0 ? exp(levels[i] - slow[i] + typical) : 0 }
     }
 
     private static func seconds(_ s: Double) -> String {
