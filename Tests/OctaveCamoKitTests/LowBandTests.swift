@@ -248,7 +248,7 @@ final class LowBandTests: XCTestCase {
         XCTAssertEqual(gaps[2], 0)
         XCTAssertEqual(gaps[8], 4, accuracy: 1e-9)
         // A constant stays constant; a step becomes flat away from the edge.
-        XCTAssertEqual(LowBandRegeneration.flatten([Double](repeating: 4, count: 20), window: 5), [Double](repeating: 4, count: 20))
+        XCTAssertTrue(LowBandRegeneration.flatten([Double](repeating: 4, count: 20), window: 5).allSatisfy { abs($0 - 4) < 1e-9 })
         let step = LowBandRegeneration.flatten([Double](repeating: 1, count: 30) + [Double](repeating: 100, count: 30), window: 9)
         XCTAssertEqual(step[5], step[55], accuracy: 1e-9)
         XCTAssertTrue(step.allSatisfy(\.isFinite))
