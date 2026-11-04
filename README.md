@@ -146,7 +146,9 @@ hidden. [ACOUSTICS.md](ACOUSTICS.md) explains how it works and measures it.
 The web app also scans the picture: one decode pass measures each frame's row brightness, and a
 blind search for a band at 100 or 120 Hz (the way an attacker would look) decides whether the
 picture carries the grid clock. If it does, saving can divide the band out of every row on the GPU,
-and the saved file is decoded and scanned again to confirm.
+and the saved file is decoded and scanned again to confirm. The sound is checked again the same
+way: after saving, the page decodes the file it wrote and runs the check on it, so the count it
+shows ("saved N") is for the file you post, not only for what went into the encoder.
 
 ## Limits
 

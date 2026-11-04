@@ -41,15 +41,25 @@ judged by it. Removing what the check can't see would only make the page look be
   clips through Experimental (the blind search; the check's count on the decoded file; a listen),
   and the music policy (held notes are removed today).
 
+## Next: the check follows fast sweeps above 1 kHz (top of slice 3)
+
+A jet's fan tone heard indoors swept 1.75 → 1.0 kHz in 25 s (up to ~40 Hz/s). Modelled, the check
+follows it only up to ~1.15 kHz even at 40 dB, and below 1 kHz only at 20 dB: its 1 s windows smear a
+sweep that fast over ~36 Hz, below the high band's 15 dB peak threshold. So the page can say
+"nothing left" while a clear Doppler clue is there, and `lines` (driven by the check) can't remove
+it. Fix with the paths item below plus shorter windows (≈ 0.25 s) or chirp-aware (dechirped) search
+for the high band; done when the modelled fan tone is followed over its whole sweep at 20 dB.
+
 ## Later: paths, families and risk classes (slice 3, ACOUSTICS.md §4.4–6)
 
 1. **Paths:** a Viterbi path search through the whitened spectrogram, limiting how fast frequency
    may change, so a Doppler pass or a line that fades in and out is one track, and weak curved
-   lines are found (drifting tones are the weak spot: found only at 20 dB, in pieces).
+   lines are found (drifting tones are the weak spot: found only at 20 dB, in pieces; fast sweeps
+   above 1 kHz not at all, see above).
 2. **Families:** combine 50/60 Hz harmonics into one grid trace; test high lines for grid lock.
 3. **Risk classes:** Doppler, grid-locked, steady (room fingerprint), musical/vocal. The page shows
    them, so singing or a whistled tune isn't presented as a location clue.
-4. **Check the decoded saved file,** not only the cloak's float output (AAC can add or hide lines).
+4. ~~Check the decoded saved file~~: done (the page decodes what it saved and checks it again).
 5. **The benchmark gate uses the full check** (attacker parity).
 6. **Faster:** the integrator costs about 1 s per minute of audio in the browser, twice per cloak.
 
