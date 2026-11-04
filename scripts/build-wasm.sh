@@ -13,6 +13,8 @@ flags=(-c "${CONFIG:-release}" --swift-sdk "$sdk" --product octave-camo-wasm
 # builds, which otherwise ends up in the wasm and differs between machines and directories).
 [ "${CONFIG:-release}" = release ] && flags+=(-Xlinker --strip-debug -Xswiftc -gnone
   -Xswiftc -Xfrontend -Xswiftc -disable-incremental-llvm-codegen)
+# OPT=size compiles for size (-Osize) instead of speed (-O, the default).
+[ "${OPT:-speed}" = size ] && flags+=(-Xswiftc -Osize)
 # WASM_LINK_MAP=file writes the linker's map (which symbol sits at which address), for diagnosis.
 [ -n "${WASM_LINK_MAP:-}" ] && flags+=(-Xlinker "--Map=$WASM_LINK_MAP")
 swift build "${flags[@]}"

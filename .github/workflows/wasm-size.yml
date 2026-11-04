@@ -1,0 +1,59 @@
+name: Wasm size
+
+# On demand: the wasm build compiled for speed or size, each with and without binaryen's wasm-opt,
+# compared by raw and gzip size and by how long a 60 s, 48 kHz cloak and check take.
+on: workflow_dispatch
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build variants
+    runs-on: ubuntu-latest
+    container: swift:6.4.2
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Install the Swift SDK for WebAssembly
+        run: >
+          swift sdk install
+          https://download.swift.org/swift-6.4.2-release/wasm-sdk/swift-6.4.2-RELEASE/swift-6.4.2-RELEASE_wasm.artifactbundle.tar.gz
+          --checksum 83baca83553f8c443cda7b84800912e6e709c3acd2e7ebf277794ca5836c0da5
+      - name: Build for speed (-O) and for size (-Osize)
+        run: |
+          scripts/build-wasm.sh variants/speed.wasm
+          OPT=size scripts/build-wasm.sh variants/size.wasm
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: wasm-variants
+          path: variants/
+          if-no-files-found: error
+
+  measure:
+    name: Optimize and measure
+    needs: build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+      - run: bun install --frozen-lockfile
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: wasm-variants
+          path: web/variants
+      - name: wasm-opt variants
+        run: |
+          npm install --no-save --prefix /tmp/binaryen binaryen@131.0.0
+          opt=/tmp/binaryen/node_modules/.bin/wasm-opt
+          for base in speed size; do
+            for level in O3 Oz; do
+              $opt -$level --enable-bulk-memory --enable-sign-ext --enable-mutable-globals --enable-nontrapping-float-to-int \
+                variants/$base.wasm -o variants/$base-$level.wasm
+            done
+          done
+          ls -l variants
+      - name: Measure
+        run: for f in variants/*.wasm; do bun scripts/bench-wasm.ts "$f" "$(basename "$f" .wasm)"; done
