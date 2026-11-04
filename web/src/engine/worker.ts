@@ -4,7 +4,8 @@
  */
 import { Camo, type Clip, type Flicker, type Profiles, type Samples, type Trace } from "./camo.ts";
 import { z } from "zod";
-import { Request, type ScrubRequest, type WorkerMessage } from "./protocol.ts";
+import { Request, type ScrubRequest, type Stage, type WorkerMessage } from "./protocol.ts";
+import { analyzeInParts, scrubInParts } from "./chunks.ts";
 import { demoDetail, detail, mix, spectrogram } from "../spectrum.ts";
 
 const spectrum = (x: Float32Array, sampleRate: number) => {
@@ -89,19 +90,24 @@ self.onmessage = async (event: MessageEvent<unknown>) => {
     }
     const clip: Clip = { sampleRate: request.sampleRate, channels: request.channels };
 
+    // Long clips go through in parts (engine/chunks.ts); the page shows which one.
+    const progress = (stage: Stage) => (part: number, parts: number) =>
+      post(parts > 1 ? { type: "stage", token, stage, part, parts } : { type: "stage", token, stage });
+    const analyze = (c: Clip, stage: Stage) => analyzeInParts(c, (p) => e.analyze(p), progress(stage));
+
     if (request.type === "analyze") {
       post({ type: "stage", token, stage: "analyzing" });
       const mono = mix(clip.channels);
       const s = spectrum(mono, clip.sampleRate), d = detail(mono, clip.sampleRate);
-      post({ type: "analysis", token, trace: e.analyze(clip), spectrum: s, detail: d, engine: e.kind }, [s.db.buffer, d.db.buffer]);
+      post({ type: "analysis", token, trace: analyze(clip, "analyzing"), spectrum: s, detail: d, engine: e.kind }, [s.db.buffer, d.db.buffer]);
       return;
     }
     post({ type: "stage", token, stage: "scrubbing" });
     const start = performance.now();
-    const { output, log } = e.scrub(clip, request);
+    const { output, log } = scrubInParts(clip, request.seed, (part, seed) => e.scrub(part, { ...request, seed }), progress("scrubbing"));
     const ms = performance.now() - start;
     post({ type: "stage", token, stage: "verifying" });
-    const after = e.analyze({ sampleRate: request.sampleRate, channels: [output] });
+    const after = analyze({ sampleRate: request.sampleRate, channels: [output] }, "verifying");
 
     const s = spectrum(output, request.sampleRate), d = detail(output, request.sampleRate);
     post({ type: "result", token, output, spectrum: s, detail: d, log, after, ms, engine: e.kind }, [output.buffer, s.db.buffer, d.db.buffer]);

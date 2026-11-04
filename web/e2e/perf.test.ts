@@ -1,7 +1,7 @@
 /**
  * How long a cloak takes in the browser, on the real wasm build (not a gate: numbers are printed
  * as "perf:" lines). Runs only with E2E_PERF=1 (the Perf workflow). Clip lengths up to the
- * page's 5-minute limit, unthrottled and with the CPU slowed 4× (roughly a mid-range phone).
+ * page's 10-minute limit (past 5 minutes the scrubber works in parts), unthrottled and with the CPU slowed 4× (roughly a mid-range phone).
  */
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { rmSync } from "node:fs";
@@ -19,7 +19,7 @@ describe.skipIf(!URL_ || !process.env.E2E_PERF)("cloak timing", () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  for (const seconds of [60, 300]) {
+  for (const seconds of [60, 300, 600]) {
     for (const throttle of [1, 4]) {
       for (const preset of ["full", "light"] as const) {
         test(`${seconds} s, CPU ÷${throttle}, ${preset}`, async () => {

@@ -167,9 +167,13 @@ and the saved file is decoded and scanned again to confirm.
   flicker; the page says "not checkable" or "too short" rather than "none".
 - A cloaked file is recognisable as one (mono AAC audio, regenerated low band). That says the file
   was processed, not where it was recorded.
-- Clips are processed in memory; the web app takes up to 5 minutes. A 5-minute clip takes about a
-  minute to cloak on a laptop (Light: about 12 s), likely a few minutes on a phone; most of it is
-  `subtract`'s tone tracking, then `scurve`, whose cost grows with the square of the length.
+- The web app takes clips up to 10 minutes. Past 5 minutes the audio is cloaked and checked in
+  overlapping parts of at most 4 minutes (10 s of overlap, crossfaded at the seams; a tone that
+  crosses a seam is counted once), which keeps the scrubber's memory and time in step with a
+  5-minute clip's. The decoded audio, the cloaked copy and the saved file are still held in memory
+  whole. A 5-minute clip takes about a minute to cloak on a laptop (Light: about 12 s), likely a
+  few minutes on a phone; most of it is `subtract`'s tone tracking, then `scurve`, whose cost grows
+  with the square of a part's length.
 
 ## Development
 

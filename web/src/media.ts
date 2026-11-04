@@ -12,8 +12,9 @@ import type { Clip } from "./engine/camo.ts";
 import { lengthSize, type NalCodec, stripSei, stripSeiFromConfig } from "./sei.ts";
 import { GainRenderer, ROWS } from "./video.ts";
 
-/** Clips longer than this are refused: the scrubber holds the whole clip in memory. */
-export const MAX_SECONDS = 300;
+/** Clips longer than this are refused. Past 5 minutes the scrubber works in parts (engine/chunks.ts),
+ *  but the decoded audio, the cloaked copy and the saved file are still held in memory whole. */
+export const MAX_SECONDS = 600;
 /** Limits checked before decoding anything (a crafted file could otherwise claim anything). */
 export const MAX_CHANNELS = 8;
 export const MAX_SAMPLE_RATE = 192_000;

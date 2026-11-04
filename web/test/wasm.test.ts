@@ -5,6 +5,7 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { Camo, type Clip, type Profiles } from "../src/engine/camo.ts";
+import { analyzeInParts, plan, scrubInParts } from "../src/engine/chunks.ts";
 import { seededRandom } from "../src/random.ts";
 
 const BUILDS = [
@@ -163,4 +164,59 @@ for (const [name, WASM] of BUILDS) describe.skipIf(!existsSync(WASM))(`octave-ca
     const b = camo.scrub(clip, { steps: ["hum", "lowband"], seed: 5 }).output;
     expect(a).toEqual(b);
   }, 600_000);
+});
+
+/**
+ * Ten minutes at 48 kHz: a steady 1.2 kHz line through the whole clip, 60 Hz hum, and a flyby whose
+ * closest approach sits on the first seam. Background noise throughout.
+ */
+function longClip(seconds: number, sr: number): Clip {
+  const n = seconds * sr, x = new Float32Array(n), rand = seededRandom(23);
+  const c = 343, speed = 90, distance = 300, t0 = 200, f0 = 180;
+  let phase = 0;
+  for (let i = 0; i < n; i++) {
+    const t = i / sr, dx = speed * (t - t0), r = Math.hypot(dx, distance);
+    phase += (2 * Math.PI * f0 / (1 + (speed * dx) / (r * c))) / sr;
+    const level = 0.08 * Math.min(1, 300 / r);
+    let s = 0;
+    for (let h = 1; h <= 3; h++) s += (level / h) * Math.sin(h * phase);
+    s += 0.004 * Math.sin(2 * Math.PI * 1_200 * t) + 0.01 * Math.sin(2 * Math.PI * 60 * t);
+    x[i] = s + 0.01 * (rand() + rand() + rand() - 1.5);
+  }
+  return { sampleRate: sr, channels: [x] };
+}
+
+describe.skipIf(!existsSync(BUILDS[0][1]))("a ten-minute clip, in parts (release build)", () => {
+  test("is checked and cloaked whole: one line per tone across the seams, no clicks, nothing left to follow", async () => {
+    const sr = 48_000, clip = longClip(600, sr), camo = await Camo.load(readFileSync(BUILDS[0][1]));
+    const parts = plan(clip.channels[0]!.length, sr);
+    expect(parts.length).toBe(3);
+    let t = performance.now();
+    const before = analyzeInParts(clip, (p) => camo.analyze(p));
+    const checkSeconds = (performance.now() - t) / 1000;
+    const line = before.found.filter((f) => f.lo < 1_201 && f.hi > 1_199);
+    expect(line).toHaveLength(1);                                          // one line, not one per part
+    expect(line[0]!.start).toBeLessThan(5);
+    expect(line[0]!.end).toBeGreaterThan(595);
+    expect(before.doppler).toBeGreaterThan(0);
+    expect(before.hum).toBeGreaterThan(0);
+
+    t = performance.now();
+    const { output, log } = scrubInParts(clip, 9, (p, seed) => camo.scrub(p, { seed }));
+    const cloakSeconds = (performance.now() - t) / 1000;
+    expect(output.length).toBe(clip.channels[0]!.length);
+    expect(output.every(Number.isFinite)).toBe(true);
+    expect(log[0]).toContain("3 parts");
+    // No click at a seam: the biggest step from one sample to the next there is like anywhere else.
+    const step = (from: number, to: number) => { let m = 0; for (let i = from + 1; i < to; i++) m = Math.max(m, Math.abs(output[i]! - output[i - 1]!)); return m; };
+    const typical = step(100 * sr, 110 * sr);
+    for (const seam of parts.slice(0, -1).map((p) => p.coreEnd)) expect(step(seam - 2 * sr, seam + 2 * sr)).toBeLessThan(1.5 * typical);
+
+    const after = analyzeInParts({ sampleRate: sr, channels: [output] }, (p) => camo.analyze(p));
+    expect(after.doppler).toBe(0);
+    expect(after.hum).toBe(0);
+    console.log(`perf: 10 min at 48 kHz in ${parts.length} parts: check ${checkSeconds.toFixed(1)} s, cloak ${cloakSeconds.toFixed(1)} s, `
+      + `wasm memory ${(camo.memoryBytes / 2 ** 20).toFixed(0)} MiB; found before ${before.tones} (doppler ${before.doppler}, hum ${before.hum}), after ${after.tones}`);
+    expect(camo.memoryBytes).toBeLessThan(2 * 2 ** 30);
+  }, 3_600_000);
 });

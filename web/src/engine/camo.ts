@@ -107,6 +107,11 @@ export class Camo {
     return new Camo(x);
   }
 
+  /** Bytes of WebAssembly memory reserved. It only grows, so after a run it is at least that run's peak. */
+  get memoryBytes(): number {
+    return this.x.memory.buffer.byteLength;
+  }
+
   /** Steps the Swift pipeline runs by default. */
   get defaultSteps(): Step[] {
     const mask = this.x.camo_steps();

@@ -158,8 +158,8 @@ describe.skipIf(!URL_)("media edge cases", () => {
       return file;
     }, /./],
     ["an empty file", () => { const file = join(dir, "PXL_20260101_120000_empty.mov"); writeFileSync(file, ""); return file; }, /./],
-    ["longer than the 5-minute limit", () =>
-      make("PXL_20260101_120000_long.ogg", "-f", "lavfi", "-i", "anullsrc=r=16000:cl=mono", "-t", "305", "-c:a", "libopus", "-b:a", "8k"), /limit/],
+    ["longer than the 10-minute limit", () =>
+      make("PXL_20260101_120000_long.ogg", "-f", "lavfi", "-i", "anullsrc=r=16000:cl=mono", "-t", "605", "-c:a", "libopus", "-b:a", "8k"), /limit/],
   ];
 
   for (const [name, build, message] of refused) {

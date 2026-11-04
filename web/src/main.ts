@@ -58,6 +58,8 @@ const state = {
   /** Preset of the cloak in progress (becomes outputPreset when its result arrives). */
   pendingPreset: null as Preset | null,
   busy: null as Stage | "decoding" | "saving" | null,
+  /** "2/3" while a long clip is processed in parts. */
+  busyPart: "",
   ms: 0,
   engine: "wasm" as "wasm" | "stand-in",
   error: "",
@@ -138,6 +140,7 @@ worker.onmessage = (event) => {
   switch (m.type) {
     case "stage":
       state.busy = m.stage;
+      state.busyPart = m.part && m.parts ? `${m.part}/${m.parts}` : "";
       break;
     case "analysis":
       state.before = m.trace;
@@ -205,7 +208,7 @@ async function open(file: File) {
   player.clear();
   Object.assign(state, {
     loaded: null, input: null, output: null, inputDetail: null, outputDetail: null, outputSamples: null, outputPreset: null, pendingPreset: null, before: null,
-    after: null, log: [], busy: "decoding", error: "",
+    after: null, log: [], busy: "decoding", busyPart: "", error: "",
   });
   state.picture = { status: "none", progress: 0, scan: null, fix: false, verify: null, codec: "", message: "", verifyError: "" };
   const token = ++fileToken;
@@ -218,6 +221,7 @@ async function open(file: File) {
       player.set("in", loaded.clip.channels, loaded.clip.sampleRate);
       setSide("in");
       state.busy = "analyzing";
+      state.busyPart = "";
       send({ type: "analyze", token, sampleRate: loaded.clip.sampleRate, channels: loaded.clip.channels });
     } else {
       state.busy = null;
@@ -290,7 +294,7 @@ function cloak() {
   setSide("in");
   // The previous output is no longer what the button would save: if this run fails, there must be
   // nothing left over to save under the new preset's name.
-  Object.assign(state, { error: "", busy: "loading", outputSamples: null, outputPreset: null, output: null, outputDetail: null, after: null,
+  Object.assign(state, { error: "", busy: "loading", busyPart: "", outputSamples: null, outputPreset: null, output: null, outputDetail: null, after: null,
     pendingPreset: state.preset });
   try {
     send({
@@ -377,7 +381,7 @@ function renderPrimary() {
   // presses while it's unavailable.
   button.setAttribute("aria-disabled", String(!s.loaded || !!s.busy || scanning || !!workerDead));
   button.textContent = s.busy === "saving" && saveProgress > 0 ? `ENCODING… ${Math.round(saveProgress * 100)}%`
-    : s.busy ? stageText[s.busy]!
+    : s.busy ? stageText[s.busy]!.replace("…", s.busyPart && s.busy !== "saving" && s.busy !== "decoding" ? ` ${s.busyPart}…` : "…")
     : scanning ? `SCANNING PICTURE… ${Math.round(s.picture.progress * 100)}%`
     : fresh() ? "SAVE CLOAKED FILE" : "CLOAK";
   const ready = fresh() && !s.busy;

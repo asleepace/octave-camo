@@ -9,6 +9,21 @@ are grouped by milestone, newest first, with the commits that made them.
 
 ## [Unreleased]
 
+### Clips up to 10 minutes
+
+- The page takes clips up to 10 minutes (was 5). Past 5 minutes the worker cloaks and checks the
+  audio in balanced, overlapping parts of at most 4 minutes (`web/src/engine/chunks.ts`): each part
+  carries 10 s either side so every stage has settled at the seams, which are crossfaded over 2 s
+  above and below 300 Hz with gains set by how alike the parts are there (level kept for the same
+  sound and for fresh noise alike). Tones found by neighbouring parts are joined, so one crossing a
+  seam is counted and outlined once. Part *k* uses seed + *k*.
+- The button shows the part (`CLOAKING 2/3…`); the stage log says how many parts.
+- Clips up to 5 minutes go through in one piece, exactly as before.
+- Tests: the parts arithmetic, an exact round trip, seam levels for unrelated noise, the joining
+  of tones; a ten-minute 48 kHz clip on the real wasm build (one line across both seams, no click,
+  nothing left to follow, a flyby on a seam removed; time and memory printed); and in the browser,
+  a 330 s clip cloaked in two parts and saved whole.
+
 ### Spectrogram labels and an outline toggle
 
 - The note under the spectrogram says "original" and "cloaked".

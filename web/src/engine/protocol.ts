@@ -68,7 +68,8 @@ export const WorkerMessage = z.discriminatedUnion("type", [
   z.object({ type: z.literal("engine"), token, kind: z.enum(["wasm", "stand-in"]), sha256: z.string().regex(/^([0-9a-f]{64}|)$/),
     /** Set when the scrubber couldn't be loaded (the page can't cloak anything). */
     failed: z.string().optional() }),
-  z.object({ type: z.literal("stage"), token, stage: Stage }),
+  /** `part` of `parts` when a long clip is processed in parts (engine/chunks.ts). */
+  z.object({ type: z.literal("stage"), token, stage: Stage, part: z.number().int().positive().optional(), parts: z.number().int().positive().optional() }),
   /** Sent once at startup: the landing heatmap (an illustration, computed here to keep the page responsive). */
   z.object({ type: z.literal("demo"), token, input: Detail, output: Detail }),
   z.object({ type: z.literal("analysis"), token, trace: Trace, spectrum: Spectrum, detail: Detail, engine: z.enum(["wasm", "stand-in"]) }),

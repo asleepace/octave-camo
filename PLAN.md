@@ -29,6 +29,8 @@ judged by it. Removing what the check can't see would only make the page look be
   6–9 dB over a 1 Hz noise band at 16 and 48 kHz (before: 12–20 dB, and never above 1 kHz at
   48 kHz); no lines in noise (ACOUSTICS.md §1).
 - **Tidying:** shared helpers, a found-tone cap, warnings, known gaps documented.
+- **Clips up to 10 minutes:** cloaked and checked in overlapping parts past 5 minutes. Further
+  (an hour and more): stream the decoded audio and the saved file instead of holding them whole.
 
 ## Now: paths, families and risk classes (slice 3, ACOUSTICS.md §4.4–6)
 

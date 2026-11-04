@@ -121,6 +121,28 @@ describe.skipIf(!URL_)("cloak in the browser", () => {
     await session.close();
   }, 900_000);
 
+  test("a clip over 5 minutes is cloaked in parts, shows which part it's on, and saves whole", async () => {
+    const file = join(dir, "long.wav");
+    flybyWav(file, 330, 16_000);
+    const page = await fresh().open(file, 900_000);
+    // Every label the button shows while it works.
+    await page.evaluate(() => {
+      const w = window as unknown as { labels: string[] }, button = document.querySelector("#cloak")!;
+      w.labels = [];
+      new MutationObserver(() => w.labels.push(button.textContent ?? "")).observe(button, { childList: true, characterData: true, subtree: true });
+    });
+    await session.cloak(1_800_000);
+    const labels = await page.evaluate(() => (window as unknown as { labels: string[] }).labels);
+    expect(labels).toContain("CLOAKING 1/2…");
+    expect(labels).toContain("CLOAKING 2/2…");
+    expect(await page.textContent("#log")).toContain("2 parts");
+    const out = await session.save();
+    expectClean(out, { video: false });
+    expect(Number(probe(out).format.duration)).toBeCloseTo(330, 0);
+    expect(session.problems).toEqual([]);
+    await session.close();
+  }, 3_600_000);
+
   test("a clip too short to scan says so instead of reading as clean", async () => {
     const page = await fresh().open(webm("short", { seconds: 3 }));
     expect(await row(page, "light flicker")).toStartWith("too short");
