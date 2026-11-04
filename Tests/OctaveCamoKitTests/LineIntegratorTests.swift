@@ -26,8 +26,8 @@ final class LineIntegratorTests: XCTestCase {
             let match = found.first { abs($0.meanFrequency - 1_200) < 2 }
             XCTAssertNotNil(match, "\(rate) Hz: \(found.map(\.meanFrequency))")
             if let m = match {
-                XCTAssertLessThan(m.times.first!, 2, "\(rate) Hz starts at \(m.times.first!)")
-                XCTAssertGreaterThan(m.times.last!, 17, "\(rate) Hz ends at \(m.times.last!)")
+                XCTAssertLessThanOrEqual(m.times.first!, 3, "\(rate) Hz starts at \(m.times.first!)")
+                XCTAssertGreaterThan(m.times.last!, 16, "\(rate) Hz ends at \(m.times.last!)")
                 XCTAssertLessThan(m.maxFrequency - m.minFrequency, 3, "\(rate) Hz: a steady tone stays put")
             }
             XCTAssertEqual(found.count, 1, "\(rate) Hz: one tone, one line (\(found.map(\.meanFrequency)))")

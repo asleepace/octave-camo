@@ -24,6 +24,13 @@ are grouped by milestone, newest first, with the commits that made them.
   whistled tune that repeats its notes does show lines.
 - Its lines are classed as hum or steady, never Doppler: their drift is slow by construction.
   Passing sources stay with the frame tracker until the path search (slice 3).
+- **Measured in Swift** (`Snapshots/detection.json`): at 48 kHz, steady tones at 1.2 and 4.5 kHz are
+  found from 9 dB (before: not at 20 dB); weak grid harmonics at 6 dB per harmonic, about 16 of 19
+  at 16 kHz (before: none); intermittent tones at 15 dB at both rates (before: none at 48 kHz).
+  No lines in any noise scene.
+- **It found a cloak artifact:** the cloaked footsteps scene gains a steady line near 100 Hz,
+  classed as hum (a known issue with a skipped target test). Singing and a repeated whistled tune
+  now show many lines, and speech a few: telling music and voices from machines is slice 3's.
 
 ### Tidying
 
