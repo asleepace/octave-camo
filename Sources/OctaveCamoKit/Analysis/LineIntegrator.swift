@@ -165,7 +165,7 @@ public struct LineIntegrator {
         return open.map { o in
             let points = o.points.sorted { $0.t < $1.t }
             let level = 10 * log10(max(o.score, 1e-12))
-            return Track(times: points.map(\.t), frequencies: points.map(\.f), levels: points.map { _ in level })
+            return Track(times: points.map { $0.t }, frequencies: points.map { $0.f }, levels: points.map { _ in level })
         }
     }
 
