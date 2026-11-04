@@ -32,8 +32,7 @@ public struct LineFill: ScrubStage {
     public var relativeMargin = 0.002
     /// The attacker model that decides what to fill (the same check the page counts with).
     public var check = FlybyAnalyzer()
-    /// Leave lines that follow a voice's harmonics (most of their frames within `voiceToleranceHz`
-    /// or 3 % of a harmonic of the tracked pitch). A voice's harmonics read as long tones when the
+    /// Leave lines that are a voice's harmonics (see `voiceTest`). A voice's harmonics read as long tones when the
     /// same pitch recurs, but they aren't a location clue, and filling them dulls speech; the pitch
     /// tracker already rejects steady engine tones and long glides.
     public var keepVoice = true
@@ -71,23 +70,28 @@ public struct LineFill: ScrubStage {
         return (y, "lines: filled \(filled) line(s) the check found (\(rounds) per pass)\(voice)")
     }
 
-    /// A test for "this line follows a voice": the pitch is tracked every 20 ms, and a line counts as
-    /// a voice when at least half of its frames sit on a harmonic of a voiced pitch.
+    /// A test for "this line is a voice's": the pitch is tracked every 20 ms over the clip. Over the
+    /// line's span, at least a quarter of the frames must be voiced, and in at least a fifth of those
+    /// one of the pitch's first four harmonics must sit on the line (within `voiceToleranceHz` or 2 %).
+    /// Span-wide, not point by point: a line the integrator finds in speech is a pitch the voice
+    /// keeps returning to, not one it holds. Four harmonics at most, so a plane tone that happens to
+    /// cross a voice's dense upper harmonics isn't excused.
     func voiceTest(_ y: [Double], sampleRate: Int) -> (Track) -> Bool {
         let step = 0.02, duration = Double(y.count) / Double(sampleRate)
         let times = Array(stride(from: 0.0, to: duration, by: step))
         let f0 = pitch.track(y, sampleRate: sampleRate, at: times)
         let tolerance = voiceToleranceHz
         return { line in
-            guard !line.times.isEmpty, !f0.isEmpty else { return false }
-            var on = 0
-            for (t, f) in zip(line.times, line.frequencies) {
-                let p = f0[min(f0.count - 1, max(0, Int((t / step).rounded())))]
-                guard p > 0 else { continue }
-                let h = (f / p).rounded()
-                if h >= 1 && abs(f - h * p) <= max(tolerance, 0.03 * f) { on += 1 }
+            guard let t0 = line.times.first, let t1 = line.times.last, !f0.isEmpty else { return false }
+            let i0 = max(0, Int((t0 / step).rounded(.down))), i1 = min(f0.count - 1, Int((t1 / step).rounded(.up)))
+            guard i1 >= i0 else { return false }
+            var voiced = 0, on = 0
+            for i in i0...i1 where f0[i] > 0 {
+                voiced += 1
+                let f = Self.interpolate(line, at: min(max(Double(i) * step, t0), t1))
+                if (1...4).contains(where: { abs(f - Double($0) * f0[i]) <= max(tolerance, 0.02 * f) }) { on += 1 }
             }
-            return 2 * on >= line.times.count
+            return 4 * voiced >= (i1 - i0 + 1) && 5 * on >= voiced && voiced > 0
         }
     }
 

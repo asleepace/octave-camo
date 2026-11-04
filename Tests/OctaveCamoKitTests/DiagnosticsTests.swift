@@ -27,17 +27,9 @@ final class DiagnosticsTests: XCTestCase {
         var low = LowBandRegeneration()
         low.seed = 1
         print("diagnose voice: \(low.process(y, sampleRate: 16_000).summary)")
-        let l = FlybyAnalyzer().lines(in: input)
+        let l = FlybyAnalyzer().lines(in: input), isVoice = stage.voiceTest(y, sampleRate: 16_000)
         for line in l.tracked + l.integrated {
-            var on = 0, withPitch = 0
-            for (t, f) in zip(line.times, line.frequencies) {
-                let p = f0[min(f0.count - 1, max(0, Int((t / step).rounded())))]
-                guard p > 0 else { continue }
-                withPitch += 1
-                let h = (f / p).rounded()
-                if h >= 1 && abs(f - h * p) <= max(9, 0.03 * f) { on += 1 }
-            }
-            print("diagnose voice: line \(Int(line.minFrequency))–\(Int(line.maxFrequency)) Hz, \(line.times.count) frames, \(withPitch) with a pitch, \(on) on a harmonic")
+            print("diagnose voice: line \(Int(line.minFrequency))–\(Int(line.maxFrequency)) Hz, \(String(format: "%.1f", line.times.first ?? 0))–\(String(format: "%.1f", line.times.last ?? 0)) s: voice \(isVoice(line))")
         }
     }
 }
