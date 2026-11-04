@@ -38,6 +38,10 @@ are grouped by milestone, newest first, with the commits that made them.
   changes; cloaking never adds a Doppler track, hum line or flyby; a second cloak finds nothing
   new; level and sample rate don't change what's found; ordinary sound keeps its level above the
   low band.
+- **Detection baseline** (`Snapshots/detection.json`): how weak a tone the check still finds (steady,
+  drifting and intermittent tones, weak grid harmonics, 0–20 dB over a 1 Hz noise band, at 16 and
+  48 kHz) and how often it reports one in noise (none). At 48 kHz it misses tones above 1 kHz even at
+  20 dB: the baseline for the new detector (ACOUSTICS.md §1).
 - **Web**: 5,000 hostile worker messages are rejected without throwing; heatmap levels are relative
   and put a tone in the same row at any sample rate.
 

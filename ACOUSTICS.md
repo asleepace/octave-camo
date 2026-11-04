@@ -36,6 +36,36 @@ because it stands perhaps 8–12 dB over loud ambience in any single frame, unde
 **Frame-by-frame thresholding is the wrong tool**: it is either too deaf (high threshold) or too
 noisy (low threshold).
 
+### The baseline, measured
+
+`DetectionBaselineTests` measures the current check on synthetic scenes and records the results in
+`Tests/OctaveCamoKitTests/Snapshots/detection.json`. Strengths are dB over the noise in a 1 Hz band,
+so they mean the same at any sample rate. A steady 20 s tone was found in this many of 3 seeds:
+
+| Tone | 9 dB | 12 dB | 15 dB | 20 dB |
+|---|---:|---:|---:|---:|
+| 300 Hz at 16 kHz | 1/3 | 3/3 | 3/3 | 3/3 |
+| 300 Hz at 48 kHz | 0/3 | 0/3 | 1/3 | 3/3 |
+| 1.2 kHz at 16 kHz | 0/3 | 0/3 | 1/3 | 3/3 |
+| 1.2 kHz at 48 kHz | 0/3 | 0/3 | 0/3 | **0/3** |
+| 4.5 kHz at 48 kHz | 0/3 | 0/3 | 0/3 | **0/3** |
+
+The other scenes:
+- **At 48 kHz,** which is what phones record, the check misses 20 dB tones above 1 kHz entirely. It
+  also misses an intermittent tone (4 s on, 6 s off) at 20 dB and a grid family at 9 dB per
+  harmonic. Its 2.9 Hz bins spread a tone's power over more noise than 16 kHz's 1 Hz bins, so the
+  same tone stands about 5 dB lower per bin. The sample-rate dependence (§3) costs real
+  sensitivity.
+- **Drifting tones** are found at 12–20 dB, but only in short pieces (5–17% of the pass), because
+  per-frame matching breaks the curve.
+- **Grid harmonics with no fundamental** go undetected at 3 and 6 dB each. Combining them (§2, ENF)
+  would sum 19 harmonics.
+- **False lines: none** in white, pink, wind or traffic noise at either rate. The check is
+  conservative, so the new detector has room to trade a little of that for a lot of sensitivity.
+
+The target for the new detector: find steady tones at about 6 dB and drifting ones at 9–12 dB, at
+both rates, with false lines still under 0.1 per minute.
+
 ---
 
 ## 2. This is a solved problem, elsewhere

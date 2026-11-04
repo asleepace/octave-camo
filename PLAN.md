@@ -27,6 +27,9 @@ judged by it. Removing what the check can't see would only make the page look be
 
 ## Now: an attacker-grade detector (ACOUSTICS.md §4)
 
+Baseline measured (slice 1): at 48 kHz today's check misses steady tones above 1 kHz even at
+20 dB over a 1 Hz noise band; it never reports a tone in noise (ACOUSTICS.md §1).
+
 1. **Spectrogram in physical units:** about 1 Hz resolution and a 0.25 s step at any sample rate.
 2. **Integration along drift:** sliding 2–4 s spans, drift rates within ±6 %/s, tree search.
 3. **A derived threshold:** ordered-statistic CFAR. The threshold comes from the effective number
