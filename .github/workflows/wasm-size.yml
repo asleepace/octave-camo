@@ -2,7 +2,10 @@ name: Wasm size
 
 # On demand: the wasm build compiled for speed or size, each with and without binaryen's wasm-opt,
 # compared by raw and gzip size and by how long a 60 s, 48 kHz cloak and check take.
-on: workflow_dispatch
+on:
+  workflow_dispatch:
+  push:
+    branches: ["wasm-size*"]
 
 permissions:
   contents: read
