@@ -6,7 +6,7 @@ import { BAND_COUNT, bandCenters, DETAIL_MAX_COLUMNS, DETAIL_ROWS, demoDetail, d
 import { LUT, markBoxes, paint, timeTicks } from "../src/ui/heatmap.ts";
 import { bandChart } from "../src/ui/bands.ts";
 import { formatHz } from "../src/ui/terrain.ts";
-import { CONTENT_SECURITY_POLICY } from "../vite.config.ts";
+import { CONTENT_SECURITY_POLICY, megabytes, wasmBadges } from "../vite.config.ts";
 import { seededRandom } from "../src/random.ts";
 
 describe("heatmap spectrogram", () => {
@@ -354,5 +354,21 @@ describe("spectrogram invariants", () => {
     };
     const r16 = peakRow(16_000);
     for (const sr of [44_100, 48_000]) expect(Math.abs(peakRow(sr) - r16)).toBeLessThanOrEqual(1);
+  });
+});
+
+describe("size badges", () => {
+  test("decimal megabytes, one decimal", () => {
+    expect(megabytes(3_609_705)).toBe("3.6 MB");
+    expect(megabytes(1_320_000)).toBe("1.3 MB");
+  });
+  test("shields endpoint JSON for the raw and gzipped wasm; the same bytes give the same badges", () => {
+    const bytes = new Uint8Array(2_000_000).map((_, i) => (i * 31) & 0xff);
+    const b = wasmBadges(bytes);
+    expect(Object.keys(b).sort()).toEqual(["wasm-gzip.json", "wasm.json"]);
+    expect(b["wasm.json"]).toEqual({ schemaVersion: 1, label: "wasm", message: "2.0 MB", color: "blue" });
+    expect(b["wasm-gzip.json"]!.label).toBe("wasm gzipped");
+    expect(b["wasm-gzip.json"]!.message).toMatch(/^0\.\d MB$/);
+    expect(wasmBadges(bytes)).toEqual(b);
   });
 });
