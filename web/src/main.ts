@@ -91,6 +91,8 @@ const player = new Player();
 const terrain = new Terrain($<HTMLCanvasElement>("terrain"));
 terrain.cutoff = CUTOFF;
 const heatmap = new Heatmap($<HTMLCanvasElement>("spec"));
+/** Whether the spectrogram outlines found tones (a per-viewer preference, remembered when possible). */
+let showMarks = (() => { try { return localStorage.getItem("octave-camo:outlines") !== "hidden"; } catch { return true; } })();
 /** The landing heatmap (an illustration), sent by the worker once at startup. */
 let demoDetail: { input: Detail; output: Detail } | null = null;
 // The worker holds the decoded audio, so it must be under the page's Content-Security-Policy. A
@@ -559,16 +561,23 @@ function renderHeatmap() {
   const shown = heatmap.current;
   // Outline what the attacker model found: everything in the original, what's left after.
   const marks = example ? [] : shown === output ? state.after?.found ?? [] : state.before?.found ?? [];
-  heatmap.marks = marks;
+  heatmap.marks = showMarks ? marks : [];
+  const toggle = $("spec-marks");
+  toggle.classList.toggle("hidden", !marks.length);
+  toggle.setAttribute("aria-label", showMarks ? "Hide outlines" : "Show outlines");
+  toggle.title = showMarks ? "Hide outlines" : "Show outlines";
+  toggle.querySelector("[data-icon=hide]")!.classList.toggle("hidden", !showMarks);
+  toggle.querySelector("[data-icon=show]")!.classList.toggle("hidden", showMarks);
+  const outlined = showMarks ? " (outlined)" : "";
   heatmap.markStyle = shown === output ? "left" : "found";
   const silentClip = !!state.loaded && !state.loaded.clip;
   const tones = (n: number) => `${n} long tone${n === 1 ? "" : "s"}`;
   $("spec-note").textContent = silentClip ? "no sound in this video"
     : !shown ? (state.loaded ? "listening…" : "")
     : example ? (shown === output ? "plane and hum removed · voices kept" : "a passing plane · mains hum · voices")
-    : shown === output ? (marks.length ? `after cloaking · ${tones(marks.length)} a tracker can still follow (outlined)` : "after cloaking · nothing left a tracker can follow")
-    : marks.length ? `the original · ${tones(marks.length)} found (outlined)` : "the original";
-  const what = shown === output ? "after cloaking" : example ? "before cloaking" : "the original sound";
+    : shown === output ? (marks.length ? `cloaked · ${tones(marks.length)} a tracker can still follow${outlined}` : "cloaked · nothing left a tracker can follow")
+    : marks.length ? `original · ${tones(marks.length)} found${outlined}` : "original";
+  const what = shown === output ? "cloaked" : example ? "before cloaking" : "original";
   $("spec").setAttribute("aria-label", shown
     ? `Spectrogram${example ? " (example)" : ""}, ${what}: frequency from ${Math.round(shown.fLo)} Hz to ${(shown.fHi / 1000).toFixed(1)} kHz over ${clock(shown.seconds)}; brighter is louder.`
     : "Spectrogram: nothing to show yet");
@@ -622,6 +631,11 @@ $("side-in").addEventListener("click", () => setSide("in"));
 $("side-out").addEventListener("click", () => setSide("out"));
 $("spec-in").addEventListener("click", () => setSide("in"));
 $("spec-out").addEventListener("click", () => setSide("out"));
+$("spec-marks").addEventListener("click", () => {
+  showMarks = !showMarks;
+  try { localStorage.setItem("octave-camo:outlines", showMarks ? "shown" : "hidden"); } catch { /* private mode: not remembered */ }
+  render();
+});
 $("spec-ramp").style.background = rampCss();
 // Clicking the spectrogram seeks there (the slider above is the keyboard way to do the same).
 $("spec").addEventListener("click", (e) => {

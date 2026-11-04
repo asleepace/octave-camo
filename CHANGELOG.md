@@ -9,6 +9,12 @@ are grouped by milestone, newest first, with the commits that made them.
 
 ## [Unreleased]
 
+### Spectrogram labels and an outline toggle
+
+- The note under the spectrogram says "original" and "cloaked".
+- An eye button next to it hides or shows the outlines (faint, white on hover; remembered in this
+  browser when it can be).
+
 ### Check invariants and current docs
 
 - **Check invariants** (`CheckInvariantTests`): reports are well-formed (finite, inside the clip and
