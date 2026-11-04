@@ -85,6 +85,8 @@ public struct FlybyAnalyzer {
 
     public var config: Config
     public var tracker: ToneTracker
+    /// Finds weak steady lines by integrating over seconds (nil: the frame tracker alone).
+    public var integrator: LineIntegrator? = LineIntegrator()
     var optimizer = NelderMead()
 
     /// The attacker's tracker: the scrubber's range (40 Hz–1 kHz), plus 1–8 kHz with its own peak
@@ -102,8 +104,30 @@ public struct FlybyAnalyzer {
     }
 
     public func analyze(_ audio: Audio) -> Analysis {
-        let reports = tracker.tracks(in: audio.mono, sampleRate: audio.sampleRate).map(classify)
+        let mono = audio.mono
+        var reports = tracker.tracks(in: mono, sampleRate: audio.sampleRate).map(classify)
+        if let integrator {
+            // Weak steady lines the frame tracker can't see. Where both found the same line, the
+            // tracker's version (with its full frequency path) is kept.
+            for line in integrator.tracks(in: mono, sampleRate: audio.sampleRate) where !reports.contains(where: { Self.sameLine($0, line) }) {
+                reports.append(classifyLine(line))
+            }
+        }
         return Analysis(tracks: reports.sorted { $0.duration > $1.duration })
+    }
+
+    /// A line from the integrator: hum, or a steady tone. Its drift is slow by construction, so a
+    /// Doppler fit would only invent geometry; passing sources are the frame tracker's.
+    public func classifyLine(_ track: Track) -> TrackReport {
+        TrackReport(kind: isHum(track) ? .hum : .steady, start: track.times.first ?? 0, meanFrequency: track.meanFrequency,
+                    minFrequency: track.minFrequency, maxFrequency: track.maxFrequency, duration: track.duration, fit: nil)
+    }
+
+    /// Overlapping in time, and in frequency within max(3 Hz, 1 %).
+    static func sameLine(_ r: TrackReport, _ t: Track) -> Bool {
+        let margin = max(3, 0.01 * t.meanFrequency)
+        let timeOverlap = r.start <= (t.times.last ?? 0) && (t.times.first ?? 0) <= r.start + r.duration
+        return timeOverlap && r.minFrequency - margin <= t.maxFrequency && t.minFrequency <= r.maxFrequency + margin
     }
 
     public func classify(_ track: Track) -> TrackReport {

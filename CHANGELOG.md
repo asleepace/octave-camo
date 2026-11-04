@@ -9,6 +9,22 @@ are grouped by milestone, newest first, with the commits that made them.
 
 ## [Unreleased]
 
+### The check integrates over seconds (slice 2 of ACOUSTICS.md §4)
+
+- **A line integrator** (`LineIntegrator`) joins the frame-by-frame tracker in the check. It works
+  in physical units (a window close to 1 s at any sample rate, a 0.5 s hop), divides each frame by
+  its local median floor, and tests every slowly drifting path over 3 s and 8 s spans: is it above
+  τ in at least half the frames? τ comes from the binomial tail for a false alarm budget over the
+  whole search, not from a hand-set dB figure. A line must also be narrow, and weaker neighbours
+  (sidelobes) are suppressed.
+- **What it changes** (prototype measurements on the detection scenes): steady tones are found at
+  6–9 dB over the noise in a 1 Hz band (the frame tracker needs 12–20 dB, and at 48 kHz missed tones
+  above 1 kHz entirely); weak grid harmonics with no fundamental are found at 6 dB each; noise
+  (white, pink, wind, traffic) gives no lines. Speech, birdsong and footsteps stay clean; a
+  whistled tune that repeats its notes does show lines.
+- Its lines are classed as hum or steady, never Doppler: their drift is slow by construction.
+  Passing sources stay with the frame tracker until the path search (slice 3).
+
 ### Tidying
 
 - The worker reports at most the 1,000 longest tones for outlining (the counts stay complete), so a
