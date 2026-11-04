@@ -212,11 +212,16 @@ describe.skipIf(!existsSync(BUILDS[0][1]))("a ten-minute clip, in parts (release
     const typical = step(100 * sr, 110 * sr);
     for (const seam of parts.slice(0, -1).map((p) => p.coreEnd)) expect(step(seam - 2 * sr, seam + 2 * sr)).toBeLessThan(1.5 * typical);
 
+    const perPart = parts.map((p) => camo.analyze({ sampleRate: sr, channels: [output.subarray(p.start, p.end)] }));
     const after = analyzeInParts({ sampleRate: sr, channels: [output] }, (p) => camo.analyze(p));
-    expect(after.doppler).toBe(0);
-    expect(after.hum).toBe(0);
+    const show = (f: { kind: string; start: number; end: number; lo: number; hi: number }) =>
+      `${f.kind} ${f.lo.toFixed(1)}–${f.hi.toFixed(1)} Hz ${f.start.toFixed(1)}–${f.end.toFixed(1)} s`;
     console.log(`perf: 10 min at 48 kHz in ${parts.length} parts: check ${checkSeconds.toFixed(1)} s, cloak ${cloakSeconds.toFixed(1)} s, `
       + `wasm memory ${(camo.memoryBytes / 2 ** 20).toFixed(0)} MiB; found before ${before.tones} (doppler ${before.doppler}, hum ${before.hum}), after ${after.tones}`);
+    console.log(`long: seams at ${parts.slice(0, -1).map((p) => p.coreEnd / sr).join(", ")} s; after: ${after.found.map(show).join("; ")}`);
+    perPart.forEach((t, k) => console.log(`long: part ${k + 1} (from ${parts[k]!.start / sr} s, own clock): ${t.found.map(show).join("; ")}`));
+    expect(after.doppler).toBe(0);
+    expect(after.hum).toBe(0);
     expect(camo.memoryBytes).toBeLessThan(2 * 2 ** 30);
   }, 3_600_000);
 });
