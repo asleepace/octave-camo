@@ -79,7 +79,7 @@ final class LineFillTests: XCTestCase {
 
     /// The real-world case: a fan tone sweeping 1.7 → 0.9 kHz. Known gap in the check: its 1 s
     /// windows smear a sweep this fast, so even at 30–40 dB it follows the tone only up to ~1.15 kHz
-    /// (at 20 dB, only below 1 kHz; see DiagnosticsTests). What it sees, `lines` removes.
+    /// (at 20 dB, only below 1 kHz; PLAN.md, "the check follows fast sweeps"). What it sees, `lines` removes.
     func testRemovesAJetFanToneAboveOneKilohertz() {
         let input = Self.fanTone(rate: 16_000, snr: 35)
         let seen = found(input, from: 1_100, to: 1_700)

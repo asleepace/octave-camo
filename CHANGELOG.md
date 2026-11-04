@@ -9,6 +9,26 @@ are grouped by milestone, newest first, with the commits that made them.
 
 ## [Unreleased]
 
+### A smaller wasm, the saved file checked again, and the tone fill keeps voices
+
+- **Smaller wasm:** release builds go through binaryen's `wasm-opt -Oz` (pinned by a lockfile in
+  `tools/wasm-opt`, installed in CI and in the release rebuild; the build stays byte-for-byte
+  reproducible). 7.5 → 3.6 MB raw, 2.0 → 1.3 MB gzipped. `-Osize` alone saved almost nothing.
+  Measured by a new on-demand **Wasm size** workflow (`web/scripts/bench-wasm.ts`), which put
+  `wasm-opt` at about 7 % slower on a 60 s, 48 kHz cloak; `OPT=size` builds for size.
+- **The saved file's sound is checked again:** after saving, the page decodes the file it wrote and
+  runs the check on it in the worker (`check` request → `checked`), shows "saved N" next to each
+  count, and warns if the encoder added tones. What gets posted is the AAC file, not the float output.
+- **`lines` keeps voices:** a line is left alone when, over its span, a quarter of the frames are
+  voiced and in a fifth of those one of the tracked pitch's first four harmonics sits on it. On the
+  speech scene the check's six lines are all a voice's recurring pitch: before, they were filled
+  (and a second pass found seven more next to them); now speech is kept whole (1.0, was 0.92).
+- **The fan-tone test was passing for the wrong reason,** and found a gap in the check: at 20 dB
+  the check saw only the part below 1 kHz, and even at 30–40 dB it follows a sweep this fast
+  (~40 Hz/s) only up to ~1.15 kHz, because its 1 s windows smear it. The test now uses 35 dB,
+  where Full leaves the part above 1.1 kHz and `lines` removes it. Fixing the check comes next
+  (PLAN.md).
+
 ### Step 2 in Experimental: fill in whatever the check finds
 
 - **Why:** on a real indoor recording, a climbing jet's fan tone swept from 1.75 to 1.0 kHz for
@@ -28,8 +48,7 @@ are grouped by milestone, newest first, with the commits that made them.
   still to decide before it can join Full.
 - Tests: a steady 1.2 kHz tone filled at 16 and 48 kHz with no hole and nothing changed beside it; a
   modelled jet fan tone (1.23 kHz, 141 m/s, 2 km, 1.7 → 0.9 kHz received) removed with `lines`
-  (Full also removed this clean modelled version, by a route not yet pinned down; whether it removes
-  the real one is untested); nothing changes when the check finds nothing; speech mostly
+  (see the entry above: at that level the check only saw the part below 1 kHz); nothing changes when the check finds nothing; speech mostly
   kept (≈ 0.92: the check finds a few long tones in a voice, and they're filled); seeded; the band STFT
   edits only its band. `testAToneAboveOneKilohertzIsRemoved` is on (with `lines`).
 
