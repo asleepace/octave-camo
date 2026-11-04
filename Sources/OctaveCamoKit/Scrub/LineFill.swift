@@ -32,6 +32,13 @@ public struct LineFill: ScrubStage {
     public var relativeMargin = 0.002
     /// The attacker model that decides what to fill (the same check the page counts with).
     public var check = FlybyAnalyzer()
+    /// Leave lines that follow a voice's harmonics (most of their frames within `voiceToleranceHz`
+    /// or 3 % of a harmonic of the tracked pitch). A voice's harmonics read as long tones when the
+    /// same pitch recurs, but they aren't a location clue, and filling them dulls speech; the pitch
+    /// tracker already rejects steady engine tones and long glides.
+    public var keepVoice = true
+    public var voiceToleranceHz = 9.0
+    public var pitch = PitchTracker()
     public var seed: UInt64 = .random(in: 1...UInt64.max)
 
     public init() {}
@@ -45,16 +52,43 @@ public struct LineFill: ScrubStage {
 
     public func process(_ x: [Double], sampleRate: Int) -> (output: [Double], summary: String) {
         var y = x, rng = SeededRNG(seed: seed)
-        var found: [Int] = [], filled = 0
+        var found: [Int] = [], filled = 0, voiced = 0
         for _ in 0..<max(passes, 0) {
             let lines = check.lines(in: Audio(sampleRate: sampleRate, channels: [y]))
-            let all = lines.tracked + lines.integrated
+            var all = lines.tracked + lines.integrated
+            if keepVoice && !all.isEmpty {
+                let isVoice = voiceTest(y, sampleRate: sampleRate)
+                let before = all.count
+                all.removeAll(where: isVoice)
+                voiced += before - all.count
+            }
             found.append(all.count)
             if all.isEmpty { break }
             for line in all where fill(&y, line, sampleRate: sampleRate, rng: &rng) { filled += 1 }
         }
         let rounds = found.map(String.init).joined(separator: " → ")
-        return (y, "lines: filled \(filled) line(s) the check found (\(rounds) per pass)")
+        let voice = voiced > 0 ? "; kept \(voiced) that follow a voice" : ""
+        return (y, "lines: filled \(filled) line(s) the check found (\(rounds) per pass)\(voice)")
+    }
+
+    /// A test for "this line follows a voice": the pitch is tracked every 20 ms, and a line counts as
+    /// a voice when at least half of its frames sit on a harmonic of a voiced pitch.
+    func voiceTest(_ y: [Double], sampleRate: Int) -> (Track) -> Bool {
+        let step = 0.02, duration = Double(y.count) / Double(sampleRate)
+        let times = Array(stride(from: 0.0, to: duration, by: step))
+        let f0 = pitch.track(y, sampleRate: sampleRate, at: times)
+        let tolerance = voiceToleranceHz
+        return { line in
+            guard !line.times.isEmpty, !f0.isEmpty else { return false }
+            var on = 0
+            for (t, f) in zip(line.times, line.frequencies) {
+                let p = f0[min(f0.count - 1, max(0, Int((t / step).rounded())))]
+                guard p > 0 else { continue }
+                let h = (f / p).rounded()
+                if h >= 1 && abs(f - h * p) <= max(tolerance, 0.03 * f) { on += 1 }
+            }
+            return 2 * on >= line.times.count
+        }
     }
 
     /// Replaces one line's strip with matched noise. Returns false when there was nothing to fill.

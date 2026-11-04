@@ -77,17 +77,17 @@ final class LineFillTests: XCTestCase {
         }
     }
 
-    /// The real-world case: a fan tone sweeping 1.7 → 0.9 kHz. With `lines`, it's gone. (Full also
-    /// removed this clean, modelled version in CI, by a route not yet pinned down: its flyby search
-    /// cancelled curves at 102 and 470 Hz, not this one. Whether Full catches the real tone is
-    /// untested, so Full's result is only printed.)
-    func testRemovesAJetFanTone() {
-        let input = Self.fanTone(rate: 16_000)
-        XCTAssertFalse(found(input, from: 1_000, to: 1_800).isEmpty, "the check should find the fan tone")
+    /// The real-world case: a fan tone sweeping 1.7 → 0.9 kHz, loud enough that the check sees it
+    /// above 1 kHz (at 20 dB it only sees the part below 1 kHz; see DiagnosticsTests). With
+    /// `lines`, the part above 1 kHz is gone too.
+    func testRemovesAJetFanToneAboveOneKilohertz() {
+        let input = Self.fanTone(rate: 16_000, snr: 35)
+        let seen = found(input, from: 1_100, to: 1_700)
+        XCTAssertFalse(seen.isEmpty, "the check should see the fan tone above 1.1 kHz at 35 dB")
         let full = seededPipeline(seed: 3).run(input)
-        print("lines: modelled fan tone after Full: \(found(full.audio, from: 1_000, to: 1_800).count) line(s) left in 1–1.8 kHz; \(full.log.filter { $0.hasPrefix("scurve") })")
+        print("lines: fan tone at 35 dB after Full: \(found(full.audio, from: 1_100, to: 1_700).count) line(s) left in 1.1–1.7 kHz")
         let experimental = seededPipeline(ScrubPipeline.defaultSteps.union([.lines]), seed: 3).run(input)
-        let left = found(experimental.audio, from: 1_000, to: 1_800)
+        let left = found(experimental.audio, from: 1_100, to: 1_700)
         XCTAssertTrue(left.isEmpty, "left: \(left.map { "\($0.kind) \(Int($0.minFrequency))–\(Int($0.maxFrequency)) Hz for \($0.duration) s" }); \(experimental.log.last ?? "")")
     }
 
@@ -97,13 +97,20 @@ final class LineFillTests: XCTestCase {
         XCTAssertEqual(fill(input).audio.mono, input.mono)
     }
 
-    /// Speech mostly stays: the check finds a few long tones in a voice (its harmonics; see
-    /// ClueInvariantTests' speech known issue), and those are filled, which costs a little (≈ 0.92).
-    func testSpeechIsMostlyKept() {
+    /// Speech stays: the check finds a few long tones in a voice (its harmonics, when the same pitch
+    /// recurs), but lines that follow the tracked pitch's harmonics are left alone.
+    func testSpeechIsKept() {
         let input = Scenes.make("speech", rate: 16_000), output = fill(input)
         let kept = Spectra.kept(input.mono, output.audio.mono, rate: 16_000)
         print("lines: speech kept \(kept); \(output.summary)")
-        XCTAssertGreaterThan(kept, 0.9)
+        XCTAssertGreaterThan(kept, 0.97, output.summary)
+        XCTAssertTrue(output.summary.contains("follow a voice"), output.summary)
+        // Without the voice rule they'd be filled (the speech scene's harmonics read as long tones).
+        var stage = LineFill()
+        stage.seed = 1
+        stage.keepVoice = false
+        let plain = stage.process(input.mono, sampleRate: 16_000)
+        XCTAssertLessThan(Spectra.kept(input.mono, plain.output, rate: 16_000), kept, plain.summary)
     }
 
     func testTheSameSeedGivesTheSameOutput() {

@@ -57,6 +57,12 @@ jobs:
           swift sdk install
           https://download.swift.org/swift-6.4.2-release/wasm-sdk/swift-6.4.2-RELEASE/swift-6.4.2-RELEASE_wasm.artifactbundle.tar.gz
           --checksum 83baca83553f8c443cda7b84800912e6e709c3acd2e7ebf277794ca5836c0da5
+      - name: Install wasm-opt (binaryen, pinned in tools/wasm-opt)
+        run: |
+          apt-get update && apt-get install -y --no-install-recommends nodejs npm
+          npm ci --prefix tools/wasm-opt --ignore-scripts
+          echo "WASM_OPT=$PWD/tools/wasm-opt/node_modules/.bin/wasm-opt" >> "$GITHUB_ENV"
+          echo "REQUIRE_WASM_OPT=1" >> "$GITHUB_ENV"
       - name: Build
         run: scripts/build-wasm.sh web/public/octave-camo.wasm
       - name: Reproducible (a clean build in another directory must be byte-identical)

@@ -1,0 +1,8 @@
+{
+  "name": "octave-camo-wasm-opt",
+  "private": true,
+  "description": "binaryen's wasm-opt, pinned, for scripts/build-wasm.sh (release builds are shrunk with -Oz)",
+  "dependencies": {
+    "binaryen": "131.0.0"
+  }
+}

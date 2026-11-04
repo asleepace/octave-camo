@@ -20,5 +20,18 @@ flags=(-c "${CONFIG:-release}" --swift-sdk "$sdk" --product octave-camo-wasm
 swift build "${flags[@]}"
 bin=$(swift build "${flags[@]}" --show-bin-path)
 mkdir -p "$(dirname "$out")"
-cp "$bin/octave-camo-wasm.wasm" "$out"
+# Release builds are shrunk by binaryen's wasm-opt (pinned in tools/wasm-opt; `npm ci --prefix
+# tools/wasm-opt` installs it): about half the size raw and a third less gzipped, about 7 % slower
+# (measured by the "Wasm size" workflow). Deterministic, so the build stays reproducible. Debug
+# builds keep their names for readable traps.
+opt=${WASM_OPT:-tools/wasm-opt/node_modules/.bin/wasm-opt}
+if [ "${CONFIG:-release}" = release ] && [ -x "$opt" ]; then
+  "$opt" -Oz --enable-bulk-memory --enable-sign-ext --enable-mutable-globals --enable-nontrapping-float-to-int \
+    "$bin/octave-camo-wasm.wasm" -o "$out"
+elif [ "${CONFIG:-release}" = release ] && [ "${REQUIRE_WASM_OPT:-0}" = 1 ]; then
+  echo "wasm-opt not found at $opt (npm ci --prefix tools/wasm-opt)" >&2; exit 1
+else
+  [ "${CONFIG:-release}" = release ] && echo "note: wasm-opt not installed; this build is larger than CI's and its hash differs" >&2
+  cp "$bin/octave-camo-wasm.wasm" "$out"
+fi
 ls -l "$out"

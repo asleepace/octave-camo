@@ -70,6 +70,14 @@ jobs:
             [ "$attempt" = 3 ] && exit 1
             sleep 10
           done
+      - name: Install wasm-opt (binaryen, pinned in tools/wasm-opt; releases before it had none)
+        run: |
+          if [ -f tools/wasm-opt/package-lock.json ]; then
+            apt-get update && apt-get install -y --no-install-recommends nodejs npm
+            npm ci --prefix tools/wasm-opt --ignore-scripts
+            echo "WASM_OPT=$PWD/tools/wasm-opt/node_modules/.bin/wasm-opt" >> "$GITHUB_ENV"
+            echo "REQUIRE_WASM_OPT=1" >> "$GITHUB_ENV"
+          fi
       - name: Build here and elsewhere; compare with what was deployed
         run: |
           git config --global --add safe.directory "$PWD"
