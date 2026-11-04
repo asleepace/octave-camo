@@ -56,6 +56,9 @@ const state = {
   outputSamples: null as Float32Array<ArrayBuffer> | null,
   before: null as Trace | null,
   after: null as Trace | null,
+  /** The check on the last saved file's sound, decoded again (null until it's back). */
+  saved: null as Trace | null,
+  savedError: "",
   log: [] as string[],
   preset: "full" as Preset,
   /** Preset the current output was made with. */
@@ -185,7 +188,14 @@ worker.onmessage = (event) => {
         state.picture.verify = { detected: m.detected || !m.checked, z: m.z };
       }
       break;
+    case "checked":
+      if (m.seq === saveSeq) state.saved = m.trace;
+      break;
     case "error":
+      if (m.scope === "saved") {
+        if (m.seq === saveSeq) state.savedError = m.message;
+        break;
+      }
       if (m.scope === "picture" && m.purpose === "verify") {
         if (m.seq === saveSeq) state.picture.verifyError = m.message;
         break;
@@ -213,7 +223,7 @@ async function open(file: File) {
   player.clear();
   Object.assign(state, {
     loaded: null, input: null, output: null, inputDetail: null, outputDetail: null, outputSamples: null, outputPreset: null, pendingPreset: null, before: null,
-    after: null, log: [], busy: "decoding", busyPart: "", error: "",
+    after: null, saved: null, savedError: "", log: [], busy: "decoding", busyPart: "", error: "",
   });
   state.picture = { status: "none", progress: 0, scan: null, fix: false, verify: null, codec: "", message: "", verifyError: "" };
   const token = ++fileToken;
@@ -271,6 +281,21 @@ async function scanPicture(loaded: Loaded, token: number) {
 }
 
 /** Decode the saved file and scan its picture again: the check the "gone" in the table reports. */
+/** The check again, on the saved file's sound decoded back: what gets posted, not what was encoded. */
+async function checkSaved(blob: Blob, name: string, token: number, seq: number) {
+  try {
+    const decoded = await load(new File([blob], name, { type: blob.type }));
+    if (token !== fileToken || seq !== saveSeq) return;
+    if (!decoded.clip) throw new Error("the saved file has no sound");
+    send({ type: "check", token, seq, sampleRate: decoded.clip.sampleRate, channels: decoded.clip.channels },
+      decoded.clip.channels.map((c) => c.buffer));
+  } catch (error) {
+    if (token !== fileToken || seq !== saveSeq) return;
+    state.savedError = (error as Error).message;
+    render();
+  }
+}
+
 async function verifyPicture(blob: Blob, token: number, seq: number) {
   try {
     const input = new Input({ source: new BlobSource(blob), formats: ALL_FORMATS });
@@ -300,7 +325,7 @@ function cloak() {
   // The previous output is no longer what the button would save: if this run fails, there must be
   // nothing left over to save under the new preset's name.
   Object.assign(state, { error: "", busy: "loading", busyPart: "", outputSamples: null, outputPreset: null, output: null, outputDetail: null, after: null,
-    pendingPreset: state.preset });
+    saved: null, savedError: "", pendingPreset: state.preset });
   try {
     send({
       type: "scrub", token: fileToken, sampleRate: loaded.clip.sampleRate, channels: loaded.clip.channels,
@@ -327,6 +352,8 @@ async function download() {
     const picture = fixingPicture() && scan?.gains ? { gains: scan.gains, frames: scan.frames } : undefined;
     state.picture.verify = null;
     state.picture.verifyError = "";
+    state.saved = null;
+    state.savedError = "";
     const saved = await save(loaded, loaded.clip ? outputSamples : null, loaded.clip?.sampleRate ?? 0, (f) => {
       saveProgress = f;
       renderPrimary();
@@ -335,9 +362,11 @@ async function download() {
     if (token !== fileToken) return;            // another file was opened meanwhile
     // Verify on the saved file itself (decoded again), not on what was fed to the encoder.
     if (picture && loaded.video) void verifyPicture(saved.blob, token, seq);
+    const name = outputName(loaded);
+    if (loaded.clip) void checkSaved(saved.blob, name, token, seq);
     state.picture.codec = saved.videoCodec ?? "";
     const blob = saved.blob;
-    const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(blob), download: outputName(loaded) });
+    const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(blob), download: name });
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 30_000);
     state.busy = null;
@@ -418,13 +447,22 @@ function renderPrimary() {
     : pic.status === "short" ? `the clip is too short (under ${MIN_PICTURE_SECONDS} s) to check the picture for light flicker`
     : pic.scan?.detected && !pic.fix && !pic.verify ? "light flicker found and kept: it can help date the recording (tick \"Remove light flicker\" above)"
     : "";
-  if (warning) html += `<br><span class="text-amber-300/80"><span aria-hidden="true">⚠ </span>${esc(warning)}</span>`;
+  for (const w of [warning, savedWarning()].filter(Boolean)) html += `<br><span class="text-amber-300/80"><span aria-hidden="true">⚠ </span>${esc(w)}</span>`;
   // A live region re-announces whenever it's rewritten: only touch it when the text changes.
   if (status.innerHTML !== html) status.innerHTML = html;
 }
 
+/** The saved file's sound, checked again: only worth a line when it differs, or couldn't be checked. */
+function savedWarning(): string {
+  const a = fresh() ? state.after : null, c = fresh() ? state.saved : null;
+  if (state.savedError && fresh()) return `the saved file's sound couldn't be checked again (${state.savedError}); the check of the cloaked sound still applies`;
+  if (!a || !c) return "";
+  const more = c.tones - a.tones;
+  return more > 0 ? `the saved file shows ${more} more long tone${more === 1 ? "" : "s"} than the cloaked sound (the encoder made ${more === 1 ? "it" : "them"}); see "saved" in the table` : "";
+}
+
 function renderTrace() {
-  const b = state.before, a = fresh() ? state.after : null;
+  const b = state.before, a = fresh() ? state.after : null, c = fresh() ? state.saved : null;
   const rows: [string, Exclude<keyof Trace, "found">, string][] = [
     ["long tones", "tones", "narrow tones it can follow for seconds, 40 Hz–8 kHz"],
     ["doppler curves", "doppler", "pitch bends like a passing source"],
@@ -439,10 +477,16 @@ function renderTrace() {
     return `<tr class="border-t border-neutral-900">
       <td class="py-2.5"><span class="text-white">${name}</span><span class="block text-[10px] text-neutral-600">${hint}</span></td>
       <td class="w-[34%] py-2.5"><span class="relative block h-[3px] bg-neutral-800">${bar(vin, "bg-neutral-500")}${bar(vout, "bg-accent")}</span></td>
-      <td class="whitespace-nowrap py-2.5 pl-3 text-right tabular-nums text-white">${vin ?? (silent() ? `<span class="text-neutral-500">no sound</span>` : "–")}${vout !== undefined ? ` → <span class="text-accent">${vout}</span>` : ""}</td></tr>`;
+      <td class="whitespace-nowrap py-2.5 pl-3 text-right tabular-nums text-white">${vin ?? (silent() ? `<span class="text-neutral-500">no sound</span>` : "–")}${vout !== undefined ? ` → <span class="text-accent">${vout}</span>` : ""}${c ? savedCell(c[key], vout) : ""}</td></tr>`;
   }).join("");
   $("trace").insertAdjacentHTML("beforeend", pictureRow());
   $("log").innerHTML = state.log.map((l) => `<li>${esc(l)}</li>`).join("") || "<li>no run yet</li>";
+}
+
+/** The saved file's count next to the cloaked one: grey when the same, amber when the encoder added any. */
+function savedCell(v: number, cloaked: number | undefined): string {
+  const worse = cloaked !== undefined && v > cloaked;
+  return ` <span class="${worse ? "text-amber-300" : "text-neutral-400"}" title="the saved file, decoded and checked again">· saved ${v}</span>`;
 }
 
 function pictureRow(): string {

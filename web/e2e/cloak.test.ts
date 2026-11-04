@@ -103,6 +103,9 @@ describe.skipIf(!URL_)("cloak in the browser", () => {
     const out = await session.cloakAndSave();
     expect(out).toEndWith(".m4a");
     expectClean(out, { video: false });
+    // The saved file is decoded and checked again; its count appears next to the cloaked one.
+    await page.waitForFunction(() => /· saved \d/.test(document.querySelector("#trace")?.textContent ?? ""), null, { timeout: 180_000 });
+    expect(await page.textContent("#status")).not.toContain("couldn't be checked again");
 
     // The spectrogram shows the cloaked sound after cloaking, follows "listen to", and differs
     // from the original (the plane's harmonics and the hum are gone).

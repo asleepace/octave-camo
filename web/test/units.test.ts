@@ -130,6 +130,15 @@ describe("worker protocol", () => {
   test("accepts well-formed requests", () => {
     expect(Request.parse({ type: "analyze", ...clip }).type).toBe("analyze");
     expect(Request.parse({ type: "scrub", ...clip, steps: ["mono", "hum"], seed: 3, cutoff: 300, keepVoice: true }).type).toBe("scrub");
+    expect(Request.parse({ type: "scrub", ...clip, steps: ["mono", "lines"], seed: 3, cutoff: 300, keepVoice: true, flattenSeconds: 5 }).type).toBe("scrub");
+    expect(Request.parse({ type: "check", ...clip, seq: 2 }).type).toBe("check");
+  });
+  test("the saved-file check: a request needs its save seq; replies and errors carry it", () => {
+    expect(() => Request.parse({ type: "check", ...clip })).toThrow();
+    const trace = { tones: 1, doppler: 0, hum: 0, flybys: 0, found: [] };
+    expect(WorkerMessage.parse({ type: "checked", token: 1, seq: 2, trace }).type).toBe("checked");
+    expect(WorkerMessage.parse({ type: "error", token: 1, scope: "saved", message: "x", seq: 2 }).type).toBe("error");
+    expect(() => Request.parse({ type: "scrub", ...clip, steps: ["mono"], seed: 3, cutoff: 300, keepVoice: true, flattenSeconds: 500 })).toThrow();
   });
   test("rejects malformed ones", () => {
     expect(() => Request.parse({ type: "scrub", ...clip, steps: ["rm -rf"], seed: 3, cutoff: 300, keepVoice: true })).toThrow();

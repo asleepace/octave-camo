@@ -72,14 +72,14 @@ setTimeout(() => {
 
 self.onmessage = async (event: MessageEvent<unknown>) => {
   const data = event.data as { type?: unknown; token?: unknown } | null;
-  const picture = data?.type === "flicker";
+  const picture = data?.type === "flicker", savedCheck = data?.type === "check";
   const purpose = (data as { purpose?: unknown } | null)?.purpose === "verify" ? "verify" as const : "clip" as const;
   const seq = typeof (data as { seq?: unknown } | null)?.seq === "number" ? (data as { seq: number }).seq : 0;
   const token = typeof data?.token === "number" ? data.token : 0;
   try {
     const request = Request.parse(event.data);
     // Stages describe the audio work; picture scans run alongside without touching them.
-    if (!picture) post({ type: "stage", token, stage: "loading" });
+    if (!picture && !savedCheck) post({ type: "stage", token, stage: "loading" });
     engine ??= loadEngine();
     const e = await engine;
     if (request.type === "flicker") {
@@ -89,6 +89,10 @@ self.onmessage = async (event: MessageEvent<unknown>) => {
       return;
     }
     const clip: Clip = { sampleRate: request.sampleRate, channels: request.channels };
+    if (request.type === "check") {
+      post({ type: "checked", token, seq: request.seq, trace: analyzeInParts(clip, (p) => e.analyze(p)) });
+      return;
+    }
 
     // Long clips go through in parts (engine/chunks.ts); the page shows which one.
     const progress = (stage: Stage) => (part: number, parts: number) =>
@@ -118,7 +122,7 @@ self.onmessage = async (event: MessageEvent<unknown>) => {
     const message = error instanceof z.ZodError ? "the page sent the scrubber a malformed request"
       : error instanceof WebAssembly.RuntimeError ? `the scrubber failed on this clip (${error.message})`
       : error instanceof Error ? error.message : String(error);
-    post({ type: "error", token, scope: picture ? "picture" : "audio", message, ...(picture ? { purpose, seq } : {}) });
+    post({ type: "error", token, scope: picture ? "picture" : savedCheck ? "saved" : "audio", message, ...(picture ? { purpose, seq } : savedCheck ? { seq } : {}) });
   }
 };
 

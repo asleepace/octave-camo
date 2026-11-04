@@ -46,7 +46,10 @@ export const FlickerRequest = z.object({
   { message: "profile size mismatch", path: ["values"] });
 export type FlickerRequest = z.infer<typeof FlickerRequest>;
 
-export const Request = z.union([AnalyzeRequest, ScrubRequest, FlickerRequest]);
+/** The check on the saved file's sound, decoded again (by save `seq`): no stages, no heatmaps. */
+export const CheckRequest = z.object({ type: z.literal("check"), ...clip, seq: z.number().int().nonnegative() }).refine(sameLength, sameLengthIssue);
+
+export const Request = z.union([AnalyzeRequest, ScrubRequest, FlickerRequest, CheckRequest]);
 export type Request = z.infer<typeof Request>;
 
 const Found = z.object({
@@ -75,6 +78,8 @@ export const WorkerMessage = z.discriminatedUnion("type", [
   /** Sent once at startup: the landing heatmap (an illustration, computed here to keep the page responsive). */
   z.object({ type: z.literal("demo"), token, input: Detail, output: Detail }),
   z.object({ type: z.literal("analysis"), token, trace: Trace, spectrum: Spectrum, detail: Detail, engine: z.enum(["wasm", "stand-in"]) }),
+  /** What the check finds in the saved file's sound (decoded again), for save `seq`. */
+  z.object({ type: z.literal("checked"), token, seq: z.number(), trace: Trace }),
   z.object({
     type: z.literal("result"),
     token,
@@ -100,8 +105,9 @@ export const WorkerMessage = z.discriminatedUnion("type", [
     passesRemoved: z.number(),
     gains: samples.optional(),
   }),
-  z.object({ type: z.literal("error"), token, scope: z.enum(["audio", "picture"]), message: z.string(),
-    /** For picture errors: which scan failed (the clip's, or a saved file's check, by save seq). */
+  z.object({ type: z.literal("error"), token, scope: z.enum(["audio", "picture", "saved"]), message: z.string(),
+    /** For picture errors: which scan failed (the clip's, or a saved file's check, by save seq); for
+     *  "saved" (the saved file's sound), which save. */
     purpose: z.enum(["clip", "verify"]).optional(), seq: z.number().optional() }),
 ]);
 export type WorkerMessage = z.infer<typeof WorkerMessage>;
