@@ -48,9 +48,16 @@ Baseline measured (slice 1): at 48 kHz today's check misses steady tones above 1
 Done when: the 1.2 kHz line in the reference clip is found, the 3.8 kHz line is one track, and the
 noise-only scenes stay under the false alarm budget.
 
-## Next: remove tones above 1 kHz (step 2)
+## Next: remove what the check finds (step 2)
 
-- Fill a narrow strip around each detected track with noise at the local floor's level, crossfaded,
+A real outdoor clip (a plane, passing cars, light rain), cloaked on the site: the page said
+"nothing left a tracker can follow", while the line integrator found 19 lines in the saved file.
+Most were car tones at 500–950 Hz, inside tone subtraction's range but too faint for its frame
+tracker, so it never targeted them; plus 1–1.3 kHz lines and a steady 5 kHz whine. The low band
+was clean. So removal must target the integrator's lines at **every** frequency, not only above
+1 kHz.
+
+- Fill a narrow strip around each line the check finds (integrator and tracker, any frequency) with noise at the local floor's level, crossfaded,
   wide enough for tracking uncertainty and the window's main lobe. Treat strong lines' sidelobes.
 - Re-check the decoded file and repeat for anything left.
 - Turn on the skipped `testAToneAboveOneKilohertzIsRemoved`.
