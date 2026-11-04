@@ -158,7 +158,8 @@ cycle per frame and looks like a gradient.
 In order of how much we think they matter:
 
 1. **No real ground truth yet.** Every number above is synthetic. Real clips with saved tracks
-   are being collected.
+   are being collected. Two real outdoor clips have been checked by eye against the check's lines
+   (ACOUSTICS.md §1), without flight tracks to score against.
 2. **Loudness envelope attack.** A pass swells and fades over tens of seconds, and `lowband`'s
    0.75 s smoothing with ±1.5 dB jitter is probably not enough against a whole-envelope match.
    The matched attacker here doesn't use envelopes, so this is untested. Next step: add an
@@ -181,20 +182,26 @@ In order of how much we think they matter:
    the benchmark gate's close train leaked.
 7. **High-frame-rate video** (slow motion) can't be checked for flicker, and AV1 metadata units
    are copied with the picture.
-8. **Tones above 1 kHz are counted, not removed.** The check looks from 40 Hz to 8 kHz, but tone
-   subtraction stops at 1 kHz, so a jet's fan whine or an electrical whine up there survives.
-   The page counts it and outlines it on the spectrogram.
-9. **The check is weaker than an attacker who averages.** It judges each frame on its own. At
-   48 kHz, which is what phones record, it misses steady tones above 1 kHz even at 20 dB over the
-   noise in a 1 Hz band, and drifting tones are found only in pieces. An attacker who averages
-   over seconds sees more, so "→ 0" can be optimistic. [ACOUSTICS.md](ACOUSTICS.md) measures this
-   and plans the fix.
+8. **Faint tones, and any above 1 kHz, are counted but not removed.** Tone subtraction removes
+   only what its own frame tracker sees: lines at least 10 dB over the noise in a single frame,
+   below 1 kHz. The check also averages over seconds (the line integrator) and looks up to 8 kHz,
+   so it finds more than the cloak removes; the page counts those lines and outlines them on the
+   spectrogram. On a real outdoor clip, 19 lines survived the cloak: faint car tones at
+   500–950 Hz, a few at 1–1.3 kHz and a steady 5 kHz whine (ACOUSTICS.md §1). Removing what the
+   check finds is the next step (PLAN.md).
+9. **The check can still miss weak curved lines.** It averages along slow drifts only (up to
+   1 Hz/s); a passing source's curve is found by the frame tracker when loud, but a weak one only
+   in pieces or not at all (a drifting tone at 12 dB isn't found at 48 kHz). An attacker who
+   integrates along the curve sees more. The path search in ACOUSTICS.md §4 is the fix.
 10. **Steady sounds can link videos.** A fridge, an air conditioner or a computer fan gives no
     location on its own, but its tones can tie an anonymous video to a known one made in the same
     room. So can the room's reverberation.
-11. **Music and voices.** Held musical notes are removed like engine tones. In about half of runs,
-    cloaked speech shows a "long tone" at the speaker's own pitch: not a location clue, but the
-    count goes up.
+11. **Music, voices and the cloak's own lines.** Held musical notes are removed like engine tones.
+    Singing and a repeated tune show many lines, and speech a few, which the page counts like any
+    other until lines are classed by risk. In about half of runs, cloaked speech shows a "long
+    tone" at the speaker's own pitch; and a cloaked scene of footsteps gains a steady line near
+    100 Hz, classed as hum (likely the hum notch's refill). Neither is a location clue, but both
+    raise the counts.
 12. **Cloaking is detectable.** Regenerated and refilled noise is statistically cleaner than a real
     recording, so someone could tell a clip was processed. That says nothing about where or when
     it was made, and hiding it is not a goal.

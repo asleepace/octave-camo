@@ -136,6 +136,12 @@ web app and the research harness:
    each hearing band's loudness, smoothed and slowly re-gained. Tracked voice harmonics are kept.
    Nothing narrow survives for a matched filter to lock on to.
 
+**The check** behind the page's "what a tracker finds" counts and the spectrogram's outlines is a
+blind attacker: a frame-by-frame tone tracker (40 Hz–8 kHz, which also fits flyby curves) plus a
+line integrator that averages over seconds, as a patient attacker would, so faint steady lines
+count too. It looks further than the cloak reaches, so whatever the cloak leaves is shown, not
+hidden. [ACOUSTICS.md](ACOUSTICS.md) explains how it works and measures it.
+
 The web app also scans the picture: one decode pass measures each frame's row brightness, and a
 blind search for a band at 100 or 120 Hz (the way an attacker would look) decides whether the
 picture carries the grid clock. If it does, saving can divide the band out of every row on the GPU,
@@ -145,8 +151,10 @@ and the saved file is decoded and scanned again to confirm.
 
 - Every number so far is from synthetic clips. Real recordings with ground-truth tracks are being
   collected.
-- Known gaps, in order: a source's loudness envelope; light flicker that barely moves (60 Hz
-  lights at 30 fps); timetabled sounds such as bells and horns. Details in
+- Faint tones, and any above 1 kHz, are counted and outlined but not removed yet: on a real outdoor
+  clip, passing cars' faint tones and a steady 5 kHz whine survived the cloak.
+- Other known gaps: a source's loudness envelope; weak curved (Doppler) lines; light flicker that
+  barely moves (60 Hz lights at 30 fps); timetabled sounds such as bells and horns. Details in
   [THREAT_MODEL.md](THREAT_MODEL.md).
 - Removing light flicker re-encodes the picture in standard dynamic range, so HDR footage looks a
   little different. Clips under 5 seconds are too short to check for flicker.

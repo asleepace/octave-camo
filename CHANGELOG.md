@@ -9,6 +9,18 @@ are grouped by milestone, newest first, with the commits that made them.
 
 ## [Unreleased]
 
+### Check invariants and current docs
+
+- **Check invariants** (`CheckInvariantTests`): reports are well-formed (finite, inside the clip and
+  the search range, counts nested, longest first) for every scene at 16 and 48 kHz; the same input
+  gives the same report; a 5 s delay moves a line 5 s and not in frequency; a line is the same
+  played backwards (a grid family too); the sample rate doesn't move a line; a stronger tone is
+  never harder to find; and a loud sound elsewhere doesn't hide a line.
+- **Docs:** ACOUSTICS.md §1 describes the check as it is (tracker + integrator) with before/after
+  numbers and both real clips; PLAN.md moves slices 1–2 to done and slice 3 to now; THREAT_MODEL.md
+  and README.md say plainly that faint tones, and any above 1 kHz, survive the cloak today; the
+  page's "Cancel long tones" step says the same.
+
 ### The check integrates over seconds (slice 2 of ACOUSTICS.md §4)
 
 - **A line integrator** (`LineIntegrator`) joins the frame-by-frame tracker in the check. It works

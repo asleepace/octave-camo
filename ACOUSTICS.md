@@ -13,58 +13,58 @@ has who the attacker is.
 
 ## 1. Where we are
 
-- **The tracker** (`ToneTracker`) cuts the audio into frames: 16,384-sample FFTs, a hop of 2,048
-  samples, Hann window. In each frame it keeps the peaks that stand a threshold above the local
-  median floor (±20 bins), and joins peaks across frames into tracks. Tracks of 2 s or more count.
-- **Two ranges:**
-  - 40 Hz–1 kHz: 10 dB threshold, ±2% matching. The cloak's tone subtraction uses this one too.
-  - 1–8 kHz, added for the check only: 15 dB threshold, matching within 5% per second of drift,
-    with its own peak budget.
-- **The 15 dB in the high band was a blind fix.** At 10 dB, 16 kHz audio (1 Hz bins, thousands of
-  them) let background noise chain into false 2–5 s "tones" in speech, whistle and birdsong scenes.
+The check (`FlybyAnalyzer`) is two detectors whose lines are merged:
 
-**A real clip shows the limit.** A 90 s outdoor phone video:
+- **The frame tracker** (`ToneTracker`) judges each frame on its own: 16,384-sample FFTs, a hop of
+  2,048 samples, peaks a threshold above the local median floor, joined across frames into tracks
+  of 2 s or more. Two ranges: 40 Hz–1 kHz (10 dB, ±2% matching; the cloak's tone subtraction uses
+  this one too) and 1–8 kHz (15 dB, matching within 5% per second of drift, its own peak budget).
+  It finds loud lines, including fast Doppler curves, and fits flybys to the curved ones.
+- **The line integrator** (`LineIntegrator`, since slice 2) averages over seconds, as an attacker
+  would (§3–4): a window close to 1 s at any sample rate, a 0.5 s hop, each frame divided by its
+  local median floor; every path drifting up to 1 Hz/s over 3 s and 8 s spans must stand above τ in
+  at least half its frames, with τ from the binomial tail for a false alarm budget over the whole
+  search; lines must be narrow, and sidelobes are suppressed. Its lines are hum or steady, never
+  Doppler. Where both find a line, the tracker's version is kept.
 
-| What the eye sees | What the check reports |
-|---|---|
-| A short dash near 250 Hz around 0:37 | found, and removed by the cloak |
-| A faint line near 3.8 kHz from 0:25 to the end | found in two 2 s pieces, where it is strongest |
-| A line near 1.2 kHz from 0:55 to 1:10 | **not found** |
+### Measured on synthetic scenes
 
-The 1.2 kHz line is visible on the spectrogram, so an attacker would find it. It is not found
-because it stands perhaps 8–12 dB over loud ambience in any single frame, under the 15 dB rule.
-**Frame-by-frame thresholding is the wrong tool**: it is either too deaf (high threshold) or too
-noisy (low threshold).
+`DetectionBaselineTests` records these in `Tests/OctaveCamoKitTests/Snapshots/detection.json`.
+Strengths are dB over the noise in a 1 Hz band, so they mean the same at any sample rate. Runs (of
+3 seeds) that found a steady 20 s tone:
 
-### The baseline, measured
+| Tone | 6 dB | 9 dB | 12 dB | 15 dB | 20 dB | Before slice 2 |
+|---|---:|---:|---:|---:|---:|---|
+| 300 Hz at 16 kHz | 1/3 | 3/3 | 3/3 | 3/3 | 3/3 | found from 12 dB |
+| 300 Hz at 48 kHz | 0/3 | 2/3 | 3/3 | 3/3 | 3/3 | found at 20 dB |
+| 1.2 kHz at 16 kHz | 2/3 | 3/3 | 3/3 | 3/3 | 3/3 | found at 20 dB |
+| 1.2 kHz at 48 kHz | 2/3 | 3/3 | 3/3 | 3/3 | 3/3 | **never** |
+| 4.5 kHz at 48 kHz | 0/3 | 2/3 | 3/3 | 3/3 | 3/3 | **never** |
 
-`DetectionBaselineTests` measures the current check on synthetic scenes and records the results in
-`Tests/OctaveCamoKitTests/Snapshots/detection.json`. Strengths are dB over the noise in a 1 Hz band,
-so they mean the same at any sample rate. A steady 20 s tone was found in this many of 3 seeds:
+- **Grid harmonics with no fundamental**, 6 dB each: about 16 of 19 found as hum at 16 kHz, 2 at
+  48 kHz (before: none); at 9 dB, about 15 at both rates (before: 9 at 16 kHz, none at 48 kHz).
+- **Intermittent tones** (4 s on, 6 s off) at 15 dB: found at both rates (before: none at 48 kHz).
+- **Drifting tones** (a flyby's curve) are still the weak spot: found at 20 dB in pieces covering
+  14–17% of the pass, and at 12 dB not at all at 48 kHz. Curved paths are slice 3 (§4.4).
+- **False lines: none** in white, pink, wind or traffic noise at either rate.
+- **Not location clues, but lines:** singing and a whistled tune that repeats its notes show many;
+  speech a few. Telling music and voices from machines is the risk classes' job (§5).
 
-| Tone | 9 dB | 12 dB | 15 dB | 20 dB |
-|---|---:|---:|---:|---:|
-| 300 Hz at 16 kHz | 1/3 | 3/3 | 3/3 | 3/3 |
-| 300 Hz at 48 kHz | 0/3 | 0/3 | 1/3 | 3/3 |
-| 1.2 kHz at 16 kHz | 0/3 | 0/3 | 1/3 | 3/3 |
-| 1.2 kHz at 48 kHz | 0/3 | 0/3 | 0/3 | **0/3** |
-| 4.5 kHz at 48 kHz | 0/3 | 0/3 | 0/3 | **0/3** |
+### Measured on real recordings
 
-The other scenes:
-- **At 48 kHz,** which is what phones record, the check misses 20 dB tones above 1 kHz entirely. It
-  also misses an intermittent tone (4 s on, 6 s off) at 20 dB and a grid family at 9 dB per
-  harmonic. Its 2.9 Hz bins spread a tone's power over more noise than 16 kHz's 1 Hz bins, so the
-  same tone stands about 5 dB lower per bin. The sample-rate dependence (§3) costs real
-  sensitivity.
-- **Drifting tones** are found at 12–20 dB, but only in short pieces (5–17% of the pass), because
-  per-frame matching breaks the curve.
-- **Grid harmonics with no fundamental** go undetected at 3 and 6 dB each. Combining them (§2, ENF)
-  would sum 19 harmonics.
-- **False lines: none** in white, pink, wind or traffic noise at either rate. The check is
-  conservative, so the new detector has room to trade a little of that for a lot of sensitivity.
+Two outdoor phone videos; only the tables and spectrograms are kept, never the audio.
 
-The target for the new detector: find steady tones at about 6 dB and drifting ones at 9–12 dB, at
-both rates, with false lines still under 0.1 per minute.
+- **Before slice 2,** a 90 s clip: a line near 1.2 kHz from 0:55 to 1:10, plain on the
+  spectrogram, wasn't found (it stood perhaps 8–12 dB over loud ambience in any single frame, under
+  the 15 dB rule); a faint 3.8 kHz line was found only in 2 s pieces.
+- **With the integrator,** a 51 s clip with a plane, passing cars and light rain: 39 lines in the
+  original, nearly all real on a whitened zoom (a wavering 45–50 Hz line, a V-shaped pass from 45 to
+  95 Hz, a slowly rising 180 Hz line, car tones at 500–1,300 Hz, a steady 5 kHz whine). The frame
+  tracker alone found 12.
+- **The same clip after cloaking** (the decoded saved file): the page said "nothing left a tracker
+  can follow"; the integrator found 19 lines. The low band was clean, but the car tones at
+  500–950 Hz were untouched: inside tone subtraction's range, too faint for its frame tracker, so
+  never targeted. So removal must target what the check finds, at every frequency (§8).
 
 ---
 
@@ -174,6 +174,11 @@ already finds it.
 
 ## 4. The detector we want
 
+Status: 1–3 are done (slice 2, `LineIntegrator`), in a simpler form than planned: drifts up to
+1 Hz/s by brute force rather than ±6 %/s with a tree search, and a median (count) test rather than
+CFAR on the mean, which keeps voices and recurring notes out at a cost of about 0.3 dB. Fast drifts
+stay with the frame tracker until the path search (4). 4–6 are slice 3.
+
 1. **A spectrogram in physical units:** about 1 Hz resolution (a ~1 s window) and a 0.25 s step,
    whatever the sample rate.
 2. **Integration along drift:** over sliding spans of 2–4 s, sum frames along each drift rate in
@@ -250,6 +255,9 @@ say they exist:
 ---
 
 ## 8. Removing what the check finds (step 2)
+
+- **Every frequency, not only above 1 kHz.** On a real clip the faint car tones at 500–950 Hz
+  survived the cloak because tone subtraction only removes what its own frame tracker sees (§1).
 
 - **Fill, don't just subtract, above 1 kHz.** Replace a narrow strip around each track with noise at
   the local floor's level, crossfaded in time and frequency.

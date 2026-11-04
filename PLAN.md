@@ -22,31 +22,28 @@ judged by it. Removing what the check can't see would only make the page look be
   - behaviour snapshots of 13 scenes;
   - clue invariants;
   - protocol fuzzing.
-- **The check looks up to 8 kHz** and outlines what it finds. Tones above 1 kHz are counted but not
-  yet removed.
+- **The check looks up to 8 kHz** and outlines what it finds on the spectrogram.
+- **Detection baseline** (slice 1): scenes that measure the check's sensitivity and false alarms,
+  recorded so every change shows as a diff.
+- **The line integrator** (slice 2): the check averages over seconds. Steady tones are found at
+  6–9 dB over a 1 Hz noise band at 16 and 48 kHz (before: 12–20 dB, and never above 1 kHz at
+  48 kHz); no lines in noise (ACOUSTICS.md §1).
+- **Tidying:** shared helpers, a found-tone cap, warnings, known gaps documented.
 
-## Now: an attacker-grade detector (ACOUSTICS.md §4)
+## Now: paths, families and risk classes (slice 3, ACOUSTICS.md §4.4–6)
 
-Baseline measured (slice 1): at 48 kHz today's check misses steady tones above 1 kHz even at
-20 dB over a 1 Hz noise band; it never reports a tone in noise (ACOUSTICS.md §1).
+1. **Paths:** a Viterbi path search through the whitened spectrogram, limiting how fast frequency
+   may change, so a Doppler pass or a line that fades in and out is one track, and weak curved
+   lines are found (drifting tones are the weak spot: found only at 20 dB, in pieces).
+2. **Families:** combine 50/60 Hz harmonics into one grid trace; test high lines for grid lock.
+3. **Risk classes:** Doppler, grid-locked, steady (room fingerprint), musical/vocal. The page shows
+   them, so singing or a whistled tune isn't presented as a location clue.
+4. **Check the decoded saved file,** not only the cloak's float output (AAC can add or hide lines).
+5. **The benchmark gate uses the full check** (attacker parity).
+6. **Faster:** the integrator costs about 1 s per minute of audio in the browser, twice per cloak.
 
-1. **Spectrogram in physical units:** about 1 Hz resolution and a 0.25 s step at any sample rate.
-2. **Integration along drift:** sliding 2–4 s spans, drift rates within ±6 %/s, tree search.
-3. **A derived threshold:** ordered-statistic CFAR. The threshold comes from the effective number
-   of independent looks and the search size, for under 0.1 false lines per minute.
-4. **Paths:** a Viterbi path search joins detections into tracks.
-5. **Families:** combine 50/60 Hz harmonics, and test high lines for grid lock.
-6. **Risk classes:** Doppler, grid-locked, steady (room fingerprint), musical. The page shows them.
-7. **Tests:**
-   - scenes for a strength ladder, drifting tones, intermittent tones and weak harmonic families;
-   - noise-only scenes (white, pink, wind, traffic) for false alarms per minute;
-   - a detection vs false-alarm curve, to choose the operating point;
-   - re-recorded snapshots.
-8. **Check the decoded saved file,** not only the float output (AAC can add or hide lines).
-9. **The benchmark gate uses the new detector** (attacker parity).
-
-Done when: the 1.2 kHz line in the reference clip is found, the 3.8 kHz line is one track, and the
-noise-only scenes stay under the false alarm budget.
+Done when: a flyby curve is one track, a drifting tone is found at 12 dB at both rates, music is
+classed as such, and the noise scenes still give no lines.
 
 ## Next: remove what the check finds (step 2)
 
@@ -57,12 +54,13 @@ tracker, so it never targeted them; plus 1–1.3 kHz lines and a steady 5 kHz wh
 was clean. So removal must target the integrator's lines at **every** frequency, not only above
 1 kHz.
 
-- Fill a narrow strip around each line the check finds (integrator and tracker, any frequency) with noise at the local floor's level, crossfaded,
-  wide enough for tracking uncertainty and the window's main lobe. Treat strong lines' sidelobes.
+- Fill a narrow strip around each line the check finds (integrator and tracker, any frequency)
+  with noise at the local floor's level, crossfaded, wide enough for tracking uncertainty and the
+  window's main lobe. Treat strong lines' sidelobes.
 - Re-check the decoded file and repeat for anything left.
 - Turn on the skipped `testAToneAboveOneKilohertzIsRemoved`.
-- **Policy decisions to make alongside:** music (held notes are removed today), and the speech
-  "long tone" known issue.
+- **Policy decisions to make alongside:** music (held notes are removed today), the speech
+  "long tone" and footsteps 100 Hz known issues.
 
 ## Then
 
@@ -77,7 +75,8 @@ was clean. So removal must target the integrator's lines at **every** frequency,
 
 ## Housekeeping
 
-- Delete the merged branches: `review-tests`, `test-net`, `tone-check`, `detection-baseline`, `tidy`.
+- Delete the merged branches: `review-tests`, `test-net`, `tone-check`, `detection-baseline`, `tidy`,
+  `line-integrator`, `invariants-docs`.
 - The next release (after v0.1.1, at `19e6902`) collects the work since then.
 - Allowlisting `download.swift.org` would let Swift tests and wasm builds run outside CI, which
   would shorten every round trip above.
