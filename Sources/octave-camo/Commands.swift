@@ -12,7 +12,7 @@ let commands = [
     Command(name: "synth", options: ["f0", "speed", "distance", "t0", "duration", "seed"],
             flags: ["hard"], run: synth),
     Command(name: "analyze", options: ["threshold"], flags: ["json"], run: analyze),
-    Command(name: "scrub", options: ["steps", "mains", "passes", "cutoff", "lowband-mode", "depth", "wobble-top", "seed"],
+    Command(name: "scrub", options: ["steps", "mains", "passes", "cutoff", "lowband-mode", "flatten", "depth", "wobble-top", "seed"],
             flags: ["no-keep-voice"], run: scrub),
 ]
 
@@ -25,6 +25,7 @@ USAGE
   octave-camo analyze <in.wav>  [--threshold 10] [--json]
   octave-camo scrub   <in.wav> <out.wav> [--steps mono,hum,subtract,scurve,lowband[,wobble]]
                         [--mains 50,60] [--passes 3] [--cutoff 300] [--lowband-mode regenerate|highpass]
+                        [--flatten 5] (experimental: flatten low-band swells slower than N s)
                         [--no-keep-voice] [--depth 0.015] [--wobble-top 600] [--seed N]
   octave-camo --version
 
@@ -97,6 +98,7 @@ func scrub(_ args: Arguments) throws {
         pipeline.lowband.mode = mode
     }
     pipeline.lowband.keepVoice = !args.flag("no-keep-voice")
+    pipeline.lowband.flattenSeconds = try args.value("flatten", default: pipeline.lowband.flattenSeconds)
     pipeline.wobble.depth = try args.value("depth", default: pipeline.wobble.depth)
     pipeline.wobble.top = try args.value("wobble-top", default: pipeline.wobble.top)
     pipeline.wobble.seed = try args.value("seed", default: pipeline.wobble.seed)
@@ -105,6 +107,7 @@ func scrub(_ args: Arguments) throws {
     try require(pipeline.subtraction.passes >= 0, "--passes must be 0 or more")
     try require(pipeline.wobble.depth >= 0 && pipeline.wobble.depth <= 0.1, "--depth must be between 0 and 0.1")
     try require(pipeline.lowband.cutoff > 20 && pipeline.lowband.cutoff.isFinite, "--cutoff must be above 20 Hz")
+    try require(pipeline.lowband.flattenSeconds >= 0 && pipeline.lowband.flattenSeconds <= 120, "--flatten must be between 0 and 120 s")
 
     let clock = Stopwatch()
     let audio = try WAV.read(from: input)

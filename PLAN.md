@@ -32,7 +32,14 @@ judged by it. Removing what the check can't see would only make the page look be
 - **Clips up to 10 minutes:** cloaked and checked in overlapping parts past 5 minutes. Further
   (an hour and more): stream the decoded audio and the saved file instead of holding them whole.
 
-## Now: paths, families and risk classes (slice 3, ACOUSTICS.md §4.4–6)
+## Now: the Experimental preset, then step 2
+
+- **Experimental preset** (flatten the low band's slow swells): in. Next, on real clips: does the
+  blind start-time search fail on Experimental output, and does it sound the same? If both hold,
+  make it part of Full.
+- Then step 2 below, which may also live in Experimental first (music policy).
+
+## Later: paths, families and risk classes (slice 3, ACOUSTICS.md §4.4–6)
 
 1. **Paths:** a Viterbi path search through the whitened spectrogram, limiting how fast frequency
    may change, so a Doppler pass or a line that fades in and out is one track, and weak curved

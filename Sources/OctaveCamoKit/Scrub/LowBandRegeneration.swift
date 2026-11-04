@@ -32,6 +32,11 @@ public struct LowBandRegeneration: ScrubStage {
     public var smoothSeconds = 0.75
     /// Slow random gain per band, ±dB, with 10–30 s periods.
     public var jitterDB = 1.5
+    /// Off at 0. Otherwise each band's loudness loses every swell slower than this many seconds: it
+    /// keeps the band's median level and anything quicker (a thump, a door), but not the rise and fall
+    /// of a passing plane over tens of seconds, which the smoothing above lets through and an
+    /// attacker can line up with flight tracks (ACOUSTICS.md, the envelope attack).
+    public var flattenSeconds = 0.0
     public var fftSize = 8_192
     /// Width, in ERBs, over which the noise's spectral shape is smoothed. Anything narrower (a
     /// notch left by `hum`, a steady motor tone) would otherwise be copied into the new noise.
@@ -136,6 +141,7 @@ public struct LowBandRegeneration: ScrubStage {
         target.reserveCapacity(B)
         for b in 0..<B {
             var s: [Double] = DSP.smooth(energy[b], length: smoothFrames)
+            if flattenSeconds > 0 { s = Self.flatten(s, window: Int((flattenSeconds * framesPerSecond).rounded())) }
             let period1: Double = rng.uniform(10...30), period2: Double = rng.uniform(10...30)
             let phase1: Double = rng.uniform(0...(2 * Double.pi)), phase2: Double = rng.uniform(0...(2 * Double.pi))
             for m in 0..<F {
@@ -167,7 +173,29 @@ public struct LowBandRegeneration: ScrubStage {
             }
         }
         let voice = keepVoice ? ", kept voice harmonics in \(100 * voicedFrames / max(F, 1))% of frames" : ""
-        return (stft.render(re: outRe, im: outIm), "lowband: regenerated below \(Int(cutoff)) Hz in \(B) ERB bands\(voice)")
+        let flat = flattenSeconds > 0 ? ", flattened swells slower than \(Self.seconds(flattenSeconds))" : ""
+        return (stft.render(re: outRe, im: outIm), "lowband: regenerated below \(Int(cutoff)) Hz in \(B) ERB bands\(voice)\(flat)")
+    }
+
+    /// A band's power over time with its slow part taken out: in decibels, minus a centered running
+    /// median `window` frames wide, plus the whole run's median. What changes faster than the window
+    /// stays; a swell longer than about half of it is gone. Zeros (frames where every bin was kept
+    /// voice) stay at a floor far below the median.
+    static func flatten(_ power: [Double], window: Int) -> [Double] {
+        guard window > 2, power.count > 2 else { return power }
+        let positive = power.filter { $0 > 0 }
+        guard !positive.isEmpty else { return power }
+        let floor = DSP.median(positive[...]) * 1e-6
+        let levels = power.map { log(max($0, floor)) }
+        let typical = DSP.median(levels[...]), h = window / 2
+        return levels.indices.map { i in
+            let slow = DSP.median(levels[max(0, i - h)...min(levels.count - 1, i + h)])
+            return exp(levels[i] - slow + typical)
+        }
+    }
+
+    private static func seconds(_ s: Double) -> String {
+        s == s.rounded() ? "\(Int(s)) s" : "\(s) s"
     }
 
     /// Centered moving average of a power spectrum, `erbs` ERBs wide at each bin (at least 3 bins).

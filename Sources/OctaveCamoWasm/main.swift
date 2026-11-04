@@ -5,7 +5,8 @@
 //
 // Calling convention (all sizes in elements, all audio Float32):
 //   ptr = camo_alloc(channels * frames)      write planar input samples at ptr
-//   n   = camo_scrub(ptr, channels, frames, sampleRate, stepsMask, seedLo, seedHi, cutoffHz, keepVoice)
+//   n   = camo_scrub(ptr, channels, frames, sampleRate, stepsMask, seedLo, seedHi, cutoffHz, keepVoice,
+//                    flattenSeconds)            flattenSeconds 0 = off (LowBandRegeneration.flattenSeconds)
 //   out = camo_output()                       n mono output samples (valid until the next scrub)
 //   log = camo_log(), len = camo_log_length() UTF-8, one line per stage
 //   camo_free(ptr)
@@ -113,7 +114,7 @@ func camoSteps() -> Int32 {
 @_cdecl("camo_scrub")
 func camoScrub(_ input: UnsafePointer<Float>, _ channelCount: Int32, _ frames: Int32, _ sampleRate: Int32,
                _ stepsMask: Int32, _ seedLo: UInt32, _ seedHi: UInt32,
-               _ cutoffHz: Double, _ keepVoice: Int32) -> Int32 {
+               _ cutoffHz: Double, _ keepVoice: Int32, _ flattenSeconds: Double) -> Int32 {
     guard let clip = audio(input, channelCount, frames, sampleRate) else {
         Shared.output.set([])
         Shared.logBytes.set(Array("scrub: input rejected".utf8))
@@ -127,6 +128,7 @@ func camoScrub(_ input: UnsafePointer<Float>, _ channelCount: Int32, _ frames: I
     }
     if cutoffHz > 0 { pipeline.lowband.cutoff = cutoffHz }
     pipeline.lowband.keepVoice = keepVoice != 0
+    if flattenSeconds.isFinite && flattenSeconds > 0 { pipeline.lowband.flattenSeconds = min(flattenSeconds, 120) }
     let seed = UInt64(seedHi) << 32 | UInt64(seedLo)
     if seed != 0 {
         pipeline.lowband.seed = seed

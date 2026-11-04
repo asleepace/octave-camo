@@ -24,6 +24,8 @@ export const ScrubRequest = z.object({
   seed: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER),
   cutoff: z.number().min(50).max(2_000),
   keepVoice: z.boolean(),
+  /** Experimental: flatten slow loudness swells below the cutoff (s; 0 = off). */
+  flattenSeconds: z.number().min(0).max(120).optional(),
 }).refine(sameLength, sameLengthIssue);
 export type ScrubRequest = z.infer<typeof ScrubRequest>;
 

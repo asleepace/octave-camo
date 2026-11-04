@@ -9,6 +9,23 @@ are grouped by milestone, newest first, with the commits that made them.
 
 ## [Unreleased]
 
+### Experimental preset: flatten the low band's slow swells
+
+- **Why:** on a real 15-minute indoor recording, a blind search lining up the 30–150 Hz loudness with
+  every aircraft's ADS-B track found the right minute (3rd of 1,835 start times over two hours). The
+  regenerated low band follows each band's loudness smoothed over 0.75 s, so a passing plane's rise
+  and fall over tens of seconds goes straight through: simulated, the cloak only lowered the true
+  start to 8th, while flattening swells slower than 5 s put it at 1,613th (chance).
+- `LowBandRegeneration.flattenSeconds` (0 = off, the default, so Full and every snapshot are
+  unchanged): each band's loudness, in dB, minus a centered running median that many seconds wide,
+  plus the band's median. Quick sounds (thumps, doors) keep their contrast.
+- The page's **Experimental** preset is Full plus `flattenSeconds = 5`; the CLI takes `--flatten 5`;
+  the wasm `camo_scrub` takes it as a last argument.
+- Tests: a 12 dB swell over ~30 s survives plain regeneration (> 8 dB, the leak pinned) and is gone
+  when flattened (< 3.5 dB); thumps keep their contrast; the helper's edge cases; off by default. On
+  the real wasm build, a plane-like rumble swell's correlation with the output: Full high, Experimental low.
+- IDEAS.md starts a short "sparks" list: things noticed in real recordings and ideas worth trying.
+
 ### Clips up to 10 minutes
 
 - The page takes clips up to 10 minutes (was 5). Past 5 minutes the worker cloaks and checks the

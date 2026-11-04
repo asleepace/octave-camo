@@ -6,6 +6,7 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { Camo, type Clip, type Profiles } from "../src/engine/camo.ts";
 import { analyzeInParts, plan, scrubInParts } from "../src/engine/chunks.ts";
+import { spectrogram } from "../src/spectrum.ts";
 import { seededRandom } from "../src/random.ts";
 
 const BUILDS = [
@@ -242,4 +243,58 @@ describe.skipIf(!existsSync(BUILDS[0][1]))("a ten-minute clip, in parts (release
     console.log(`perf: 5 min at 48 kHz in one piece: cloak + check ${((performance.now() - t) / 1000).toFixed(1)} s, wasm memory ${(camo.memoryBytes / 2 ** 20).toFixed(0)} MiB`);
     expect(camo.memoryBytes).toBeLessThan(3 * 2 ** 30);
   }, 3_600_000);
+});
+
+/**
+ * The envelope attack (ACOUSTICS.md): a passing plane makes the low band swell and fade over tens of
+ * seconds, and an attacker lines that up with flight tracks. Two minutes of rumble whose level
+ * follows a pass 1 km away (+15 dB at its closest, 60 s in), over quiet broadband noise.
+ */
+function rumbleSwell(seconds: number, sr: number): { clip: Clip; levelDb: (t: number) => number } {
+  const levelDb = (t: number) => 15 * (1_000 / Math.hypot(1_000, 90 * (t - seconds / 2))) ** 2;
+  const n = seconds * sr, x = new Float32Array(n), rand = seededRandom(31), g = () => rand() + rand() + rand() - 1.5;
+  let low = 0;
+  const a = Math.exp((-2 * Math.PI * 120) / sr);
+  for (let i = 0; i < n; i++) {
+    low = a * low + (1 - a) * g();                                      // one-pole low-pass: rumble
+    x[i] = 0.05 * low * 10 ** (levelDb(i / sr) / 20) + 0.002 * g();
+  }
+  return { clip: { sampleRate: sr, channels: [x] }, levelDb };
+}
+
+/** What the attacker measures: 30–150 Hz level per 0.5 s, its correlation with the true swell (trend removed). */
+function swellCorrelation(x: Float32Array, sr: number, levelDb: (t: number) => number): number {
+  const s = spectrogram(x, sr), bands = Array.from(s.centers, (c, i) => [c, i] as const).filter(([c]) => c >= 30 && c <= 150).map(([, i]) => i);
+  const per = Math.round(0.5 / s.hop), measured: number[] = [], truth: number[] = [];
+  for (let f = 0; f + per <= s.frames; f += per) {
+    let sum = 0;
+    for (let k = f; k < f + per; k++) for (const b of bands) sum += s.db[k * s.centers.length + b]!;
+    measured.push(sum / (per * bands.length)); truth.push(levelDb((f + per / 2) * s.hop));
+  }
+  const detrend = (v: number[]) => {
+    const n = v.length, mx = (n - 1) / 2, my = v.reduce((p, q) => p + q, 0) / n;
+    let sxy = 0, sxx = 0;
+    v.forEach((y, i) => { sxy += (i - mx) * (y - my); sxx += (i - mx) ** 2; });
+    return v.map((y, i) => y - my - (sxy / sxx) * (i - mx));
+  };
+  const a = detrend(measured.slice(4, -4)), b = detrend(truth.slice(4, -4));
+  const dot = (p: number[], q: number[]) => p.reduce((acc, v, i) => acc + v * q[i]!, 0);
+  return dot(a, b) / Math.sqrt(dot(a, a) * dot(b, b));
+}
+
+describe.skipIf(!existsSync(BUILDS[0][1]))("the envelope attack (release build)", () => {
+  test("Full passes a plane's slow swell through the low band; Experimental (flattened) does not", async () => {
+    const sr = 16_000, { clip, levelDb } = rumbleSwell(120, sr), camo = await Camo.load(readFileSync(BUILDS[0][1]));
+    const steps = ["mono", "hum", "subtract", "scurve", "lowband"] as const;
+    const original = swellCorrelation(clip.channels[0]!, sr, levelDb);
+    const full = camo.scrub(clip, { steps, seed: 3 });
+    const flat = camo.scrub(clip, { steps, seed: 3, flattenSeconds: 5 });
+    const rFull = swellCorrelation(full.output, sr, levelDb), rFlat = swellCorrelation(flat.output, sr, levelDb);
+    console.log(`envelope: swell correlation original ${original.toFixed(2)}, Full ${rFull.toFixed(2)}, Experimental ${rFlat.toFixed(2)}`);
+    expect(original).toBeGreaterThan(0.9);
+    expect(rFull).toBeGreaterThan(0.6);              // the leak, pinned: if this fails, Full changed
+    expect(rFlat).toBeLessThan(0.3);
+    expect(flat.log.some((l) => l.includes("flattened swells slower than 5 s"))).toBe(true);
+    expect(full.log.some((l) => l.includes("flattened"))).toBe(false);
+  }, 600_000);
 });

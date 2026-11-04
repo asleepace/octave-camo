@@ -28,10 +28,14 @@ const CUTOFF = 300;
 const MIN_PICTURE_SECONDS = 5;
 
 const PRESETS = {
-  full: { label: "Full", steps: ["hum", "subtract", "scurve", "lowband"], note: "planes, trains and ships" },
-  light: { label: "Light", steps: ["hum", "lowband"], note: "faster, but partial: misses trains and close passes" },
-  hum: { label: "Hum only", steps: ["hum"], note: "partial: removes the recording-time clock only" },
-} as const satisfies Record<string, { label: string; steps: readonly Step[]; note: string }>;
+  full: { label: "Full", steps: ["hum", "subtract", "scurve", "lowband"], note: "planes, trains and ships", flattenSeconds: 0 },
+  experimental: { label: "Experimental", steps: ["hum", "subtract", "scurve", "lowband"], flattenSeconds: 5,
+                  note: "full, plus the slow rise and fall of a passing plane flattened below 300 Hz (being tested)" },
+  light: { label: "Light", steps: ["hum", "lowband"], note: "faster, but partial: misses trains and close passes", flattenSeconds: 0 },
+  hum: { label: "Hum only", steps: ["hum"], note: "partial: removes the recording-time clock only", flattenSeconds: 0 },
+} as const satisfies Record<string, { label: string; steps: readonly Step[]; note: string; flattenSeconds: number }>;
+/** Presets that cloak everything Full does (so the result isn't "partly" cloaked). */
+const COMPLETE: readonly Preset[] = ["full", "experimental"];
 type Preset = keyof typeof PRESETS;
 
 const STEP_TEXT: Partial<Record<Step, [string, string]>> = {
@@ -300,6 +304,7 @@ function cloak() {
     send({
       type: "scrub", token: fileToken, sampleRate: loaded.clip.sampleRate, channels: loaded.clip.channels,
       steps: ["mono", ...PRESETS[state.preset].steps], seed: randomSeed(), cutoff: CUTOFF, keepVoice: true,
+      flattenSeconds: PRESETS[state.preset].flattenSeconds,
     });
   } catch (error) {
     return fail(`couldn't start the cloak (${(error as Error).message})`);
@@ -393,7 +398,8 @@ function renderPrimary() {
   else if (!s.loaded) text = s.busy ? "reading the file…" : "drop a video above · nothing leaves your browser";
   else if (silent()) text = `no sound to cloak · saving removes the metadata${stripsEmbedded() ? " and embedded data" : ""}`;
   else if (fresh() && s.after) {
-    const word = s.preset === "full" ? "cloaked" : `partly cloaked (${PRESETS[s.preset].label})`;
+    const word = s.preset === "full" ? "cloaked" : COMPLETE.includes(s.preset) ? `cloaked (${PRESETS[s.preset].label.toLowerCase()})`
+      : `partly cloaked (${PRESETS[s.preset].label})`;
     text = `<span class="text-accent">${word}</span> · ${s.after.tones} trackable tone${s.after.tones === 1 ? "" : "s"} left (was ${s.before?.tones ?? "?"}) · ${(s.ms / 1000).toFixed(1)} s · press x to compare`;
   } else if (s.outputSamples) text = `preset changed · cloak again to apply ${PRESETS[s.preset].label.toLowerCase()}`;
   else if (s.before) {
@@ -503,7 +509,10 @@ function renderBands() {
 
 function renderSteps() {
   const on = new Set<Step>(PRESETS[state.preset].steps);
-  $("steps-explained").innerHTML = (Object.entries(STEP_TEXT) as [Step, [string, string]][]).map(([step, [title, body]], i) =>
+  const flatten = PRESETS[state.preset].flattenSeconds;
+  const extra: Partial<Record<Step, string>> = flatten > 0
+    ? { lowband: ` ${PRESETS[state.preset].label}: its loudness also loses every swell slower than ${flatten} s, so a plane's rise and fall can't be lined up with flight tracks; thumps and doors stay.` } : {};
+  $("steps-explained").innerHTML = (Object.entries(STEP_TEXT) as [Step, [string, string]][]).map(([step, [title, body0]], i) => [step, [title, body0 + (extra[step] ?? "")], i] as const).map(([step, [title, body], i]) =>
     `<li class="${on.has(step) ? "" : "text-neutral-500"}"><span class="${on.has(step) ? "text-neutral-200" : "text-neutral-400"}">${i + 1}. ${title}.</span> ${body}${on.has(step) ? "" : ` <span class="text-neutral-500">(off in ${PRESETS[state.preset].label})</span>`}</li>`,
   ).join("") + `<li class="${state.loaded && !state.loaded.video ? "text-neutral-500" : ""}"><span class="${state.loaded && !state.loaded.video ? "text-neutral-400" : "text-neutral-200"}">${Object.keys(STEP_TEXT).length + 1}. Remove light flicker (picture).</span> When the scan finds bands from flickering lights, each row is divided by its estimated band, which takes the grid clock out of the picture. On when bands are found (untick it to keep the picture untouched), since it re-encodes the video.</li>`;
 }

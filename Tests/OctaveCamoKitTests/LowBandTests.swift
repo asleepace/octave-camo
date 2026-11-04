@@ -181,6 +181,81 @@ final class LowBandTests: XCTestCase {
         XCTAssertNotEqual(a, c)
     }
 
+    /// Level of [lo, hi] Hz in consecutive blocks, dB (one FFT per block).
+    private func blockLevels(_ x: [Double], _ lo: Double, _ hi: Double, seconds: Double) -> [Double] {
+        let n = Int(seconds * Double(sr))
+        return stride(from: 0, to: x.count - n + 1, by: n).map { 20 * log10(bandRMS(Array(x[$0..<($0 + n)]), lo, hi) + 1e-12) }
+    }
+
+    /// Noise whose level rises 12 dB and falls again over about 30 s, like a plane passing.
+    private func swell(seconds: Int) -> [Double] {
+        let x = noise(sr * seconds, rms: 0.02, seed: 8)
+        return x.indices.map { i in
+            let t = Double(i) / Double(sr) - Double(seconds) / 2
+            return x[i] * pow(10, 12 * exp(-t * t / (2 * 8 * 8)) / 20)
+        }
+    }
+
+    private func regenerate(_ x: [Double], flatten: Double, seed: UInt64 = 2) -> [Double] {
+        var stage = LowBandRegeneration()
+        stage.keepVoice = false
+        stage.jitterDB = 0
+        stage.seed = seed
+        stage.flattenSeconds = flatten
+        return stage.process(x, sampleRate: sr).output
+    }
+
+    /// The envelope attack's clue: a slow swell below the cutoff. Plain regeneration passes it on (it
+    /// follows each band's loudness); flattening takes it out, and keeps the band's typical level.
+    func testFlatteningRemovesASlowSwell() {
+        let x = swell(seconds: 60)
+        let swing = { (y: [Double]) -> Double in let l = self.blockLevels(y, 30, 220, seconds: 2); return l.max()! - l.min()! }
+        XCTAssertGreaterThan(swing(x), 10)
+        XCTAssertGreaterThan(swing(regenerate(x, flatten: 0)), 8, "plain regeneration should still show the swell (the leak this option closes)")
+        let flat = regenerate(x, flatten: 5)
+        XCTAssertLessThan(swing(flat), 3.5, "flattened: the swell should be gone")
+        // The typical level is kept (the median block, not the peak).
+        let median = { (l: [Double]) in l.sorted()[l.count / 2] }
+        XCTAssertEqual(median(blockLevels(flat, 30, 220, seconds: 2)), median(blockLevels(x, 30, 220, seconds: 2)), accuracy: 2)
+        // Above the crossover nothing changes.
+        XCTAssertLessThan(abs(db(bandRMS(flat, 500, 4000), bandRMS(x, 500, 4000))), 0.05)
+    }
+
+    /// Quick sounds stay: short low thumps stand out from the gaps as much as without flattening.
+    func testFlatteningKeepsShortThumps() {
+        var x = noise(sr * 30, rms: 0.01, seed: 9)
+        let thump = noise(Int(0.15 * Double(sr)), rms: 0.08, seed: 10)
+        for start in stride(from: sr, to: x.count - thump.count, by: 2 * sr) {
+            for i in thump.indices { x[start + i] += thump[i] * sin(Double.pi * Double(i) / Double(thump.count)) }
+        }
+        // Level in 0.5 s blocks: blocks holding a thump (every 4th, from 1 s) against the others.
+        let contrast = { (y: [Double]) -> Double in
+            let l = self.blockLevels(y, 30, 220, seconds: 0.5)
+            let on = l.indices.filter { $0 % 4 == 2 }.map { l[$0] }, off = l.indices.filter { $0 % 4 == 0 }.map { l[$0] }
+            return on.reduce(0, +) / Double(on.count) - off.reduce(0, +) / Double(off.count)
+        }
+        let plain = contrast(regenerate(x, flatten: 0)), flat = contrast(regenerate(x, flatten: 5))
+        XCTAssertGreaterThan(plain, 3, "the thumps should stand out after plain regeneration")
+        XCTAssertEqual(flat, plain, accuracy: 1.5, "flattening should keep the thumps (plain \(plain) dB, flattened \(flat) dB)")
+    }
+
+    func testFlattenHelperEdgeCases() {
+        XCTAssertEqual(LowBandRegeneration.flatten([], window: 9), [])
+        XCTAssertEqual(LowBandRegeneration.flatten([1, 2, 3], window: 1), [1, 2, 3])
+        XCTAssertEqual(LowBandRegeneration.flatten([0, 0, 0, 0], window: 3), [0, 0, 0, 0])
+        // A constant stays constant; a step becomes flat away from the edge.
+        XCTAssertEqual(LowBandRegeneration.flatten([Double](repeating: 4, count: 20), window: 5), [Double](repeating: 4, count: 20))
+        let step = LowBandRegeneration.flatten([Double](repeating: 1, count: 30) + [Double](repeating: 100, count: 30), window: 9)
+        XCTAssertEqual(step[5], step[55], accuracy: 1e-9)
+        XCTAssertTrue(step.allSatisfy(\.isFinite))
+    }
+
+    /// Off by default: the default pipeline (and so every behaviour snapshot) is untouched.
+    func testFlatteningIsOffByDefault() {
+        XCTAssertEqual(LowBandRegeneration().flattenSeconds, 0)
+        XCTAssertEqual(ScrubPipeline().lowband.flattenSeconds, 0)
+    }
+
     func testDefaultPipelineIncludesLowband() {
         XCTAssertEqual(ScrubPipeline.defaultSteps, [.mono, .hum, .subtract, .scurve, .lowband])
         var pipeline = ScrubPipeline()

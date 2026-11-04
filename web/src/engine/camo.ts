@@ -60,6 +60,8 @@ export type ScrubOptions = {
   cutoff?: number;
   /** Keep tracked voice harmonics below the cutoff (default true). */
   keepVoice?: boolean;
+  /** Flatten loudness swells below the cutoff slower than this, s (omitted or 0 = off). */
+  flattenSeconds?: number;
 };
 
 type Exports = {
@@ -69,7 +71,7 @@ type Exports = {
   camo_free(pointer: number): void;
   camo_steps(): number;
   camo_scrub(pointer: number, channels: number, frames: number, sampleRate: number,
-             steps: number, seedLo: number, seedHi: number, cutoffHz: number, keepVoice: number): number;
+             steps: number, seedLo: number, seedHi: number, cutoffHz: number, keepVoice: number, flattenSeconds: number): number;
   camo_analyze(pointer: number, channels: number, frames: number, sampleRate: number): number;
   camo_flicker(pointer: number, frames: number, strips: number, rows: number, clean: number): number;
   camo_flicker_gains(): number;
@@ -123,7 +125,7 @@ export class Camo {
     const seed = options.seed ?? 0;
     return this.withInput(clip, (pointer, frames) => {
       const n = this.x.camo_scrub(pointer, clip.channels.length, frames, clip.sampleRate, mask,
-        seed >>> 0, Math.floor(seed / 2 ** 32) >>> 0, options.cutoff ?? 0, options.keepVoice === false ? 0 : 1);
+        seed >>> 0, Math.floor(seed / 2 ** 32) >>> 0, options.cutoff ?? 0, options.keepVoice === false ? 0 : 1, options.flattenSeconds ?? 0);
       if (n !== frames) throw new Error("the scrubber rejected this audio");
       const output = new Float32Array(this.x.memory.buffer, this.x.camo_output(), n).slice();
       const bytes = new Uint8Array(this.x.memory.buffer, this.x.camo_log(), this.x.camo_log_length());

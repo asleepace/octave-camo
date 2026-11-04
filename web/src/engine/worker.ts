@@ -59,7 +59,7 @@ async function loadEngine(): Promise<Engine> {
   return {
     kind: "wasm",
     analyze: (clip) => camo.analyze(clip),
-    scrub: (clip, r) => camo.scrub(clip, { steps: r.steps, seed: r.seed, cutoff: r.cutoff, keepVoice: r.keepVoice }),
+    scrub: (clip, r) => camo.scrub(clip, { steps: r.steps, seed: r.seed, cutoff: r.cutoff, keepVoice: r.keepVoice, flattenSeconds: r.flattenSeconds }),
     flicker: (profiles, clean) => camo.flicker(profiles, clean),
   };
 }

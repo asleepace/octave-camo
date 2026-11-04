@@ -26,6 +26,7 @@ overall sound.
 | Doppler curves of planes, trains, ships | Your position, matched against public tracks (ADS-B, transit feeds, AIS) | Cancels long tones, searches blind for flyby-shaped curves and cancels them, regenerates the low band as information-free noise |
 | Mains hum | Recording time and grid region (ENF) | Notches both 50 and 60 Hz harmonic families, right to the clip's edges, and refills the notches, so neither the hum nor the notch pattern survives |
 | Light flicker in the picture | The same grid timestamp, as rolling-shutter bands | Scans every frame; if found, divides the bands out (optional: re-encodes the picture) |
+| Loudness rising and falling as a plane passes (below 300 Hz) | The recording's time, by lining it up with flight tracks; it can work even indoors, from a rumble no one in the room hears | Regenerated low band follows loudness smoothed over 0.75 s, so slow swells survive in **Full**. The **Experimental** preset flattens every swell slower than 5 s (thumps and doors stay) |
 | Multiple mics, spatial-audio tracks | Direction of sounds | Mono output; extra audio tracks dropped |
 | Metadata | GPS, device, timestamps, directly | No container metadata is copied: no tags, no creation time, timestamps rebased to zero, a random file name. Data embedded in H.264/HEVC packets (SEI: encoder settings, camcorder date and GPS) is removed too |
 
