@@ -9,6 +9,27 @@ are grouped by milestone, newest first, with the commits that made them.
 
 ## [Unreleased]
 
+### Step 2 in Experimental: fill in whatever the check finds
+
+- **Why:** on a real indoor recording, a climbing jet's fan tone swept from 1.75 to 1.0 kHz for
+  25 s, clear enough that a flyby fit from the sound alone put its closest approach in the same
+  second as the ADS-B track. Full leaves it untouched: its tone subtraction stops at 1 kHz and its
+  flyby search at ~600 Hz base frequency. Earlier, an outdoor clip kept faint car tones and a 5 kHz
+  whine the same way. The check (up to 8 kHz) found them all; nothing removed them.
+- New stage `lines` (`LineFill`, last in the chain): asks the check for every line it reports, with
+  its frequency path (`FlybyAnalyzer.lines(in:)`, which `analyze` now classifies, unchanged), and
+  replaces a strip along each path with noise at the median level of the bins beside it. The strip
+  covers the window's main lobe, a tracking margin and the sweep within a frame; it fades in and
+  out at the ends. Then the check looks again (2 passes). It works on one stretch and one band at a
+  time (`BandSTFT`), so memory follows the line, not the clip.
+- In the page's **Experimental** preset (with the flattened low band); `--steps …,lines` on the CLI.
+  Full is unchanged. It removes held musical notes as readily as engines: that's the music policy
+  still to decide before it can join Full.
+- Tests: a steady 1.2 kHz tone filled at 16 and 48 kHz with no hole and nothing changed beside it; a
+  modelled jet fan tone (1.23 kHz, 141 m/s, 2 km, 1.7 → 0.9 kHz received) left by Full and removed
+  with `lines`; nothing changes when the check finds nothing; speech kept; seeded; the band STFT
+  edits only its band. `testAToneAboveOneKilohertzIsRemoved` is on (with `lines`).
+
 ### Experimental preset: flatten the low band's slow swells
 
 - **Why:** on a real 15-minute indoor recording, a blind search lining up the 30–150 Hz loudness with

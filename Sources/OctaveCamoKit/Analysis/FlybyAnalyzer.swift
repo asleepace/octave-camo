@@ -104,16 +104,31 @@ public struct FlybyAnalyzer {
     }
 
     public func analyze(_ audio: Audio) -> Analysis {
-        let mono = audio.mono
-        var reports = tracker.tracks(in: mono, sampleRate: audio.sampleRate).map(classify)
-        if let integrator {
-            // Weak steady lines the frame tracker can't see. Where both found the same line, the
-            // tracker's version (with its full frequency path) is kept.
-            for line in integrator.tracks(in: mono, sampleRate: audio.sampleRate) where !reports.contains(where: { Self.sameLine($0, line) }) {
-                reports.append(classifyLine(line))
-            }
-        }
+        let found = lines(in: audio)
+        let reports = found.tracked.map(classify) + found.integrated.map(classifyLine)
         return Analysis(tracks: reports.sorted { $0.duration > $1.duration })
+    }
+
+    /// Every line the check reports, with its frequency path: the frame tracker's tracks, then the
+    /// integrator's weak steady lines that no earlier line already covers (where both found the
+    /// same line, the tracker's version is kept). `analyze` classifies exactly these; the
+    /// `lines` scrub stage fills them in.
+    public func lines(in audio: Audio) -> (tracked: [Track], integrated: [Track]) {
+        let mono = audio.mono
+        let tracked = tracker.tracks(in: mono, sampleRate: audio.sampleRate)
+        guard let integrator else { return (tracked, []) }
+        var boxes = tracked.map(Self.box), integrated: [Track] = []
+        for line in integrator.tracks(in: mono, sampleRate: audio.sampleRate) where !boxes.contains(where: { Self.sameLine($0, line) }) {
+            integrated.append(line)
+            boxes.append(Self.box(line))
+        }
+        return (tracked, integrated)
+    }
+
+    /// A track's time and frequency extent (the fields `sameLine` compares).
+    static func box(_ track: Track) -> TrackReport {
+        TrackReport(kind: .steady, start: track.times.first ?? 0, meanFrequency: track.meanFrequency,
+                    minFrequency: track.minFrequency, maxFrequency: track.maxFrequency, duration: track.duration, fit: nil)
     }
 
     /// A line from the integrator: hum, or a steady tone. Its drift is slow by construction, so a

@@ -11,6 +11,8 @@ public enum ScrubStep: String, CaseIterable, Codable {
     case lowband
     /// Per-band random pitch drift on whatever is left.
     case wobble
+    /// Fill every line the check still finds, at any frequency it looks at, with noise.
+    case lines
 }
 
 /// A mono signal-processing step in the pipeline.
@@ -27,7 +29,7 @@ public struct ScrubResult {
     public let log: [String]
 }
 
-/// mono → hum → subtract → scurve → lowband (→ wobble). Each stage is configurable and can be
+/// mono → hum → subtract → scurve → lowband (→ wobble → lines). Each stage is configurable and can be
 /// switched off. The default matches the harness's recommended chain `hum+subtract+scurve+lowband`
 /// (scurve catches faint tones above the lowband cutoff, such as train wheels); the pitch wobble
 /// is opt-in, since benchmarks showed it adds little once `lowband` runs.
@@ -42,6 +44,7 @@ public struct ScrubPipeline {
     public var scurve = SCurveCancel()
     public var lowband = LowBandRegeneration()
     public var wobble = BandWobble()
+    public var lines = LineFill()
     /// Output is scaled down if it would exceed this peak.
     public var peakCeiling = 0.99
 
@@ -72,7 +75,7 @@ public struct ScrubPipeline {
             if input.channels.count > 1 { log.append("mono: off, kept channel 0 of \(input.channels.count)") }
         }
 
-        let stages: [any ScrubStage] = [hum, subtraction, scurve, lowband, wobble]
+        let stages: [any ScrubStage] = [hum, subtraction, scurve, lowband, wobble, lines]
         for stage in stages where steps.contains(stage.step) {
             let result = stage.process(y, sampleRate: input.sampleRate)
             y = result.output

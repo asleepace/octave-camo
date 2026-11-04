@@ -5,7 +5,7 @@
 import { ConsoleStdout, File, OpenFile, WASI } from "@bjorn3/browser_wasi_shim";
 
 /** Pipeline steps, in the order of Swift's `ScrubStep.allCases` (bit i of the steps mask). */
-export const STEPS = ["mono", "hum", "subtract", "scurve", "lowband", "wobble"] as const;
+export const STEPS = ["mono", "hum", "subtract", "scurve", "lowband", "wobble", "lines"] as const;
 export type Step = (typeof STEPS)[number];
 
 export type Samples = Float32Array<ArrayBuffer>;

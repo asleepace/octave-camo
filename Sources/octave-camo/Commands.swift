@@ -23,7 +23,7 @@ USAGE
   octave-camo synth   <out.wav> [--hard] [--f0 120] [--speed 75] [--distance 1500]
                         [--t0 30] [--duration 60] [--seed 1]
   octave-camo analyze <in.wav>  [--threshold 10] [--json]
-  octave-camo scrub   <in.wav> <out.wav> [--steps mono,hum,subtract,scurve,lowband[,wobble]]
+  octave-camo scrub   <in.wav> <out.wav> [--steps mono,hum,subtract,scurve,lowband[,wobble][,lines]]
                         [--mains 50,60] [--passes 3] [--cutoff 300] [--lowband-mode regenerate|highpass]
                         [--flatten 5] (experimental: flatten low-band swells slower than N s)
                         [--no-keep-voice] [--depth 0.015] [--wobble-top 600] [--seed N]
@@ -104,6 +104,7 @@ func scrub(_ args: Arguments) throws {
     pipeline.wobble.seed = try args.value("seed", default: pipeline.wobble.seed)
     pipeline.lowband.seed = pipeline.wobble.seed
     pipeline.hum.seed = pipeline.wobble.seed
+    pipeline.lines.seed = pipeline.wobble.seed
     try require(pipeline.subtraction.passes >= 0, "--passes must be 0 or more")
     try require(pipeline.wobble.depth >= 0 && pipeline.wobble.depth <= 0.1, "--depth must be between 0 and 0.1")
     try require(pipeline.lowband.cutoff > 20 && pipeline.lowband.cutoff.isFinite, "--cutoff must be above 20 Hz")

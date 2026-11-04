@@ -29,8 +29,8 @@ const MIN_PICTURE_SECONDS = 5;
 
 const PRESETS = {
   full: { label: "Full", steps: ["hum", "subtract", "scurve", "lowband"], note: "planes, trains and ships", flattenSeconds: 0 },
-  experimental: { label: "Experimental", steps: ["hum", "subtract", "scurve", "lowband"], flattenSeconds: 5,
-                  note: "full, plus the slow rise and fall of a passing plane flattened below 300 Hz (being tested)" },
+  experimental: { label: "Experimental", steps: ["hum", "subtract", "scurve", "lowband", "lines"], flattenSeconds: 5,
+                  note: "full, plus every tone the check finds filled in and slow low-band swells flattened (being tested)" },
   light: { label: "Light", steps: ["hum", "lowband"], note: "faster, but partial: misses trains and close passes", flattenSeconds: 0 },
   hum: { label: "Hum only", steps: ["hum"], note: "partial: removes the recording-time clock only", flattenSeconds: 0 },
 } as const satisfies Record<string, { label: string; steps: readonly Step[]; note: string; flattenSeconds: number }>;
@@ -40,9 +40,10 @@ type Preset = keyof typeof PRESETS;
 
 const STEP_TEXT: Partial<Record<Step, [string, string]>> = {
   hum: ["Notch the mains hum", "Narrow filters at 50/60 Hz and their harmonics remove the grid's clock."],
-  subtract: ["Cancel long tones", "Follows each clear tone below 1 kHz and subtracts a matched copy, pass after pass. Fainter tones, and any from 1 to 8 kHz, are counted and outlined on the spectrogram but not removed yet."],
+  subtract: ["Cancel long tones", "Follows each clear tone below 1 kHz and subtracts a matched copy, pass after pass. Fainter tones, and any from 1 to 8 kHz, are counted and outlined on the spectrogram; Experimental fills them in (step 5)."],
   scurve: ["Hunt for flyby curves", "Tries every physically possible pass (speed, distance, timing), the way an attacker would, and cancels the ones that fit."],
   lowband: ["Regenerate the low end", `Below ${CUTOFF} Hz, where distant engines live, the sound is rebuilt as noise matching each hearing band's loudness. Voices are tracked and kept.`],
+  lines: ["Fill in what the check still finds", "Every long tone the attacker model still finds, at any frequency up to 8 kHz (a jet's fan tone, a faint car tone, an electrical whine), is replaced along its path by a narrow strip of noise at the level beside it, then the check looks again. It removes held musical notes too."],
 };
 
 const state = {

@@ -183,19 +183,19 @@ final class ClueInvariantTests: XCTestCase {
         }
     }
 
-    /// Known gap: the cloak's tone subtraction still stops at 1 kHz, so a tone up there is counted
-    /// (and outlined on the page) but not removed. Enable with the widened subtraction.
-    func testAToneAboveOneKilohertzIsRemoved() throws {
-        try XCTSkipIf(true, "known gap: tone subtraction covers 40 Hz–1 kHz; enable together with the widened subtraction")
+    /// Full's tone subtraction stops at 1 kHz, so a tone up there is counted (and outlined on the
+    /// page) but not removed. The `lines` stage (in the page's Experimental preset) removes it.
+    func testAToneAboveOneKilohertzIsRemoved() {
         for name in ["tone-1200", "tone-4500"] {
-            XCTAssertEqual(SceneMetrics.counts(cloak(Scenes.make(name, rate: 16_000)))[0], 0, "\(name): not removed")
+            let out = seededPipeline(ScrubPipeline.defaultSteps.union([.lines]), seed: 9).run(Scenes.make(name, rate: 16_000))
+            XCTAssertEqual(SceneMetrics.counts(out.audio)[0], 0, "\(name): not removed; \(out.log.last ?? "")")
         }
     }
 
-    /// The gap above, pinned: if this starts failing, the cloak reaches higher and the skip should go.
+    /// The gap above, pinned for Full: if this starts failing, Full itself reaches higher (update the docs).
     func testTheKnownGapIsStillThere() {
         let after = SceneMetrics.counts(cloak(Scenes.make("tone-1200", rate: 16_000)))
-        XCTAssertGreaterThan(after[0], 0, "the 1.2 kHz tone is now removed: enable testAToneAboveOneKilohertzIsRemoved")
+        XCTAssertGreaterThan(after[0], 0, "Full now removes the 1.2 kHz tone: update the docs (README, PLAN)")
         XCTAssertEqual(ScrubPipeline().subtraction.tracker.config.coverage.upperBound, 1_000)
     }
 }

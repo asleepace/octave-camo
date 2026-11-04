@@ -9,6 +9,7 @@ func seededPipeline(_ steps: Set<ScrubStep> = ScrubPipeline.defaultSteps, seed: 
     p.hum.seed = seed
     p.lowband.seed = seed
     p.wobble.seed = seed
+    p.lines.seed = seed
     return p
 }
 

@@ -37,7 +37,9 @@ judged by it. Removing what the check can't see would only make the page look be
 - **Experimental preset** (flatten the low band's slow swells): in. Next, on real clips: does the
   blind start-time search fail on Experimental output, and does it sound the same? If both hold,
   make it part of Full.
-- Then step 2 below, which may also live in Experimental first (music policy).
+- **Step 2 (fill what the check finds) is in Experimental too.** Before either joins Full: real
+  clips through Experimental (the blind search; the check's count on the decoded file; a listen),
+  and the music policy (held notes are removed today).
 
 ## Later: paths, families and risk classes (slice 3, ACOUSTICS.md §4.4–6)
 
