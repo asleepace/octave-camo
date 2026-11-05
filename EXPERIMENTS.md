@@ -100,6 +100,67 @@ outdoors); the two fainter passes in other sessions (an arrival 3.6 km away, a d
 away) weren't found in this band, which may be right (no audible tone) or not; harmonics (E5)
 could add more; the cost in Swift should be small (a few bins of state per frame).
 
+## E2, round two — broadband awareness, sensitivity, and the shape test (done)
+
+Scripts: scratch `scenes.py` (synthetic scenes at 48 kHz over pink-ish room noise), `e2d.py`,
+`e2e_shape.py`. Null now calibrated on that room noise (z scales differ from round one).
+
+**A broadband-aware statistic** (SOAP's "line-aware" idea, turned around): subtract each frame's
+median excess across the band before the search, so a bang or a door, which raises every bin of
+its frame, can't feed a path, while a tone, which raises a few, still does. On the recordings:
+
+| recording | plain (E2c) max z | broadband-aware max z |
+| --- | ---: | ---: |
+| quiet rooms (four sessions) | ≤ 1.5 | ≤ 2.5 |
+| TV + construction | 6.0 | 9.5 |
+| **bathroom plane pass** | 11.0 | **19.4** |
+
+The plane's margin over the busiest room doubles (about 5 → 10).
+
+**Sensitivity, blind against known path** (modelled fan tone, 1.23 kHz, 141 m/s, 2 km, in room
+noise; windows over its 1.0–1.7 kHz sweep):
+
+| tone, dB per Hz | blind max z | known-path z | blind path error |
+| ---: | ---: | ---: | ---: |
+| 10 | 0.2 | 6.2 | (wrong path) |
+| 12 | 1.7 | 9.3 | 4 Hz |
+| 14 | 6.6 | 13.8 | 3 Hz |
+| 16 | 13.4 | 19.6 | 2 Hz |
+| 20 | 31.0 | 33.4 | 2 Hz |
+
+Blind search finds it from ~14–16 dB/Hz; knowing the path, from ~10 dB/Hz: the look-elsewhere
+price is about 4 dB. The current check needs ~30 dB and still loses the part above 1.15 kHz: a
+gain of about 15 dB.
+
+**But music looks like planes to a path search.** Synthetic singing (held notes, vibrato,
+portamento) scored z 36.7, a siren 21.0, a melody 20.2, speech 13.6, against 31.0 for the fan tone
+at 20 dB. They're smooth and they fall too. Their paths give them away, though: 1,477 → 604 Hz in
+10 s (singing), 1,869 → 604 (siren), 1,799 → 873 (music), while the real pass fell 1,688 → 1,324.
+
+**The shape test** (the attacker's own move): fit a straight flyby, f(t) = f0 / (1 + v·x/(c·r)), to
+each window's best path, multi-start; it passes when the rms is under 0.5 % of f0 (the check's
+existing bar) with 20–300 m/s and at least 50 m.
+
+| scene | max z | windows passing |
+| --- | ---: | ---: |
+| singing, music, siren, speech, descending scales | 8.5–36.7 | **0** |
+| room noise, construction bangs | ~5 | 0 |
+| all five recordings without a plane pass (TV + construction too) | ≤ 9.5 | 0 |
+| modelled fan tone, 20 dB/Hz | 31.0 | 13 / 20 (fit: 142 m/s, 1.84 km; truth 141, 2.0) |
+| modelled fan tone, 14 dB/Hz | 6.6 | 3 / 20 |
+| **bathroom plane pass** | **19.4** | **4** (the pass, 58–68 s) |
+
+Perfect separation on everything we have. Caveat: on the real pass the fitted geometry is off
+(85 m/s, 566 m against ADS-B's 141 m/s, 3.1 km): ten seconds of a climbing plane's falling half
+can't pin it. Fine for deciding *that* it's a flyby, not for saying where it was; longer spans or
+joining windows would help, and a turning or climbing aircraft may fit worse than this one did.
+
+**So the detector design is:** 0.17 s windows → each bin over its running median (±7.5 s) → minus
+each frame's broadband median → clipped → Viterbi over smooth falling paths (slope state, penalty
+per slope change, ≥ 2 % fall per 10 s) → flyby shape test. Open: more backgrounds (real music and
+singing, traffic, outdoors, wind), the band to 8 kHz, harmonics, joining windows into whole passes,
+and the cost in Swift.
+
 ## The zoom-out: the real attacker isn't blind
 
 E1 *is* the attacker who has ADS-B: given the plane's track, this recording shows it at z 9.5. Our
@@ -110,8 +171,8 @@ logs the real tracks with every session.
 
 ## Next experiments
 
-1. **E2, continued:** false alarms on music, singing, close speech, traffic and outdoor clips; the
-   look-elsewhere price (blind z against the known-path z on the same pass); the band up to 8 kHz.
+1. **E2, continued:** real music, singing, traffic, wind and outdoor clips against the shape test;
+   the band up to 8 kHz; joining windows into whole passes (and a better geometry fit).
 2. **E3 — coherence time.** How long a real tone stays in phase (indoors vs outdoors, near vs
    far): why dechirping failed indoors, and how much long windows can ever buy.
 3. **E4 — the known-path attacker as the metric.** For every recorder session with ADS-B: score
@@ -126,6 +187,6 @@ logs the real tracks with every session.
 ## Where this is heading
 
 Probably two detectors in the check: the existing long-window integrator for steady lines, and a
-short-window path search for anything that moves (E2c's: running-median whitening, smooth falling
-paths). Removal (`lines`) follows whatever either finds.
+short-window path search for anything that moves (E2, round two: running-median whitening, a
+broadband-aware statistic, smooth falling paths, and a flyby shape test that keeps music out). Removal (`lines`) follows whatever either finds.
 Scored, in the end, against the known-path attacker.

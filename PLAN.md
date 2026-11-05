@@ -50,8 +50,10 @@ sweep that fast over ~36 Hz, below the high band's 15 dB peak threshold. So the 
 it. Being worked out in [EXPERIMENTS.md](EXPERIMENTS.md): on the real recording, per-frame detection
 can't see it at any window (6–8 dB per frame), dechirping barely helps (the real tone isn't
 coherent for long), and summing energy along its path with 0.13–0.26 s windows shows it at z 9.5.
-So: a short-window path search (Viterbi, physics-limited slopes) for moving tones, next to the
-integrator for steady ones. Done when the modelled fan tone is followed over its whole sweep at
+So: a short-window path search for moving tones, next to the integrator for steady ones. Round two
+settled its shape: running-median whitening, a broadband-aware statistic, smooth falling paths, and
+a flyby shape test, which rejected every music, singing, siren and speech window and every
+plane-free recording while keeping the real pass (z 19.4) and the modelled one from ~14 dB/Hz. Done when the modelled fan tone is followed over its whole sweep at
 20 dB, the real one is found blind, and recordings without planes stay quiet. And score the cloak
 against an attacker who knows the flight paths (E4), not only against the blind check.
 
