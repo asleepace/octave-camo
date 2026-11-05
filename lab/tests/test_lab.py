@@ -100,6 +100,40 @@ class Geometry(unittest.TestCase):
         np.testing.assert_allclose(locate.combine(z), [1.0, 0.0, 1.0])
 
 
+class ShapeTest(unittest.TestCase):
+    """The flyby fit, on curves made independently of it (lab.synth's own propagation)."""
+
+    def test_recovers_a_propagated_pass(self):
+        from lab import synth
+        truth, _ = synth.fan_path()                   # 1,234 Hz, 141 m/s, 2 km
+        dt = 0.0427
+        fit = detect.shape_test(truth(22 + np.arange(234) * dt), 10.0, dt=dt)
+        self.assertTrue(fit["ok"])
+        self.assertAlmostEqual(fit["f0"], 1234, delta=2)
+        self.assertAlmostEqual(fit["speed"], 141, delta=2)
+        self.assertAlmostEqual(fit["distance"], 2000, delta=40)
+
+    def test_rejects_a_scale_and_a_siren(self):
+        dt, t = 0.0427, np.arange(234) * 0.0427
+        scale = 1800 * 2 ** (-np.floor(t / 0.5) / 24)          # a step every half second
+        siren = 1200 + 400 * np.sin(2 * np.pi * t / 4)
+        self.assertFalse(detect.shape_test(scale, 10.0, dt=dt)["ok"])
+        self.assertFalse(detect.shape_test(siren, 10.0, dt=dt)["ok"])
+
+
+class BlindSearch(unittest.TestCase):
+    def test_follows_a_faint_pass(self):
+        from lab import synth
+        x, truth = synth.fan(20)
+        p = detect.Params()
+        f, t, L = detect.whiten(x, synth.SR, p)
+        wins = [w for w in detect.search(f, t, L - L.mean(), p) if np.isfinite(w.score)]
+        best = max(wins, key=lambda w: w.score)
+        tt = best.start + np.arange(len(best.path)) * (t[1] - t[0])
+        self.assertLess(np.median(np.abs(best.path - truth(tt)) / truth(tt)), 0.01)
+        self.assertTrue(detect.shape_test(best.path, p.win_s, dt=float(t[1] - t[0]))["ok"])
+
+
 class KnownPath(unittest.TestCase):
     def test_finds_a_faint_tone_along_its_curve(self):
         z, rest, off = known(passing_tone())
@@ -122,6 +156,13 @@ class Plumbing(unittest.TestCase):
         x = tone_in_noise(seconds=31, seed=4)
         y = np.concatenate([np.zeros(1_234), x])[: len(x)]
         np.testing.assert_allclose(common.align(x, y, SR)[5_000:-5_000], x[5_000:-5_000])
+
+    def test_pressure_altitude(self):
+        self.assertAlmostEqual(corpus.pressure_altitude_m(101.325), 0, delta=0.01)
+        self.assertAlmostEqual(corpus.pressure_altitude_m(89.876), 1_000, delta=2)    # ICAO table
+        meta = {"pressure_at_start": {"pressure_kpa": 101.325}, "location_at_start": {"alt_m": 50}}
+        self.assertEqual(corpus.vertical_reference(meta)[1], "pressure")
+        self.assertEqual(corpus.vertical_reference({"location_at_start": {"alt_m": 50}}), (50, "gps"))
 
     def test_only_positions_pass_the_plausibility_check(self):
         self.assertTrue(corpus._plausible(37.0, -122.0, 3_000))

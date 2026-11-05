@@ -30,6 +30,11 @@ are grouped by milestone, newest first, with the commits that made them.
 - **Docs moved to `docs/`** (ACOUSTICS, EXPERIMENTS, IDEAS, PLAN, RESEARCH, SOURCES, with an
   index); README, CHANGELOG, CONTRIBUTING, SECURITY and THREAT_MODEL stay at the root. The README's
   layout, check and limits are up to date; PLAN is reorganized into done, now and next.
+- **Tooling review:** the check's flyby fit now needs a distance under 30 km (a looped footstep
+  fit a "pass" 3·10¹⁷ m away); the lab's flyby fit includes the sound's travel time (its speeds
+  and distances were biased); the corpus measures heights against ADS-B with the phone's pressure
+  (both barometric) instead of GPS; tests that couldn't fail now can (harmless scenes run long
+  enough for the path search, the falling-notes test requires the search to find the sweeps).
 - **Second review:** track removal fills one tone per pass and searches again instead of masking
   (masking left a loud tone's shoulders and ghosts); the lab's known-path attacker uses means and
   34 wrong-time curves (eight made its spread fragile: z could jump after a cloak with less

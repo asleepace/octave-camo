@@ -30,8 +30,12 @@ final class PathSearchTests: XCTestCase {
     }
 
     func testHarmlessScenesGiveNoPasses() {
+        // The scenes are 10–15 s; a pass needs 12 s and a span 10 s, so each runs four times over
+        // (else the search would barely get a chance to be wrong).
         for name in Scenes.harmless + ["held-notes", "tone-1200", "tone-4500", "hum-50-harmonics"] {
-            let audio = Scenes.make(name)
+            let one = Scenes.make(name)
+            let audio = Audio(sampleRate: one.sampleRate, channels: [Array([one.mono, one.mono, one.mono, one.mono].joined())])
+            XCTAssertTrue(passes(audio).allSatisfy { check.classify($0).kind != .doppler }, name)
             XCTAssertTrue(doppler(audio).isEmpty, "\(name): \(check.analyze(audio).tracks)")
         }
         for kind in ["white", "pink"] {
@@ -53,6 +57,7 @@ final class PathSearchTests: XCTestCase {
             x[i] += a * sin(phase)
         }
         let audio = Audio(sampleRate: rate, channels: [x])
+        XCTAssertFalse(passes(audio).isEmpty, "the search should find these sweeps, or the shape test is never exercised")
         XCTAssertTrue(doppler(audio).isEmpty, "\(check.analyze(audio).tracks)")
     }
 
@@ -87,7 +92,7 @@ final class PathSearchTests: XCTestCase {
         let r = stage.process(audio.mono, sampleRate: audio.sampleRate)
         let after = Audio(sampleRate: audio.sampleRate, channels: [r.output])
         XCTAssertTrue(doppler(after).filter { $0.maxFrequency > 1_100 }.isEmpty, "\(check.analyze(after).tracks)")
-        XCTAssertTrue(passes(after).isEmpty || doppler(after).isEmpty)
+        XCTAssertFalse(passes(after).contains { $0.maxFrequency > 1_100 && check.classify($0).kind == .doppler })
     }
 
     // MARK: Invariants

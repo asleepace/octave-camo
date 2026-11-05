@@ -66,7 +66,7 @@ def run_scene(args):
             continue
         w.z = (w.score - nl["mean"]) / nl["sd"]
         # Only a window that stands out is worth the fit (27 multi-start least squares).
-        w.fit = detect.shape_test(w.path, p.win_s) if w.z >= MIN_Z_TO_FIT else {"ok": False}
+        w.fit = detect.shape_test(w.path, p.win_s, dt=float(t[1] - t[0])) if w.z >= MIN_Z_TO_FIT else {"ok": False}
         rows.append({"start": w.start, "z": round(w.z, 2), "from_hz": round(float(w.path[0])), "to_hz": round(float(w.path[-1])), **w.fit})
     return name, kind, rows
 

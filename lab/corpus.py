@@ -93,7 +93,8 @@ def geometry(sid: str) -> dict:
     temp = (meta.get("weather", {}).get("current", {}) or {}).get("temperature_2m")
     c = 331.3 + 0.606 * (temp if temp is not None else 15.0)
     loc = meta["location_at_start"]
-    la0, lo0, alt0 = loc["lat"], loc["lon"], loc.get("alt_m") or 0.0
+    la0, lo0 = loc["lat"], loc["lon"]
+    alt0, alt_ref = vertical_reference(meta)
 
     tracks: dict[str, list] = defaultdict(list)
     kind: dict[str, dict] = {}
@@ -131,8 +132,23 @@ def geometry(sid: str) -> dict:
         from scipy.ndimage import uniform_filter1d
         v = uniform_filter1d(np.gradient(q, te, axis=0), size=201, axis=0, mode="nearest")
         tr[h] = (te, q, v)
-    return {"speed_of_sound": c, "duration_s": info.frames / info.samplerate, "alt0": alt0, "meta": meta,
-            "info": info, "kind": kind, "tracks": tr}
+    return {"speed_of_sound": c, "duration_s": info.frames / info.samplerate, "alt0": alt0, "alt_ref": alt_ref,
+            "meta": meta, "info": info, "kind": kind, "tracks": tr}
+
+
+def pressure_altitude_m(kpa: float) -> float:
+    """Altitude in the standard atmosphere for a pressure, m (ICAO; 101.325 kPa at 0 m)."""
+    return 44_330.8 * (1 - (kpa / 101.325) ** 0.190263)
+
+
+def vertical_reference(meta: dict) -> tuple[float, str]:
+    """The recording's height on the scale ADS-B reports aircraft on. ADS-B altitude is barometric
+    (pressure altitude, 1013.25 hPa), so the phone's own pressure, read the same way, cancels the
+    day's sea-level pressure; GPS height (often ±10–80 m vertically) is the fallback."""
+    p = (meta.get("pressure_at_start") or {}).get("pressure_kpa")
+    if p:
+        return pressure_altitude_m(p), "pressure"
+    return (meta["location_at_start"].get("alt_m") or 0.0), "gps"
 
 
 def index(sid: str) -> dict:
@@ -165,7 +181,7 @@ def index(sid: str) -> dict:
     idx = {
         "id": sid, "schema": meta.get("schema_version") or meta.get("format_version"),
         "duration_s": round(dur, 2), "sample_rate": info.samplerate, "channels": info.channels,
-        "mode": meta["audio_session"].get("mode"), "chirps_s": _chirps(meta),
+        "mode": meta["audio_session"].get("mode"), "chirps_s": _chirps(meta), "altitude_reference": g["alt_ref"],
         "note": (meta.get("label") or {}).get("note", ""), "speed_of_sound": round(c, 1),
         "markers": _markers(d, t0), "manifest": verify(d), "context": {**meta.get("context", {}), **_corrections(d).get("context", {})}, "passes": passes,
     }

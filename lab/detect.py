@@ -107,17 +107,28 @@ C = 343.0
 
 
 def flyby(par, t, c=C):
+    """Received frequency of a straight pass at receive times t: rest frequency f0, speed v,
+    closest distance d, closest approach *heard* at t0. Sound heard at t left the source at τ,
+    where τ + r(τ)/c = t (Newton, as FlybyGeometry does in Swift). Leaving the travel time out (τ = t)
+    biases a fit: on a modelled 1,234 Hz, 141 m/s, 2 km pass it gave 1,317 Hz and 1.7 km."""
     f0, v, d, t0 = par
-    x = v * (t - t0)
+    te0 = t0 - d / c
+    tau = t - d / c
+    for _ in range(8):
+        x = v * (tau - te0)
+        r = np.hypot(d, x)
+        tau = tau - (tau + r / c - t) / (1 + v * x / (c * r))
+    x = v * (tau - te0)
     r = np.hypot(d, x)
     return f0 / (1 + v * x / (c * r))
 
 
-def shape_test(path: np.ndarray, win_s: float, c=C, max_rel_rms=0.005) -> dict:
-    """Fit a straight flyby to a path; passes with rms < 0.5 % of f0, 20–300 m/s, ≥ 50 m."""
+def shape_test(path: np.ndarray, win_s: float, c=C, max_rel_rms=0.005, dt: float | None = None) -> dict:
+    """Fit a straight flyby to a path; passes with rms < 0.5 % of f0, 20–300 m/s, 50 m–30 km. `dt` is
+    the path's frame spacing (default: the window over the path's length)."""
     if len(path) < 10:
         return {"ok": False}
-    t = np.arange(len(path)) * (win_s / len(path))
+    t = np.arange(len(path)) * (dt if dt else win_s / len(path))
     best = None
     for v0 in (60, 140, 250):
         for d0 in (300, 1500, 5000):
@@ -128,7 +139,7 @@ def shape_test(path: np.ndarray, win_s: float, c=C, max_rel_rms=0.005) -> dict:
                 if best is None or rms < best[0]:
                     best = (rms, r.x)
     rms, (f0, v, d, t0) = best
-    return {"ok": bool(rms < max_rel_rms * f0 and 20 <= v <= 300 and d >= 50), "rel_rms": rms / f0,
+    return {"ok": bool(rms < max_rel_rms * f0 and 20 <= v <= 300 and 50 <= d <= 30_000), "rel_rms": rms / f0,
             "f0": float(f0), "speed": float(v), "distance": float(d)}
 
 

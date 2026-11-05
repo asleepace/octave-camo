@@ -139,7 +139,7 @@ at 20 dB. They're smooth and they fall too. Their paths give them away, though: 
 
 **The shape test** (the attacker's own move): fit a straight flyby, f(t) = f0 / (1 + v·x/(c·r)), to
 each window's best path, multi-start; it passes when the rms is under 0.5 % of f0 (the check's
-existing bar) with 20–300 m/s and at least 50 m.
+existing bar) with 20–300 m/s and at least 50 m (since capped at 30 km: see the tooling review below).
 
 | scene | max z | windows passing |
 | --- | ---: | ---: |
@@ -359,6 +359,28 @@ one 2 s Doppler-shaped piece from the frame tracker (420 Hz, construction), no p
 The recorder build was the same as the tenth session's, so its mains-hum estimate still reports a
 50 Hz grid (median 50.26 Hz, ±0.28 Hz) beside a clean 60 Hz line, and the ultrasonic band is
 still empty.
+
+## Tooling review (lab detectors and tests)
+
+- **The lab's flyby fit left out the sound's travel time.** `detect.flyby` used receive time as
+  emission time; on a modelled 1,234 Hz, 141 m/s, 2 km pass a 10 s window fit 1,317 Hz and 1.7 km.
+  It now solves τ + r(τ)/c = t as the Swift `FlybyGeometry` does, and recovers the pass exactly.
+  Pass/fail didn't change on any scene or session (E2 re-run: only the bathroom pass passes, now
+  fit at 93 m/s and 712 m, was 85–89 m/s and 566–621 m; a 10 s window still constrains the
+  geometry poorly). Speeds and distances quoted from the lab's shape test before this were biased.
+- **Heights against ADS-B.** ADS-B altitude is barometric (pressure altitude); the corpus measured
+  aircraft heights from the phone's GPS height (±3–80 m vertically, and off by the day's sea-level
+  pressure, ~40 m on the bathroom day). It now uses the phone's own pressure read the same way,
+  which cancels the weather; GPS only when a session has no pressure. Closest distances moved by
+  ~1 % (bathroom pass 3.11 → 3.14 km).
+- **The check called a looped footstep a flyby.** Its 80 Hz thud, drifting 2 %, fit a "pass"
+  3·10¹⁷ m away at 48 m/s whose closest approach lay after the clip. The flyby fit now also needs a
+  distance under 30 km (an engine tone is inaudible well before). Found by running the harmless
+  scenes four times over: at 10–15 s they were too short for the path search to be tested at all.
+- **Tests that couldn't fail:** the falling-notes test now also requires the search to find the
+  sweeps (else the shape test is never exercised); one assertion that restated another was
+  replaced by a real one; the lab gained tests for the shape test (a propagated pass recovered,
+  a scale and a siren rejected), the blind search (follows a 20 dB pass), and pressure altitude.
 
 ## The zoom-out: the real attacker isn't blind
 

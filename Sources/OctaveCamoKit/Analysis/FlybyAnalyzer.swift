@@ -78,7 +78,10 @@ public struct FlybyAnalyzer {
         /// A good fit only counts as a flyby when it is physically plausible for an aircraft.
         /// Rejects fits pinned at the optimizer's limits, e.g. "5 m/s at 2 m" from a voice harmonic.
         public var plausibleSpeed: ClosedRange<Double> = 20...300
-        public var minPlausibleDistance = 50.0
+        /// …and within earshot. A slight drift in a steady sound (footsteps' 80 Hz thud, looped)
+        /// fits a "pass" 10¹⁷ m away whose closest approach is outside the clip; a real engine tone
+        /// is inaudible well before 30 km.
+        public var plausibleDistance: ClosedRange<Double> = 50...30_000
 
         public init() {}
     }
@@ -188,7 +191,7 @@ public struct FlybyAnalyzer {
     func isFlyby(_ fit: DopplerFit) -> Bool {
         fit.rms / fit.geometry.f0 < config.maxRelativeRMS
             && config.plausibleSpeed.contains(fit.geometry.speed)
-            && fit.geometry.distance >= config.minPlausibleDistance
+            && config.plausibleDistance.contains(fit.geometry.distance)
     }
 
     func isHum(_ track: Track) -> Bool {
