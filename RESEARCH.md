@@ -22,6 +22,14 @@ leaning on a number. Experiments of our own are in [EXPERIMENTS.md](EXPERIMENTS.
   location signal at country, state or city level; combining species range prediction with
   retrieval works best (from the abstract).
 
+- **The video that started this project** ([YT-UytYrhYLOKI], from a summary of its transcript):
+  one person, Python and public ADS-B located a clip to about 100 m from aircraft flyovers nobody
+  could hear, by modelling each candidate location's received Doppler curves in 3D and scoring
+  them against the audio. A high-pass filter or phone-call compression didn't remove it (a fan
+  tone at 1–2 kHz sits inside the telephone band). This is our threat model's attacker, built by
+  one person, and it searches **locations**, not only times: the lab's known-path attacker scores
+  the true location; a location search ranks it among all candidates, which is the number to beat.
+
 **For us:** the attacker who matters most may be one that fuses picture, speech and background,
 not a lone Doppler fitter. Our scope stays the background, but the page should say plainly that
 voices, language and the picture are outside it. And birdsong, which we treat as harmless (it's no

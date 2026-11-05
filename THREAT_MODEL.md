@@ -15,7 +15,9 @@ The attacker can:
 - bound the recording time by the post time (hours to days earlier);
 - query public telemetry for that window: ADS-B for aircraft, GTFS-realtime for trains and buses,
   AIS for ships, grid-frequency (ENF) archives;
-- run unlimited offline compute.
+- run unlimited offline compute, e.g. score every candidate location in an area by the Doppler
+  curves it predicts for every logged aircraft (shown publicly to work to ~100 m with Python and
+  ADS-B, [YT-UytYrhYLOKI] in SOURCES.md).
 
 The attacker does **not** have the original file, other clips of the same scene, or anything
 about you beyond this post.

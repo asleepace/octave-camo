@@ -85,6 +85,14 @@ reading in place; RESEARCH.md discusses the recent work.
   arXiv:2505.18726. https://arxiv.org/abs/2505.18726v1 — Species ranges as a location signal.
   RESEARCH.md §1. *abstract*
 
+- **[YT-UytYrhYLOKI]** YouTube video on geolocating a clip from aircraft Doppler, ~29 min
+  (title and creator not yet recorded). https://www.youtube.com/watch?v=UytYrhYLOKI — The post
+  that inspired this project. Inaudible flyover signatures matched against public ADS-B with
+  Python and 3D propagation modelling, scoring candidate locations, claimed to ~100 m; high-pass
+  filtering and phone-call compression shown not to remove the signature. RESEARCH.md §1,
+  THREAT_MODEL.md. *abstract* (from a third-party summary of the transcript; the page couldn't be
+  fetched here)
+
 ## Rooms and devices
 
 - **[Moussa2024]** Moussa, D., Hirsch, G. & Riess, C. (2024). EnvId: a metric learning approach for
