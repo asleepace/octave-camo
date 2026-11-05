@@ -24,3 +24,6 @@ report.json
 # Python / OS
 __pycache__/
 .DS_Store
+
+# Python (lab/)
+__pycache__/
