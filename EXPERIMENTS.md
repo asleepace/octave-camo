@@ -194,8 +194,11 @@ closest approach, as a departure's aft-radiated roar would be (the third session
 the directivity pattern). Oddity: after cloaking, an unrelated non-flyby path at 0–10 s scores
 higher (z 8.5 → 16.4); probably an edge effect at the clip start, to check.
 
-**Third session, indoors with the TV and a fan on, window closed (the nearest aircraft 5 km
-away, a climbing 737-800):** in 0.6–2.5 kHz nothing passes the shape test, before or after
+**Third session, indoors with the TV and a fan on, window open (the nearest aircraft 5 km away,
+a climbing 737-800; there's no trackable tone from it: the known-path attacker, searching its real
+track with the rest frequency free and ±6 s of timing, scores z 1.4, and the 30–150 Hz level only
+loosely follows the predicted loudness of the three nearest aircraft, r ≈ 0.4–0.5, not
+attributable to one):** in 0.6–2.5 kHz nothing passes the shape test, before or after
 cloaking (max z 11.8, TV speech). Up to 8 kHz, **seven windows pass, all false**: gentle falls of
 10–15 % through the fan's hiss at 4.8–8 kHz, z 5.6–8.6, with implausible fits (24–79 m/s at
 61–779 m; the aircraft were 5–14 km away), one riding the band's top edge. A flyby fits almost any
@@ -203,7 +206,7 @@ gentle smooth fall, so the shape test only discriminates when the path bends. Wh
 so far: every false pass in either band has z ≤ 8.6 (this hiss; the street's decelerating
 vehicle at 6.2), the real pass z 19.4. **A decision threshold of z ≈ 10 plus the shape test**
 would separate everything we have, at the cost of the faintest modelled passes (14 dB/Hz, z 6.6).
-Also worth adding: an edge guard (no path within a few bins of the band's edges), and joining
+Also worth adding: an edge guard (no path within a few bins of the band's edges; several of this session's strongest main-band paths start at its 2,500 Hz top edge too), and joining
 windows (a real pass bends over 20–30 s; a gentle drift through hiss doesn't).
 
 **The known-path attacker needs geometry tolerance.** Taking the ADS-B track as given, it barely
