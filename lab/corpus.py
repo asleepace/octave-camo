@@ -104,6 +104,13 @@ def index(sid: str) -> dict:
             tracks[e["hex"]].append((round(ts, 2), X, Y, Z))
             kind[e["hex"]] = {"type": e.get("type"), "kt": e.get("ground_speed_kt"), "fpm": e.get("vertical_rate_fpm")}
 
+    bf = d / "adsb_backfill.jsonl"
+    if bf.exists():                                       # positions fetched by backfill(), same frame
+        for r in (json.loads(l) for l in open(bf)):
+            X = math.radians(r["lon"] - lo0) * 6371000 * math.cos(math.radians(la0))
+            Y = math.radians(r["lat"] - la0) * 6371000
+            tracks[r["hex"]].append((round(r["wall_unix"] - t0, 2), X, Y, r["alt_ft"] * 0.3048 - alt0))
+            kind.setdefault(r["hex"], {"type": None, "kt": None, "fpm": None})
     dur = info.frames / info.samplerate
     grid = np.arange(-30.0, dur + 30.0, 0.1)
     passes, curves = [], {}
@@ -162,6 +169,102 @@ def correct(sid: str, **context) -> dict:
     c.setdefault("context", {}).update(context)
     json.dump(c, open(d / "corrections.json", "w"), indent=1)
     return index(sid)
+
+
+ADSB = "https://adsb.lol"
+HEADERS = {"User-Agent": "octave-camo-lab (research; https://github.com/asleepace/octave-camo)"}
+
+
+def _get(url: str, cache: Path) -> bytes | None:
+    """GET with an on-disk cache; None on 404 or network failure."""
+    import urllib.error
+    import urllib.request
+    if cache.exists():
+        return cache.read_bytes()
+    try:
+        with urllib.request.urlopen(urllib.request.Request(url, headers=HEADERS), timeout=60) as r:
+            data = r.read()
+    except (urllib.error.URLError, TimeoutError):
+        return None
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    cache.write_bytes(data)
+    return data
+
+
+def _heatmap(day: str, half_hour: int) -> list[tuple]:
+    """Every aircraft position in adsb.lol's archive for one half hour (UTC), every 10 s:
+    (unix s, hex, lat, lon, alt ft or None on the ground). Records are four int32: id, lat·1e6,
+    lon·1e6, altitude (25 ft units, −123 = ground) | ground speed·10 << 16, with a marker row
+    (id 0xe7f7c9d) giving the time in ms before each 10 s block."""
+    import gzip
+    y, m, dd = day.split("-")
+    raw = _get(f"{ADSB}/globe_history/{y}/{m}/{dd}/heatmap/{half_hour:02d}.bin.ttf", DATA / "adsb" / "heatmap" / f"{day}-{half_hour:02d}.bin")
+    if raw is None:
+        return []
+    a = np.frombuffer(gzip.decompress(raw) if raw[:2] == b"\x1f\x8b" else raw, dtype="<i4")
+    a = a[: len(a) // 4 * 4].reshape(-1, 4)
+    marks = np.flatnonzero(a[:, 0] == 0xE7F7C9D)
+    out = []
+    for i, m0 in enumerate(marks):
+        ts = ((int(a[m0, 1]) << 32) + (int(a[m0, 2]) & 0xFFFFFFFF)) / 1000.0
+        rows = a[m0 + 1: marks[i + 1] if i + 1 < len(marks) else len(a)]
+        rows = rows[(rows[:, 0] >= 0) & (rows[:, 0] < (1 << 24))]
+        for h, la, lo, packed in rows:
+            alt = int(np.int16(packed & 0xFFFF))
+            out.append((ts, f"{int(h):06x}", la / 1e6, lo / 1e6, None if alt == -123 else alt * 25))
+    return out
+
+
+def backfill(sid: str, before_s: float = 240, after_s: float = 240, radius_km: float = 40) -> int:
+    """Fetch positions from before the first poll (and after the last) for every aircraft the
+    session's own polls saw within `radius_km`: today's full-resolution traces when the session is
+    from today (UTC), else the 10 s archive. Saved beside the session (adsb_backfill.jsonl) and
+    merged into the index. Returns how many positions were added."""
+    import datetime
+    import time as _time
+    d = sessions_dir() / sid
+    meta = json.load(open(d / "meta.json"))
+    t0 = _audio_start(meta)
+    t1 = t0 + sf.info(str(d / meta["audio"]["file"])).duration
+    loc = meta["location_at_start"]
+    la0, lo0 = loc["lat"], loc["lon"]
+    hexes = set()
+    for p in _polls(d / meta["aircraft"]["file"]):
+        for e in p.get("aircraft") or []:
+            if e.get("on_ground") or e.get("lat") is None:
+                continue
+            dx = math.radians(e["lon"] - lo0) * 6371 * math.cos(math.radians(la0))
+            dy = math.radians(e["lat"] - la0) * 6371
+            if math.hypot(dx, dy) <= radius_km:
+                hexes.add(e["hex"])
+    lo_t, hi_t = t0 - before_s, t1 + after_s
+    rows = []
+    day = datetime.datetime.fromtimestamp(t0, datetime.timezone.utc)
+    today = datetime.datetime.now(datetime.timezone.utc).date() == day.date()
+    if today:
+        for h in sorted(hexes):
+            raw = _get(f"{ADSB}/data/traces/{h[-2:]}/trace_full_{h}.json", DATA / "adsb" / "traces" / day.strftime("%Y-%m-%d") / f"{h}.json")
+            _time.sleep(0.3)
+            if raw is None:
+                continue
+            import gzip
+            tr = json.loads(gzip.decompress(raw) if raw[:2] == b"\x1f\x8b" else raw)
+            for e in tr.get("trace", []):
+                ts = tr["timestamp"] + e[0]
+                if lo_t <= ts <= hi_t and e[3] not in ("ground", None):
+                    rows.append({"hex": h, "wall_unix": ts, "lat": e[1], "lon": e[2], "alt_ft": e[3]})
+    if not rows:                                         # older sessions (or traces unavailable): the archive
+        halves = sorted({int((t - datetime.datetime(day.year, day.month, day.day, tzinfo=datetime.timezone.utc).timestamp()) // 1800)
+                         for t in (lo_t, t0, t1, hi_t)})
+        for hh in halves:
+            for ts, h, la, lo, alt in _heatmap(day.strftime("%Y-%m-%d"), hh):
+                if h in hexes and lo_t <= ts <= hi_t and alt is not None:
+                    rows.append({"hex": h, "wall_unix": ts, "lat": la, "lon": lo, "alt_ft": alt})
+    with open(d / "adsb_backfill.jsonl", "w") as f:
+        for r in rows:
+            f.write(json.dumps(r) + "\n")
+    index(sid)
+    return len(rows)
 
 
 def _markers(d: Path, t0: float) -> list:

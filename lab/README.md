@@ -6,6 +6,7 @@ Python 3 with numpy, scipy, soundfile and matplotlib. Run from the repo root:
 
 ```sh
 python3 -m lab ingest ~/Downloads/20261104T174102Z_efb8f8.zip   # unpack + index a recorder session
+python3 -m lab backfill all                                      # fetch positions from before the first poll
 python3 -m lab sessions                                          # sessions and their nearest passes
 python3 -m lab e2 all                                            # E2 detector + shape test: synthetic and real
 python3 -m lab e2 real --wide                                    # the same up to 8 kHz
@@ -21,6 +22,12 @@ python3 -m lab plot <session>                                    # spectrogram +
   airborne aircraft, its closest slant distance, when its sound arrives (sound travel time
   included, speed of sound from the session's temperature), and its predicted Doppler factor over
   the audio (`passes.npz`). A new recording is labelled data as soon as it's ingested.
+- **Backfill.** A recording started in a hurry has no pre-roll, so planes heard early have no
+  positions from before the first poll. `backfill` fetches them from adsb.lol for every aircraft
+  the session's polls saw within 40 km: today's full-resolution traces for a session from today
+  (UTC), else the 10 s archive. Downloads are cached in `$LAB_DATA/adsb`; the extra positions sit
+  beside the session (`adsb_backfill.jsonl`) and are merged into its index. `label` fixes a
+  session's context labels locally.
 - **Speed.** The path search runs all windows of a clip at once; whitened spectrograms are cached
   on disk by scene and parameters; scenes run on both cores. Results are saved as JSON in
   `$LAB_DATA/results` and printed as markdown tables ready for EXPERIMENTS.md.
