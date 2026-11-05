@@ -137,7 +137,10 @@ def cmd_sessions():
         idx = json.load(open(corpus.sessions_dir() / sid / "index.json"))
         ps = idx["passes"][:3]
         near = "; ".join(f"{q['type'] or '?'} {q['closest_in_audio_km']} km heard {q['heard_s']} s" for q in ps)
-        print(f"{sid}  {idx['duration_s']:6.1f} s  {str(idx['mode'])[-18:]:>18}  {idx['note'][:30]!r:32}  nearest: {near}")
+        ctx = idx.get("context") or {}
+        what = idx['note'][:30] or ctx.get("note", "")[:30]
+        marks = ", ".join(f"{m['label']}@{m['t_s']:.0f}s" for m in idx.get("markers", []))
+        print(f"{sid}  {idx['duration_s']:6.1f} s  {str(idx['mode'])[-18:]:>18}  {what!r:32}  nearest: {near}" + (f"  | marks: {marks}" if marks else "") + (f"  | manifest {idx['manifest']}" if idx.get("manifest") not in (None, "no manifest") else ""))
 
 
 def _align(ref: np.ndarray, other: np.ndarray, sr: int) -> np.ndarray:

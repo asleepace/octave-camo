@@ -142,16 +142,36 @@ def index(sid: str) -> dict:
         "duration_s": round(dur, 2), "sample_rate": info.samplerate, "channels": info.channels,
         "mode": meta["audio_session"].get("mode"), "chirps_s": _chirps(meta),
         "note": (meta.get("label") or {}).get("note", ""), "speed_of_sound": round(c, 1),
-        "markers": _markers(d), "passes": passes,
+        "markers": _markers(d, t0), "manifest": verify(d), "context": meta.get("context", {}), "passes": passes,
     }
     json.dump(idx, open(d / "index.json", "w"), indent=1)
     np.savez_compressed(d / "passes.npz", grid=grid, **{h: v for h, v in curves.items()})
     return idx
 
 
-def _markers(d: Path) -> list:
+def _markers(d: Path, t0: float) -> list:
+    """Tap-to-mark labels on the audio's own timeline (seconds from its first sample)."""
     f = d / "markers.jsonl"
-    return [json.loads(l) for l in open(f)] if f.exists() else []
+    if not f.exists():
+        return []
+    return [{"label": m.get("label"), "t_s": round(m["wall_unix"] - t0, 2)} for m in (json.loads(l) for l in open(f)) if "wall_unix" in m]
+
+
+def verify(d: Path) -> str:
+    """Check manifest.json's SHA-256s, when the bundle has one: 'ok', 'no manifest', or what's wrong."""
+    import hashlib
+    f = d / "manifest.json"
+    if not f.exists():
+        return "no manifest"
+    m = json.load(open(f))
+    bad = []
+    for e in m.get("files", []):
+        p = d / e["path"]
+        if not p.exists():
+            bad.append(f"missing {e['path']}")
+        elif hashlib.sha256(p.read_bytes()).hexdigest() != e["sha256"]:
+            bad.append(f"hash mismatch {e['path']}")
+    return "ok" if not bad else "; ".join(bad)
 
 
 def load(sid: str) -> tuple[dict, np.ndarray, int]:

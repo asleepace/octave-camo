@@ -178,6 +178,17 @@ is still detectable, because `lines` only removes what the check sees, and the c
 this sweep. Exactly the gap PLAN.md's next step closes: once the path search is part of the check,
 `lines` will remove what it finds.
 
+**Second session, outdoors (stopped on a freeway, car window open; schema 2.0 with markers):** in
+0.6–2.5 kHz nothing passes the shape test, before or after cloaking, despite heavy traffic. Up to
+8 kHz one window passes: a tone falling 3.6 → 2.8 kHz at 28–38 s, near a "plane" mark at 31 s, but
+falling 30 % in 10 s while every aircraft in the ADS-B log was already receding (3–7 %): almost
+certainly a passing vehicle, a real Doppler pass all the same. It survives Full and Experimental
+untouched (the check doesn't see it). The 737 that passed 3.1 km away was closest at ~14 s; the
+person recording marked it at 31 and 40 s, after closest approach, as a departure's aft-radiated
+roar would be (the third session consistent with the directivity pattern). Oddity: after cloaking,
+an unrelated non-flyby path at 0–10 s scores higher (z 8.5 → 16.4); probably an edge effect at
+the clip start, to check.
+
 **The known-path attacker needs geometry tolerance.** Taking the ADS-B track as given, it barely
 sees this pass (z ~2): the sweep in the recording is about twice as steep as the published geometry
 predicts (the sound fits a closest pass of ~1.75 km at 141 m/s; ADS-B says 3.1 km slant), and a few
