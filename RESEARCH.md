@@ -34,7 +34,7 @@ Doppler or hum clue), is a *region and season* clue: worth a line in the threat 
   ENF extracted from the flicker of indoor lighting in phone videos (rolling-shutter CMOS, about
   30 fps, aliasing handled), correlated with recordings from 12 substations, then triangulated:
   better at a region than a point, but it narrows *where within the grid*, not just when.
-- **ENF anti-forensics and their countermeasures** (Chuang, Su and Wu, IEEE TIFS 2013, and
+- **ENF anti-forensics and their countermeasures** (Chuang, Garg and Wu, IEEE TIFS 2013, and
   follow-ups): removing or replacing ENF is possible, and so is detecting that it was removed.
 
 **For us:** light-flicker removal matters even more than we thought (it's a location clue, not
@@ -141,13 +141,16 @@ model.
 
 ## Sources
 
+Every source here is also in [SOURCES.md](SOURCES.md), the project's bibliography, with a key to cite it by.
+
+
 - IARPA, LocUS: https://www.iarpa.gov/research-programs/locus
 - Defense One, "Mapping Agency Wants to ID Locations by Sound" (2020): https://www.defenseone.com/technology/2020/10/nga-offers-cash-prizes-tech-can-identify-location-its-sound/169535/
 - C4ISRNET, "The ambient audio in your video could give away its location" (2020): https://c4isrnet.com/intel-geoint/2020/10/23/the-ambient-audio-in-your-video-could-give-away-its-location-this-intelligence-agency-wants-to-use-that
 - Zhang et al., "The Sonar Moment: Benchmarking Audio-Language Models in Audio Geo-Localization" (arXiv 2601.03227, 2026), summary: https://ai-search.io/papers/the-sonar-moment-benchmarking-audio-language-models-in-audio-geo-localization
 - Chasmai et al., bioacoustic geolocation (arXiv 2505.18726, 2025): https://arxiv.org/abs/2505.18726v1
 - Ngharamike et al., intra-grid location of smartphone videos using ENF (Scientific Reports, 2025): https://pmc.ncbi.nlm.nih.gov/articles/PMC12137870
-- Chuang, Su and Wu, "Anti-Forensics and Countermeasures of Electrical Network Frequency Analysis" (IEEE TIFS, 2013): https://unpaywall.org/10.1109%2FTIFS.2013.2285515
+- Chuang, Garg and Wu, "Anti-Forensics and Countermeasures of Electrical Network Frequency Analysis" (IEEE TIFS, 2013): https://unpaywall.org/10.1109%2FTIFS.2013.2285515
 - Moussa, Hirsch and Riess, EnvId (arXiv 2405.02119, 2024): https://ar5iv.labs.arxiv.org/html/2405.02119
 - RevRIR (arXiv 2406.03120, 2024): https://arxiv.org/pdf/2406.03120
 - Downward and Nordby, AeroSonicDB (arXiv 2311.06368, 2023): https://arxiv.org/pdf/2311.06368

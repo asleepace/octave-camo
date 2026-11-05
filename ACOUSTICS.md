@@ -304,6 +304,9 @@ say they exist:
 
 ## References
 
+The full bibliography, with what each source is used for, is [SOURCES.md](SOURCES.md).
+
+
 - Barniv, Y. (1985). Dynamic programming solution for detecting dim moving targets. *IEEE Trans.
   Aerospace and Electronic Systems*, 21(1).
 - Dietz, M., Liljeryd, L., Kjörling, K. & Kunz, O. (2002). Spectral Band Replication, a novel
