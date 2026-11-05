@@ -24,7 +24,6 @@ in $LAB_DATA/results and printed as markdown tables.
 """
 from __future__ import annotations
 
-import hashlib
 import json
 import sys
 import time
@@ -33,46 +32,11 @@ from multiprocessing import Pool
 import numpy as np
 
 from . import corpus, detect, synth
+from .common import null, save_result, whitened, with_copies
 
 P = detect.Params()
 # Windows below this z aren't fitted (they can't be detections).
 MIN_Z_TO_FIT = 3.0
-
-
-def _cache_key(name: str, p: detect.Params, x: np.ndarray) -> str:
-    # The audio's own bytes are part of the key: a re-cloaked file keeps its name.
-    h = hashlib.sha1(f"{name}|{p}|{len(x)}".encode())
-    h.update(np.ascontiguousarray(x, dtype=np.float32).tobytes())
-    return h.hexdigest()[:16]
-
-
-def whitened(name: str, x: np.ndarray, sr: int, p: detect.Params):
-    """whiten(), cached on disk by scene name, parameters and the audio itself."""
-    d = corpus.DATA / "cache"
-    d.mkdir(parents=True, exist_ok=True)
-    f = d / f"{_cache_key(name, p, x)}.npz"
-    if f.exists():
-        z = np.load(f)
-        return z["f"], z["t"], z["L"]
-    fr, t, L = detect.whiten(x, sr, p)
-    np.savez(f, f=fr, t=t, L=L.astype(np.float32))
-    return fr, t, L
-
-
-def null(p: detect.Params) -> dict:
-    """Mean excess and the path-score distribution on synthetic room noise (cached per params)."""
-    d = corpus.DATA / "cache"
-    d.mkdir(parents=True, exist_ok=True)
-    f = d / f"null-{_cache_key('null', p, np.zeros(0))}.json"
-    if f.exists():
-        return json.load(open(f))
-    x = synth.room(120, seed=101)
-    fr, t, L = detect.whiten(x, synth.SR, p)
-    mu = float(L.mean())
-    sc = np.array([w.score for w in detect.search(fr, t, L - mu, p)])
-    out = {"mu": mu, "mean": float(sc.mean()), "sd": float(sc.std())}
-    json.dump(out, open(f, "w"))
-    return out
 
 
 def run_scene(args):
@@ -119,7 +83,7 @@ def cmd_e2(which: str, wide: bool, files: list[str] = ()):
     t0 = time.time()
     with Pool(2) as pool:
         results = pool.map(run_scene, jobs)
-    print(f"| scene | windows | max z | passing the shape test | max z passing | best passing path |\n| --- | ---: | ---: | ---: | ---: | --- |")
+    print("| scene | windows | max z | passing the shape test | max z passing | best passing path |\n| --- | ---: | ---: | ---: | ---: | --- |")
     for name, kind, rows in results:
         passed = [r for r in rows if r.get("ok")]
         zmax = max((r["z"] for r in rows), default=float("nan"))
@@ -155,31 +119,12 @@ def cmd_sessions():
         print(f"{sid}  {idx['duration_s']:6.1f} s  {str(idx['mode'])[-18:]:>18}  {what!r:32}  nearest: {near}" + (f"  | marks: {marks}" if marks else "") + (f"  | manifest {idx['manifest']}" if idx.get("manifest") not in (None, "no manifest") else ""))
 
 
-def _align(ref: np.ndarray, other: np.ndarray, sr: int) -> np.ndarray:
-    """`other` shifted to line up with `ref` (encoder delay), by cross-correlating 400–3000 Hz envelopes."""
-    from scipy.signal import butter, correlate, sosfiltfilt
-    sos = butter(4, [400, 3000], "bandpass", fs=sr, output="sos")
-    a, b = sosfiltfilt(sos, ref[: sr * 30]), sosfiltfilt(sos, other[: sr * 30])
-    lag = int(np.argmax(correlate(a, b, "full", method="fft"))) - (len(b) - 1)
-    out = np.zeros_like(ref)
-    src = other[max(0, -lag):]
-    out[max(0, lag): max(0, lag) + len(src)] = src[: len(out) - max(0, lag)]
-    return out
-
-
 def cmd_attack(sid: str, others: list[str]):
-    import soundfile as sf
-    idx, x, sr = corpus.load(sid)
+    idx = json.load(open(corpus.sessions_dir() / sid / "index.json"))
     p = detect.Params(band=(80.0, 4000.0), broadband_aware=True)
-    audios = [("original", x)]
-    for o in others:
-        y, ysr = sf.read(o)
-        y = y[:, 0] if y.ndim > 1 else y
-        if ysr != sr:
-            raise SystemExit(f"{o}: sample rate {ysr}, expected {sr}")
-        audios.append((o.rsplit("/", 1)[-1], _align(x, y, sr)))
+    audios, sr = with_copies(sid, others)
     f0s = np.arange(100, 3500, 2.0)
-    print(f"| aircraft | closest | heard | " + " | ".join(f"z ({n})" for n, _ in audios) + " |\n| --- | ---: | ---: |" + " ---: |" * len(audios))
+    print("| aircraft | closest | heard | " + " | ".join(f"z ({n})" for n, _ in audios) + " |\n| --- | ---: | ---: |" + " ---: |" * len(audios))
     for q in idx["passes"][:6]:
         grid, fac, _ = corpus.curve(sid, q["hex"])
         factor = lambda tt, g=grid, fc=fac: np.interp(tt, g, fc, left=np.nan, right=np.nan)
@@ -247,17 +192,9 @@ def cmd_plot(sid: str):
 def cmd_check(sid: str, others: list[str]):
     """The page's check, via web/scripts/check-raw.ts, on the session's audio and on copies of it."""
     import subprocess, tempfile
-    import soundfile as sf
     from pathlib import Path
-    idx, x, sr = corpus.load(sid)
     repo = Path(__file__).resolve().parent.parent
-    audios = [("original", x)]
-    for o in others:
-        y, ysr = sf.read(o)
-        y = y[:, 0] if y.ndim > 1 else y
-        if ysr != sr:
-            raise SystemExit(f"{o}: sample rate {ysr}, expected {sr}")
-        audios.append((o.rsplit("/", 1)[-1], _align(x, y, sr)))
+    audios, sr = with_copies(sid, others)
     rows = []
     with tempfile.TemporaryDirectory() as tmp:
         for name, a in audios:
@@ -272,23 +209,13 @@ def cmd_check(sid: str, others: list[str]):
     for r in rows:
         passes = ", ".join(f"{p['start']:.0f}–{p['end']:.0f} s {p['hi']:.0f}→{p['lo']:.0f}" for p in r["passes"]) or "—"
         print(f"| {r['name']} | {r['tones']} | {r['doppler']} | {r['flybys']} | {r['hum']} | {passes} | {r['took']:.1f} s |")
-    res = corpus.DATA / "results"
-    res.mkdir(parents=True, exist_ok=True)
-    (res / f"check-{sid}.json").write_text(json.dumps(rows, indent=1))
+    save_result(f"check-{sid}", rows)
 
 
 def cmd_locate(sid: str, others: list[str]):
     """The place-searching attacker (lab/locate.py) on the session and on copies of it."""
-    import soundfile as sf
     from . import locate
-    idx, x, sr = corpus.load(sid)
-    audios = [("original", x)]
-    for o in others:
-        y, ysr = sf.read(o)
-        y = y[:, 0] if y.ndim > 1 else y
-        if ysr != sr:
-            raise SystemExit(f"{o}: sample rate {ysr}, expected {sr}")
-        audios.append((o.rsplit("/", 1)[-1], _align(x, y, sr)))
+    audios, sr = with_copies(sid, others)
     t = time.time()
     rows = locate.locate(sid, audios, sr)
     print("| audio | aircraft | true point's rank (of grid) | best guess off by | fine best off by | area within 3 / 6 of best | truth z by aircraft |")
@@ -298,9 +225,7 @@ def cmd_locate(sid: str, others: list[str]):
         print(f"| {r['name']} | {r['aircraft']} | {r['truth_rank']} of {r['points']} ({r['truth_percentile']} %) | "
               f"{r['best_error_m']} m | {r['fine_best_error_m']} m | {r['area_within_3_km2']} / {r['area_within_6_km2']} km² | {z} |")
     print(f"\n{time.time() - t:.0f} s")
-    res = corpus.DATA / "results"
-    res.mkdir(parents=True, exist_ok=True)
-    (res / f"locate-{sid}.json").write_text(json.dumps(rows, indent=1))
+    save_result(f"locate-{sid}", rows)
 
 
 def expected_passes(sid: str, max_km: float = 15.0) -> list[dict]:
@@ -313,7 +238,9 @@ def expected_passes(sid: str, max_km: float = 15.0) -> list[dict]:
         keep = (heard >= -5) & (heard <= dur + 5)
         if rmin > max_km * 1000 or keep.sum() < 20 or not (-30 < tc < dur + 30):
             continue
-        out.append({"times": [round(float(v), 3) for v in heard[keep]], "factors": [round(float(v), 7) for v in fac[keep]]})
+        t, f = np.round(heard[keep], 3), np.round(fac[keep], 7)
+        up = np.concatenate([[True], np.diff(t) > 0])            # strictly increasing after rounding
+        out.append({"times": t[up].tolist(), "factors": f[up].tolist()})
     return out
 
 
@@ -344,7 +271,9 @@ def cmd_trackfill(sid: str, presets: list[str]):
         for preset in presets or ["experimental"]:
             dst = out_dir / f"{sid}-{preset}-tracks.wav"
             r = subprocess.run([str(cli), "scrub", str(src), str(dst), *PRESET_ARGS[preset], "--seed", "7", "--expect", str(exp)],
-                               check=True, capture_output=True, text=True)
+                               capture_output=True, text=True)
+            if r.returncode != 0:
+                raise SystemExit(f"octave-camo scrub failed:\n{r.stderr.strip().splitlines()[0] if r.stderr.strip() else r.stdout[:500]}")
             for line in (r.stdout + r.stderr).splitlines():
                 if line.strip().startswith("tracks:") or "tracks:" in line:
                     print(" ", line.strip())

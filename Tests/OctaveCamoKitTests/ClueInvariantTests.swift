@@ -158,7 +158,7 @@ final class ClueInvariantTests: XCTestCase {
         // below 1 kHz. The snapshot records how many.)
         // (A whistled tune is left out too: its scene repeats the same notes many times a phrase,
         // and the line integrator rightly finds those recurring tones. Telling music from machines
-        // is the risk classes' job, ACOUSTICS.md §5.)
+        // is the risk classes' job, docs/ACOUSTICS.md §5.)
         for name in ["speech", "birdsong", "footsteps"] {
             for rate in [16_000, 48_000] {
                 let high = FlybyAnalyzer().analyze(Scenes.make(name, rate: rate)).tracks.filter { $0.meanFrequency > 1_000 }

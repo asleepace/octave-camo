@@ -137,8 +137,9 @@ public struct FlybyAnalyzer {
         return (framed + passes, integrated)
     }
 
-    /// `a` follows `b`: at most of `b`'s times inside `a`'s span, `a` is within max(9 Hz, 1 %) of it.
-    /// (A box test would let a steady hum crossing a sweep's range hide the sweep.)
+    /// `a` follows `b`: for at least half of `b`'s points, `a` (interpolated, inside its own span)
+    /// is within max(9 Hz, 1 %) of it. A box test would let a steady hum crossing a sweep's range
+    /// hide the sweep.
     static func follows(_ a: Track, _ b: Track) -> Bool {
         guard let a0 = a.times.first, let a1 = a.times.last, a.times.count > 1 else { return false }
         var inside = 0, close = 0, j = 0

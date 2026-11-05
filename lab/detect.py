@@ -1,4 +1,4 @@
-"""Detectors for EXPERIMENTS.md, as composable pieces: whitening, the path search (vectorised over
+"""Detectors for docs/EXPERIMENTS.md, as composable pieces: whitening, the path search (vectorised over
 all windows at once), the flyby shape test, and the known-path attacker."""
 from __future__ import annotations
 

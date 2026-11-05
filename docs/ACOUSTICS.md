@@ -6,7 +6,7 @@ Every defense is judged by it, so a check weaker than a real attacker makes the 
 than it is. That is the one failure a privacy tool must not have.
 
 This document collects the theory, the fields that have solved this problem before us, the ways it
-goes wrong, and the plan. [PLAN.md](PLAN.md) has the order of work; [THREAT_MODEL.md](THREAT_MODEL.md)
+goes wrong, and the plan. [PLAN.md](PLAN.md) has the order of work; [THREAT_MODEL.md](../THREAT_MODEL.md)
 has who the attacker is.
 
 ---

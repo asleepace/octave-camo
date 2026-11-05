@@ -9,7 +9,7 @@ import WASILibc
 #endif
 
 /// Finds weak, steady or slowly drifting lines by integrating over seconds, the way an attacker
-/// who averages would (ACOUSTICS.md §3–4). It complements `ToneTracker`, which judges each frame
+/// who averages would (docs/ACOUSTICS.md §3–4). It complements `ToneTracker`, which judges each frame
 /// alone: a line 6–9 dB over the noise in a 1 Hz band, invisible frame by frame, is found here.
 ///
 /// 1. A spectrogram in physical units: a power-of-two window close to 1 s (1–1.5 Hz bins at any
@@ -25,7 +25,7 @@ import WASILibc
 ///    bumps such as footsteps don't count; nearby weaker peaks (sidelobes) are suppressed.
 /// 5. Detections are linked into tracks by frequency and time.
 ///
-/// Fast Doppler curves are left to `ToneTracker` (and to the path search planned in ACOUSTICS.md).
+/// Fast Doppler curves are left to `ToneTracker` and `PathSearch`.
 public struct LineIntegrator {
     /// Target window length; the actual one is the largest power of two up to 1.1× this.
     public var windowSeconds = 1.0

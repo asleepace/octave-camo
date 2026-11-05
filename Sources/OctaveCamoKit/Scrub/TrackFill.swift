@@ -21,8 +21,17 @@ public struct ExpectedPass: Codable, Equatable {
         self.factors = factors
     }
 
-    /// When the pitch falls fastest: the closest approach, as heard.
-    var closest: Double {
+    /// Usable: at least two points, the same count of each, times strictly increasing, everything
+    /// finite, factors physical (a source slower than sound: 0.5–2).
+    public var isValid: Bool {
+        times.count >= 2 && times.count == factors.count
+            && times.allSatisfy(\.isFinite) && factors.allSatisfy { $0.isFinite && $0 > 0.5 && $0 < 2 }
+            && zip(times, times.dropFirst()).allSatisfy { $0 < $1 }
+    }
+
+    /// When the pitch falls fastest, as heard: a few seconds before the closest approach is heard
+    /// (sound from the approach arrives compressed in time), and where a pass is loudest.
+    var steepest: Double {
         var best = 0.0, at = times.first ?? 0
         for i in 1..<max(times.count, 1) where times[i] > times[i - 1] {
             let slope = -(factors[i] - factors[i - 1]) / (times[i] - times[i - 1])
@@ -66,14 +75,13 @@ public struct TrackFill {
     public var offsetStep = 1.0
     /// Where the null curves go: moved this far, so they don't overlap the real one.
     public var nullShifts = [-40.0, -28, 28, 40]
-    /// The search looks this far either side of the closest approach, s (where the pass is loud).
+    /// The search looks this far either side of the steepest fall, s (where the pass is loud).
     public var halfWindow = 25.0
     /// Rest frequencies searched.
     public var restRange: ClosedRange<Double> = 80...3_500
     /// The fill strip's extra half-width, Hz: the predicted curve is only as good as the track.
     public var marginHz = 8.0
     public var seed: UInt64 = .random(in: 1...UInt64.max)
-    var debug = false
 
     public init() {}
 
@@ -93,30 +101,33 @@ public struct TrackFill {
     struct Tone { let pass: Int; let rest: Double; let offset: Double; let z: Double }
 
     public func process(_ x: [Double], sampleRate: Int) -> (output: [Double], summary: String) {
-        guard !expected.isEmpty else { return (x, "tracks: no expected passes") }
+        let usable = expected.filter(\.isValid)
+        guard !usable.isEmpty else { return (x, "tracks: no usable expected passes (\(expected.count) given)") }
+        var stage = self
+        stage.expected = usable
         var y = x
         var rng = SeededRNG(seed: seed)
         var filled: [Tone] = []
         var fill = LineFill()
         fill.marginHz = marginHz
         for _ in 0..<rounds {
-            let tones = find(y, sampleRate: sampleRate)
+            let tones = stage.find(y, sampleRate: sampleRate)
             if tones.isEmpty { break }
             for tone in tones {
-                if let line = track(tone, sampleRate: sampleRate, count: y.count), fill.fill(&y, line, sampleRate: sampleRate, rng: &rng) {
+                if let line = stage.track(tone, sampleRate: sampleRate, count: y.count), fill.fill(&y, line, sampleRate: sampleRate, rng: &rng) {
                     filled.append(tone)
                 }
             }
         }
         let list = filled.map { "\(Int($0.rest.rounded())) Hz (z \(($0.z * 10).rounded() / 10))" }.joined(separator: ", ")
-        return (y, "tracks: \(expected.count) expected pass(es), filled \(filled.count) tone(s)\(list.isEmpty ? "" : ": " + list)")
+        return (y, "tracks: \(usable.count) expected pass(es), filled \(filled.count) tone(s)\(list.isEmpty ? "" : ": " + list)")
     }
 
     /// The predicted tone as a track over the part of the audio the pass covers.
     func track(_ tone: Tone, sampleRate: Int, count: Int) -> Track? {
-        let pass = expected[tone.pass], end = Double(count) / Double(sampleRate), c = pass.closest + tone.offset
+        let pass = expected[tone.pass], end = Double(count) / Double(sampleRate), c = pass.steepest + tone.offset
         var times: [Double] = [], freqs: [Double] = []
-        // Only where the tone was found (around the closest approach): a strip filled where there
+        // Only where the tone was found (around the steepest fall): a strip filled where there
         // is nothing to remove is pure risk, since any bias in its level traces the exact curve.
         var t = max(0, (pass.times.first ?? 0) + tone.offset, c - halfWindow)
         while t <= min(end, (pass.times.last ?? 0) + tone.offset, c + halfWindow) {
@@ -157,12 +168,15 @@ public struct TrackFill {
             for _ in 0..<maxTones {
                 guard let tone = best(pass, pi, masked, g, rests) else { break }
                 out.append(tone)
-                // Mask this tone's curve (±3 bins) so the next search finds a different one.
+                // Mask this tone's curve (±3 bins) so the next search finds a different one. The
+                // mask is the average excess (0, the excess being centred), not the floor: the
+                // wrong-time curves of other rest frequencies cross this one, and a hole along it
+                // would lower their nulls and make them stand out.
                 for m in 0..<g.frames {
                     guard let f = pass.factor(at: g.time(m) - tone.offset) else { continue }
                     let k = Int(((tone.rest * f) / g.binHz).rounded()) - g.kLo
                     guard k + 3 >= 0, k - 3 < g.bins else { continue }
-                    for kk in max(0, k - 3)...min(g.bins - 1, k + 3) { masked[m * g.bins + kk] = Float(ps.clip.lowerBound) }
+                    for kk in max(0, k - 3)...min(g.bins - 1, k + 3) { masked[m * g.bins + kk] = 0 }
                 }
             }
         }
@@ -172,11 +186,11 @@ public struct TrackFill {
     /// The pass's best tone. For every rest frequency: the best mean excess along its curve over
     /// the timing offsets, minus the same at wrong times (the curve moved ±28–40 s, same frames,
     /// same offsets). A steady sound or an artefact at that frequency is there at the wrong times
-    /// too and cancels; a tone that follows the curve doesn't. The difference is scaled by its
-    /// spread over all rest frequencies (most carry no tone), and the best one is kept if it
-    /// reaches `minZ`.
+    /// too and cancels; a tone that follows the curve doesn't. Each difference is scaled by the
+    /// spread of its neighbours' (rest frequencies within ±25 %, most carrying no tone); the best
+    /// one standing `minExcessDB` clear is kept if it reaches `minZ`.
     func best(_ pass: ExpectedPass, _ pi: Int, _ a: [Float], _ g: PathSearch.Grid, _ rests: [Double]) -> Tone? {
-        let c = pass.closest
+        let c = pass.steepest
         let all = (0..<g.frames).filter { abs(g.time($0) - c) <= halfWindow && pass.factor(at: g.time($0)) != nil }
         let frames = stride(from: 0, to: all.count, by: 2).map { all[$0] }
         guard frames.count >= 40 else { return nil }
@@ -226,7 +240,6 @@ public struct TrackFill {
         }
         guard let i = zs.indices.filter({ zs[$0].isFinite && diff[$0] >= minExcessDB }).max(by: { zs[$0] < zs[$1] }) else { return nil }
         let z = zs[i]
-        if debug { print("tracks debug: pass \(pi) best \(Int(rests[i])) Hz z \(z) (diff \(diff[i]))") }
         return z >= minZ ? Tone(pass: pi, rest: rests[i], offset: real.offset[i], z: z) : nil
     }
 }

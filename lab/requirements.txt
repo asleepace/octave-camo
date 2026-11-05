@@ -1,0 +1,6 @@
+# The lab's Python dependencies (python3 -m pip install -r lab/requirements.txt). matplotlib is only
+# needed by `plot`. Versions the lab was last run with.
+numpy>=2.0,<3
+scipy>=1.13
+soundfile>=0.12
+matplotlib>=3.8

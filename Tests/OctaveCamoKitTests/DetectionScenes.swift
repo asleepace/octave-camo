@@ -2,7 +2,7 @@ import Foundation
 @testable import OctaveCamoKit
 
 /// Scenes for measuring the check itself: how weak a tone it still finds, and how often it reports
-/// a tone in noise that has none (ACOUSTICS.md §9). Strengths are in dB over the noise in a 1 Hz
+/// a tone in noise that has none (docs/ACOUSTICS.md §9). Strengths are in dB over the noise in a 1 Hz
 /// band, so they mean the same at any sample rate.
 enum DetectionScenes {
     /// White noise level (standard deviation) for the ladder.

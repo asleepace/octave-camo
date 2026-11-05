@@ -3,7 +3,7 @@ import XCTest
 @testable import OctaveCamoKit
 
 /// How sensitive the check is, and how often it cries wolf: detection against tone strength and
-/// false lines per minute in noise, recorded in Snapshots/detection.json (ACOUSTICS.md §9). This is
+/// false lines per minute in noise, recorded in Snapshots/detection.json (docs/ACOUSTICS.md §9). This is
 /// the baseline the attacker-grade detector has to beat; a change to the check shows up here as a diff.
 ///
 /// Re-record on purpose with:  OCTAVE_CAMO_RECORD=1 swift test -c release --filter DetectionBaselineTests

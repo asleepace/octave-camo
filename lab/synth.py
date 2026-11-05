@@ -82,7 +82,7 @@ def speech(seed=7):
 
 def bangs(seed=8):
     """Construction: broadband hits 3–8 per 10 s, plus noise."""
-    rng = np.random.default_rng(seed); x = room(seed=seed); n = len(x)
+    rng = np.random.default_rng(seed); x = room(seed=seed)
     for s in rng.uniform(0, 59, 30):
         i = int(s * SR); L = int(0.08 * SR); x[i:i + L] += rng.normal(0, 0.3, L) * np.exp(-np.arange(L) / (0.02 * SR))
     return x, None

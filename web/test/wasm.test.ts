@@ -216,7 +216,7 @@ describe.skipIf(!existsSync(BUILDS[0][1]))("a ten-minute clip, in parts (release
     const after = analyzeInParts({ sampleRate: sr, channels: [output] }, (p) => camo.analyze(p));
     // The flyby whose closest approach sits on the first seam is gone. (Other faint tones can stay:
     // as the plane recedes its harmonics flatten into weak steady lines the frame tracker never
-    // targets, the gap PLAN.md's step 2 closes. The next test shows parts leave no more than one piece.)
+    // targets; Experimental's `lines` fills those. The next test shows parts leave no more than one piece.)
     expect(after.doppler).toBe(0);
     console.log(`perf: 10 min at 48 kHz in ${parts.length} parts: check ${checkSeconds.toFixed(1)} s, cloak ${cloakSeconds.toFixed(1)} s, `
       + `wasm memory ${(camo.memoryBytes / 2 ** 20).toFixed(0)} MiB; found before ${before.tones} (doppler ${before.doppler}, hum ${before.hum}), `
@@ -246,7 +246,7 @@ describe.skipIf(!existsSync(BUILDS[0][1]))("a ten-minute clip, in parts (release
 });
 
 /**
- * The envelope attack (ACOUSTICS.md): a passing plane makes the low band swell and fade over tens of
+ * The envelope attack (docs/ACOUSTICS.md): a passing plane makes the low band swell and fade over tens of
  * seconds, and an attacker lines that up with flight tracks. Two minutes of rumble whose level
  * follows a pass 1 km away (+15 dB at its closest, 60 s in), over quiet broadband noise.
  */

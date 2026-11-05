@@ -1,6 +1,6 @@
 """The place-searching attacker: where was this recorded?
 
-After the method in [YT-UytYrhYLOKI] (SOURCES.md): for every candidate point on a grid, predict the
+After the method in [YT-UytYrhYLOKI] (docs/SOURCES.md): for every candidate point on a grid, predict the
 Doppler curve each logged aircraft would produce there (its real track, sound travel time
 included), score the audio's whitened spectrogram along each curve with the engine's rest
 frequency free, and add the aircraft up (the events are scored together on one timeline). The
@@ -8,8 +8,9 @@ recording's time is given exactly, which makes this attacker stronger than one w
 the clip was posted.
 
 Each aircraft's score at a point is a z against the same predicted curve moved to wrong times
-(±24–40 s) over the same frames: a far point predicts an almost flat curve, which matches any steady sound equally well
-at any time, so only curves whose timing fits score high. Aircraft beyond 10 km of a point count 0.
+(±24–40 s) over the same frames: a far point predicts an almost flat curve, which matches any
+steady sound equally well at any time, so only curves whose timing fits score high. Aircraft
+beyond 10 km of a point count 0.
 Not yet modelled: silence (a point that predicts a loud pass the audio doesn't have is only not
 rewarded, not penalised).
 
@@ -21,6 +22,7 @@ from __future__ import annotations
 import numpy as np
 
 from . import corpus, detect
+from .common import whitened
 
 P = detect.Params(band=(80.0, 4000.0), broadband_aware=True)
 # Rest frequencies searched: 100 Hz–3.5 kHz in 0.2 % steps (fine enough for a Doppler factor).
@@ -36,7 +38,6 @@ class Scene:
     """One audio's spectrogram, prepared for scoring curves."""
 
     def __init__(self, x: np.ndarray, sr: int, name: str):
-        from .__main__ import whitened
         self.f, self.t, L = whitened(f"{name}:locate", x, sr, P)
         A = L - L.mean()
         Am = A.copy()

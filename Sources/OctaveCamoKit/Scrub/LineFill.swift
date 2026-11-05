@@ -20,7 +20,7 @@ import WASILibc
 ///
 /// Noise fill can't be undone (the tone's samples are gone, not masked), and a strip a few bins
 /// wide is little of the sound. It does remove held musical notes and other tones the check finds
-/// alike (see PLAN.md: the music policy).
+/// alike (see docs/PLAN.md: the music policy).
 public struct LineFill: ScrubStage {
     var step: ScrubStep { .lines }
 

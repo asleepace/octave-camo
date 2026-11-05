@@ -29,8 +29,9 @@ public struct ScrubResult {
     public let log: [String]
 }
 
-/// mono → hum → subtract → scurve → lowband (→ wobble → lines). Each stage is configurable and can be
-/// switched off. The default matches the harness's recommended chain `hum+subtract+scurve+lowband`
+/// mono → hum → subtract → scurve → lowband (→ tracks → wobble → lines). Each stage is
+/// configurable and can be switched off; `tracks` runs only when given expected passes. The default
+/// matches the harness's recommended chain `hum+subtract+scurve+lowband`
 /// (scurve catches faint tones above the lowband cutoff, such as train wheels); the pitch wobble
 /// is opt-in, since benchmarks showed it adds little once `lowband` runs.
 public struct ScrubPipeline {
@@ -78,18 +79,12 @@ public struct ScrubPipeline {
             if input.channels.count > 1 { log.append("mono: off, kept channel 0 of \(input.channels.count)") }
         }
 
-        let stages: [any ScrubStage] = [hum, subtraction, scurve, lowband, wobble, lines]
-        var tracksDone = false
-        for stage in stages where steps.contains(stage.step) {
-            if stage.step == .wobble || stage.step == .lines, !tracksDone {
-                runTracks(&y, &log, sampleRate: input.sampleRate)
-                tracksDone = true
-            }
-            let result = stage.process(y, sampleRate: input.sampleRate)
-            y = result.output
-            log.append(result.summary)
-        }
-        if !tracksDone { runTracks(&y, &log, sampleRate: input.sampleRate) }
+        // Track removal (when given expected passes) goes after the low band is replaced and
+        // before anything moves pitches (wobble) or fills what the check still finds (lines).
+        let before: [any ScrubStage] = [hum, subtraction, scurve, lowband], after: [any ScrubStage] = [wobble, lines]
+        for stage in before where steps.contains(stage.step) { run(stage, &y, &log, sampleRate: input.sampleRate) }
+        runTracks(&y, &log, sampleRate: input.sampleRate)
+        for stage in after where steps.contains(stage.step) { run(stage, &y, &log, sampleRate: input.sampleRate) }
 
         DSP.limitPeak(&y, to: peakCeiling)
         return ScrubResult(audio: Audio(sampleRate: input.sampleRate, channels: [y]), log: log)
@@ -97,6 +92,12 @@ public struct ScrubPipeline {
 }
 
 extension ScrubPipeline {
+    func run(_ stage: any ScrubStage, _ y: inout [Double], _ log: inout [String], sampleRate: Int) {
+        let result = stage.process(y, sampleRate: sampleRate)
+        y = result.output
+        log.append(result.summary)
+    }
+
     func runTracks(_ y: inout [Double], _ log: inout [String], sampleRate: Int) {
         guard !tracks.expected.isEmpty else { return }
         var tracks = tracks

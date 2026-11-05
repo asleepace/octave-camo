@@ -140,10 +140,11 @@ web app and the research harness:
    Nothing narrow survives for a matched filter to lock on to.
 
 **The check** behind the page's "what a tracker finds" counts and the spectrogram's outlines is a
-blind attacker: a frame-by-frame tone tracker (40 Hz–8 kHz, which also fits flyby curves) plus a
-line integrator that averages over seconds, as a patient attacker would, so faint steady lines
-count too. It looks further than the cloak reaches, so whatever the cloak leaves is shown, not
-hidden. [ACOUSTICS.md](ACOUSTICS.md) explains how it works and measures it; [EXPERIMENTS.md](EXPERIMENTS.md) is the lab notebook for improving it. [RESEARCH.md](RESEARCH.md) surveys related work, and [SOURCES.md](SOURCES.md) lists every source.
+blind attacker: a frame-by-frame tone tracker (40 Hz–8 kHz, which also fits flyby curves), a line
+integrator that averages over seconds, as a patient attacker would, so faint steady lines count
+too, and a short-window path search that follows fast falling sweeps (a jet's fan tone, 0.5–4 kHz)
+and keeps those that fit a flyby. It looks further than the cloak reaches, so whatever the cloak
+leaves is shown, not hidden. [ACOUSTICS.md](docs/ACOUSTICS.md) explains how it works and measures it; [EXPERIMENTS.md](docs/EXPERIMENTS.md) is the lab notebook for improving it. [RESEARCH.md](docs/RESEARCH.md) surveys related work, and [SOURCES.md](docs/SOURCES.md) lists every source.
 
 The web app also scans the picture: one decode pass measures each frame's row brightness, and a
 blind search for a band at 100 or 120 Hz (the way an attacker would look) decides whether the
@@ -154,10 +155,12 @@ shows ("saved N") is for the file you post, not only for what went into the enco
 
 ## Limits
 
-- Every number so far is from synthetic clips. Real recordings with ground-truth tracks are being
-  collected.
-- Faint tones, and any above 1 kHz, are counted and outlined but not removed yet: on a real outdoor
-  clip, passing cars' faint tones and a steady 5 kHz whine survived the cloak.
+- The evidence table is synthetic. Real phone recordings with ADS-B ground truth are scored in the
+  lab (kept private; results in [docs/EXPERIMENTS.md](docs/EXPERIMENTS.md)): so far, Experimental
+  removes a real jet pass that Full leaves, but a fainter one survives both presets for an
+  attacker who has the flight tracks. Removal driven by flight tracks is being built.
+- Faint tones, and any above 1 kHz, are counted and outlined but only **Experimental** removes
+  them: on a real outdoor clip, passing cars' faint tones and a steady 5 kHz whine survived Full.
 - Other known gaps: a source's loudness envelope under Full; weak curved (Doppler) lines (the
   check now follows a jet's fan tone above 1 kHz, but only Experimental removes it); light flicker that
   barely moves (60 Hz lights at 30 fps); timetabled sounds such as bells and horns. Details in
@@ -188,30 +191,40 @@ swift build -c release && swift test -c release      # library + CLI (macOS, Lin
 scripts/build-wasm.sh                                # WebAssembly build (Swift 6.4.2 + its wasm SDK)
 cd web && bun install && bun run dev                 # web app (a JS stand-in runs without the wasm)
 cd harness && bun install && bun test                # attackers, defenses, benchmarks
+python3 -m unittest discover -s lab/tests -t .       # lab invariants (numpy, scipy, soundfile)
+python3 scripts/check-links.py                       # every relative Markdown link resolves
 ```
 
 CI runs on every push (actions pinned to commits, read-only permissions): Swift tests on macOS,
 Linux and WebAssembly; the web app's unit tests against the real wasm build; a browser end-to-end
 test of the production build (CSP on, metadata gone, picture hash-identical, flicker removed and
 re-verified on the saved file); the harness tests; and the benchmark gate on both the harness and
-the Swift pipeline. The site deploys from `main` only when all of them pass.
+the Swift pipeline; the lab's invariants and a link check of the docs. The site deploys from
+`main` only when all of them pass.
 
 ```
 Sources/
   OctaveCamoKit/      pure-Swift DSP, no Foundation: builds for iOS, macOS, Linux, WebAssembly
-    DSP/              FFT, RealFFT, Biquad, SeededRNG, low-band STFT, ERB scale
+    DSP/              FFT, RealFFT, Biquad, SeededRNG, low-band and band-limited STFTs, ERB scale
     Model/            FlybyGeometry: the flyby physics, shared by synth, fitter and scurve
-    Analysis/         ToneTracker, FlybyAnalyzer (blind attacker), PitchTracker (YIN), FlickerScan
-    Scrub/            ScrubPipeline: HumNotch, ToneSubtraction, SCurveCancel, LowBandRegeneration
+    Analysis/         the check: FlybyAnalyzer over ToneTracker, LineIntegrator and PathSearch;
+                      PitchTracker (YIN), FlickerScan
+    Scrub/            ScrubPipeline: HumNotch, ToneSubtraction, SCurveCancel, LowBandRegeneration,
+                      BandWobble, LineFill (Experimental), TrackFill (flight tracks, in progress)
     Synth/            FlybySynth: known-truth test clips
   OctaveCamoIO/       WAV read/write
   OctaveCamoWasm/     WebAssembly exports for the web app (WASI reactor)
   octave-camo/        CLI: synth, analyze, scrub
-Tests/                Swift tests
+Tests/                Swift tests: behaviour snapshots, invariants, the detection baseline
 web/                  web app: Vite, TypeScript, Tailwind; worker, Mediabunny remux, WebGL de-flicker
 harness/              Bun/TypeScript: matched (ADS-B) attacker, defense modules, benchmark gate,
                       OpenSky / Flightradar24 ground truth (see harness/README.md)
+lab/                  Python: recorder sessions with ADS-B ground truth, the known-path and
+                      place-searching attackers, experiments (see lab/README.md)
+docs/                 how the check works, the lab notebook, plan, ideas, research, sources
 reference/            NumPy prototypes and synthetic clip generators
+scripts/              wasm build, video scrub, link check
+tools/wasm-opt/       pinned binaryen for release builds
 ```
 
 ### Library
@@ -235,6 +248,8 @@ same pipeline.
 - Found a way to recover location from a cloaked file, or anything leaving the browser? See
   [SECURITY.md](SECURITY.md) for private reporting.
 - [CONTRIBUTING.md](CONTRIBUTING.md): real recordings with ground truth help most.
-- [PLAN.md](PLAN.md): the order of work. [ACOUSTICS.md](ACOUSTICS.md): how the check finds tones, and why.
-- [IDEAS.md](IDEAS.md): the backlog. [CHANGELOG.md](CHANGELOG.md): what changed.
+- [docs/](docs/README.md): how the check finds tones ([ACOUSTICS](docs/ACOUSTICS.md)), the lab
+  notebook ([EXPERIMENTS](docs/EXPERIMENTS.md)), the [plan](docs/PLAN.md), [ideas](docs/IDEAS.md),
+  [research](docs/RESEARCH.md) and [sources](docs/SOURCES.md). [CHANGELOG.md](CHANGELOG.md): what
+  changed.
 - MIT, see [LICENSE](LICENSE).

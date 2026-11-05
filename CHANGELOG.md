@@ -9,6 +9,31 @@ are grouped by milestone, newest first, with the commits that made them.
 
 ## [Unreleased]
 
+### Flight-track removal (engine and lab only), a place-searching attacker, tidier docs
+
+- **`TrackFill`, removal driven by flight tracks:** given each aircraft's predicted Doppler curve
+  at the recording position (`ExpectedPass`: audio times and factors only, never a position), it
+  finds the tones following the curve (rest frequency free, a few seconds of timing slack, against
+  the same curve at wrong times) and fills them. CLI `scrub --expect passes.json`, lab `trackfill`.
+  Not in the page; not yet effective on the one real session it was tried on (docs/EXPERIMENTS.md).
+- **The place-searching attacker** (`python3 -m lab locate`), after the video that inspired the
+  project: every point of a grid scored by every aircraft's predicted curve on one timeline.
+- **Invariant tests:** the path search ignores gain (boosting can't help it, attenuating can't hide
+  from it), moves with a delay, rejects rising sweeps; the noise fill sits within 0.5 dB of its
+  surroundings along a curve; track removal is a no-op without passes, refuses unusable ones,
+  touches nothing outside its curve, fills nothing on noise, on speech or at the wrong time, and
+  runs after the low band and before `lines`. They caught a masking bug that made ghost tones.
+  The lab has its own (`lab/tests`): a 40 dB band-stop over a sweep doesn't hide it from a
+  whitened detector, the Doppler geometry, the cache key, alignment. CI runs them, plus a link
+  check of the docs.
+- **Docs moved to `docs/`** (ACOUSTICS, EXPERIMENTS, IDEAS, PLAN, RESEARCH, SOURCES, with an
+  index); README, CHANGELOG, CONTRIBUTING, SECURITY and THREAT_MODEL stay at the root. The README's
+  layout, check and limits are up to date; PLAN is reorganized into done, now and next.
+- **Review fixes:** the path search's cache is marked as single-threaded state; the pipeline runs
+  track removal between two explicit stage groups; passes are validated (finite, increasing,
+  physical factors); the lab's shared plumbing moved out of `__main__` (`lab/common.py`), and its
+  dependencies are listed (`lab/requirements.txt`).
+
 ### The check follows a jet's fan tone
 
 - **A second detector in the check, `PathSearch`:** short windows (0.17 s) over 500 Hz–4 kHz, each

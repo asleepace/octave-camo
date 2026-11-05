@@ -36,7 +36,7 @@ public struct LowBandRegeneration: ScrubStage {
     /// (see `flatten`): it keeps the band's median level and anything quicker (a thump, a door,
     /// footsteps), but not the rise and fall
     /// of a passing plane over tens of seconds, which the smoothing above lets through and an
-    /// attacker can line up with flight tracks (ACOUSTICS.md, the envelope attack).
+    /// attacker can line up with flight tracks (docs/ACOUSTICS.md, the envelope attack).
     public var flattenSeconds = 0.0
     public var fftSize = 8_192
     /// Width, in ERBs, over which the noise's spectral shape is smoothed. Anything narrower (a

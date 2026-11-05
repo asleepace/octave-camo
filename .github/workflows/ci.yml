@@ -185,7 +185,7 @@ jobs:
   deploy:
     name: Deploy to GitHub Pages
     # Only a build that passed everything ships.
-    needs: [swift-macos, swift-linux, wasm, web, e2e, harness, bench]
+    needs: [swift-macos, swift-linux, wasm, web, e2e, harness, bench, lab]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
@@ -212,6 +212,21 @@ jobs:
             [ "$actual" = "$hash" ] || { echo "mismatch: $file"; exit 1; }
           done < checksums.txt
           echo "all $(wc -l < checksums.txt) files match"
+
+  lab:
+    name: Lab (Python) and docs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+      - name: Dependencies
+        run: pip install numpy scipy soundfile
+      - name: Lab invariants (synthetic only; real sessions never reach CI)
+        run: python -m unittest discover -s lab/tests -t . -v
+      - name: Every relative Markdown link resolves
+        run: python scripts/check-links.py
 
   harness:
     name: Harness (Bun)

@@ -89,4 +89,64 @@ final class PathSearchTests: XCTestCase {
         XCTAssertTrue(doppler(after).filter { $0.maxFrequency > 1_100 }.isEmpty, "\(check.analyze(after).tracks)")
         XCTAssertTrue(passes(after).isEmpty || doppler(after).isEmpty)
     }
+
+    // MARK: Invariants
+
+    /// Level-blind: each bin is compared with its own running median, so boosting the audio (or
+    /// turning it down) changes nothing. Boosting can't help a detector like this one, and
+    /// attenuating can't hide from it.
+    func testGainChangesNothing() {
+        let x = LineFillTests.fanTone(rate: 16_000, snr: 20).mono
+        let base = PathSearch().tracks(in: x, sampleRate: 16_000)
+        XCTAssertEqual(base.count, 1)
+        for gain in [0.01, 100.0] {
+            let other = PathSearch().tracks(in: x.map { $0 * gain }, sampleRate: 16_000)
+            XCTAssertEqual(other.map(\.frequencies), base.map(\.frequencies), "gain \(gain)")
+            XCTAssertEqual(other.map(\.times), base.map(\.times), "gain \(gain)")
+        }
+    }
+
+    /// Starting the clip later moves the pass by the same time, and nowhere in frequency.
+    func testDelayMovesThePassInTimeOnly() {
+        let x = LineFillTests.fanTone(rate: 16_000, snr: 20).mono
+        let pad = DetectionScenes.white(16_000 * 5, seed: 77)
+        guard let a = PathSearch().tracks(in: x, sampleRate: 16_000).first,
+              let b = PathSearch().tracks(in: pad + x, sampleRate: 16_000).first else { return XCTFail("pass not found") }
+        XCTAssertEqual(b.times.first! - a.times.first!, 5, accuracy: 1.5)
+        XCTAssertEqual(b.minFrequency, a.minFrequency, accuracy: 0.02 * a.minFrequency)
+        XCTAssertEqual(b.maxFrequency, a.maxFrequency, accuracy: 0.02 * a.maxFrequency)
+    }
+
+    /// A pass played backwards rises: a straight flyby is never heard rising, so it isn't a pass.
+    func testARisingSweepIsNotAPass() {
+        let x = LineFillTests.fanTone(rate: 16_000, snr: 25).mono
+        XCTAssertTrue(PathSearch().tracks(in: x.reversed(), sampleRate: 16_000).isEmpty)
+    }
+
+    /// Noise fill along a curve sits at its surroundings' level. A matched filter integrating
+    /// along the exact curve sees ~0.1 dB, so a biased strip is itself a trace; today the bias is
+    /// about ±0.3 dB (docs/EXPERIMENTS.md, track-driven removal), and this guards against it growing.
+    func testTheFillSitsNearTheBackgroundLevel() {
+        for sr in [16_000, 48_000] {
+            let x = DetectionScenes.white(sr * 60, seed: 3)
+            let geom = FlybyGeometry(f0: 700, speed: 133, t0: 30, distance: 3_900)
+            let t = Array(stride(from: 5.0, through: 55, by: 0.05))
+            let line = Track(times: t, frequencies: geom.received(at: t).frequency, levels: t.map { _ in 0 })
+            var y = x, rng = SeededRNG(seed: 1), fill = LineFill()
+            fill.marginHz = 8
+            XCTAssertTrue(fill.fill(&y, line, sampleRate: sr, rng: &rng))
+            // Power along the curve (±2 bins), before and after, from 12 to 48 s.
+            let n = LineFill.fftSize(sampleRate: sr), w = DSP.hann(n), fft = RealFFT(size: n)
+            var re = [Double](repeating: 0, count: n / 2 + 1), im = re, before = 0.0, after = 0.0
+            for start in stride(from: sr * 12, to: sr * 48 - n, by: n / 4) {
+                let tc = (Double(start) + Double(n) / 2) / Double(sr)
+                let k = Int((geom.received(at: [tc]).frequency[0] * Double(n) / Double(sr)).rounded())
+                fft.forward((0..<n).map { x[start + $0] * w[$0] }, &re, &im)
+                for kk in (k - 2)...(k + 2) { before += re[kk] * re[kk] + im[kk] * im[kk] }
+                fft.forward((0..<n).map { y[start + $0] * w[$0] }, &re, &im)
+                for kk in (k - 2)...(k + 2) { after += re[kk] * re[kk] + im[kk] * im[kk] }
+            }
+            XCTAssertEqual(10 * log10(after / before), 0, accuracy: 0.5, "rate \(sr)")
+        }
+    }
 }

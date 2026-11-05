@@ -10,7 +10,7 @@ import WASILibc
 
 /// Finds tones that move: a jet's fan tone sweeping down as it passes, which the frame tracker
 /// (one-second windows, a per-frame threshold) smears away and the line integrator (steady lines)
-/// isn't built for. EXPERIMENTS.md, E2: on a real indoor recording it found a fan tone sweeping
+/// isn't built for. docs/EXPERIMENTS.md, E2: on a real indoor recording it found a fan tone sweeping
 /// 1.75 → 1.0 kHz that the check had missed, while music, singing, speech, sirens, construction and
 /// busy rooms stayed quiet once the check's flyby fit was applied.
 ///
@@ -181,7 +181,9 @@ public struct PathSearch {
     /// Mean excess and the best-path score's mean and spread on white noise, per sample rate and
     /// settings (computed once, then cached).
     struct Null { let mu: Double, mean: Double, sd: Double }
-    private static var nulls: [String: Null] = [:]
+    /// Unsynchronized: the engine runs single-threaded (one wasm instance per worker; the CLI and
+    /// tests call it from one thread at a time).
+    nonisolated(unsafe) private static var nulls: [String: Null] = [:]
 
     func null(sampleRate: Int) -> Null? {
         let key = "\(sampleRate)|\(band)|\(windowSeconds)|\(referenceSeconds)|\(blockSeconds)|\(clip)|\(spanSeconds)|\(stepSeconds)|\(slopes)|\(slopePenalty)|\(minFall)|\(edgeBins)"

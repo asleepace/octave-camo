@@ -112,8 +112,8 @@ func scrub(_ args: Arguments) throws {
     if let path = args.string("expect") {
         let data = try Data(contentsOf: URL(fileURLWithPath: path))
         pipeline.tracks.expected = try JSONDecoder().decode([ExpectedPass].self, from: data)
-        try require(pipeline.tracks.expected.allSatisfy { $0.times.count == $0.factors.count && $0.times.count > 1 },
-                    "--expect: each pass needs times and factors of the same length")
+        try require(pipeline.tracks.expected.allSatisfy(\.isValid),
+                    "--expect: each pass needs ≥ 2 finite, strictly increasing times and as many factors in 0.5–2")
     }
     try require(pipeline.subtraction.passes >= 0, "--passes must be 0 or more")
     try require(pipeline.wobble.depth >= 0 && pipeline.wobble.depth <= 0.1, "--depth must be between 0 and 0.1")
