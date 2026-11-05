@@ -2,7 +2,7 @@
 
 A lab notebook for the check (the attacker model the page counts with): what we measured, what it
 means, and what to try next. The detector's design is in [ACOUSTICS.md](ACOUSTICS.md), the order
-of work in [PLAN.md](PLAN.md). Real recordings are described here only by what they contain; they
+of work in [PLAN.md](PLAN.md), related work in [RESEARCH.md](RESEARCH.md). Real recordings are described here only by what they contain; they
 never go into the repo.
 
 ## The problem
