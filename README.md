@@ -157,8 +157,9 @@ shows ("saved N") is for the file you post, not only for what went into the enco
 
 - The evidence table is synthetic. Real phone recordings with ADS-B ground truth are scored in the
   lab (kept private; results in [docs/EXPERIMENTS.md](docs/EXPERIMENTS.md)): so far, Experimental
-  removes a real jet pass that Full leaves, but a fainter one survives both presets for an
-  attacker who has the flight tracks. Removal driven by flight tracks is being built.
+  removes a real jet pass that Full leaves, but a fainter one survived both presets for an
+  attacker who has the flight tracks. Removal driven by those tracks closes it in the engine and
+  the lab (attacker z 6.3 → 0.8); it isn't on the page yet.
 - Faint tones, and any above 1 kHz, are counted and outlined but only **Experimental** removes
   them: on a real outdoor clip, passing cars' faint tones and a steady 5 kHz whine survived Full.
 - Other known gaps: a source's loudness envelope under Full; weak curved (Doppler) lines (the
@@ -210,7 +211,7 @@ Sources/
     Analysis/         the check: FlybyAnalyzer over ToneTracker, LineIntegrator and PathSearch;
                       PitchTracker (YIN), FlickerScan
     Scrub/            ScrubPipeline: HumNotch, ToneSubtraction, SCurveCancel, LowBandRegeneration,
-                      BandWobble, LineFill (Experimental), TrackFill (flight tracks, in progress)
+                      BandWobble, LineFill (Experimental), TrackFill (flight tracks, engine and lab)
     Synth/            FlybySynth: known-truth test clips
   OctaveCamoIO/       WAV read/write
   OctaveCamoWasm/     WebAssembly exports for the web app (WASI reactor)

@@ -100,10 +100,7 @@ extension ScrubPipeline {
 
     func runTracks(_ y: inout [Double], _ log: inout [String], sampleRate: Int) {
         guard !tracks.expected.isEmpty else { return }
-        var tracks = tracks
-        if steps.contains(.lowband), lowband.cutoff < tracks.band.upperBound - 100 {
-            tracks.band = max(tracks.band.lowerBound, lowband.cutoff)...tracks.band.upperBound
-        }
+        // The attacker's band, low band included: it searches there too, regenerated or not.
         let result = tracks.process(y, sampleRate: sampleRate)
         y = result.output
         log.append(result.summary)

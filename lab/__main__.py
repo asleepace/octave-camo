@@ -227,19 +227,30 @@ def cmd_locate(sid: str, others: list[str]):
     save_result(f"locate-{sid}", rows)
 
 
+def clean_curve(heard: np.ndarray, fac: np.ndarray, closest: float) -> dict:
+    """A predicted curve as the engine takes it (`ExpectedPass`): physical factors only (0.5–2;
+    a velocity glitch where two position sources disagree can exceed that), and times strictly
+    increasing after rounding (the same glitch, a jump in range, moves the heard time back)."""
+    ok = np.isfinite(heard) & np.isfinite(fac) & (fac > 0.5) & (fac < 2)
+    t, f = np.round(heard[ok], 3), np.round(fac[ok], 7)
+    up = t > np.maximum.accumulate(np.concatenate([[-np.inf], t[:-1]]))
+    return {"times": t[up].tolist(), "factors": f[up].tolist(), "closest": round(float(closest), 3)}
+
+
 def expected_passes(sid: str, max_km: float = 15.0) -> list[dict]:
     """Each aircraft's predicted Doppler factor over the audio at the recording position (audio
-    times and factors only), for aircraft within `max_km` while the audio runs."""
+    times and factors only), for aircraft within `max_km` while the audio runs, two minutes either
+    side of it (the engine's test moves curves up to a minute)."""
     from . import locate
     geo = corpus.geometry(sid)
     dur, out = geo["duration_s"], []
     for h, (heard, fac, tc, rmin) in locate.curves(geo, np.zeros(2)).items():
-        keep = (heard >= -5) & (heard <= dur + 5)
+        keep = (heard >= -120) & (heard <= dur + 120)
         if rmin > max_km * 1000 or keep.sum() < 20 or not (-30 < tc < dur + 30):
             continue
-        t, f = np.round(heard[keep], 3), np.round(fac[keep], 7)
-        up = np.concatenate([[True], np.diff(t) > 0])            # strictly increasing after rounding
-        out.append({"times": t[up].tolist(), "factors": f[up].tolist()})
+        c = clean_curve(heard[keep], fac[keep], tc)
+        if len(c["times"]) >= 20:
+            out.append(c)
     return out
 
 

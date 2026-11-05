@@ -28,8 +28,9 @@ USAGE
                         [--mains 50,60] [--passes 3] [--cutoff 300] [--lowband-mode regenerate|highpass]
                         [--flatten 5] (experimental: flatten low-band swells slower than N s)
                         [--no-keep-voice] [--depth 0.015] [--wobble-top 600] [--seed N]
-                        [--expect passes.json] (fill the tones these predicted Doppler curves
-                        carry: [{"times": [s…], "factors": [received/emitted…]}, …])
+                        [--expect passes.json] (remove what these predicted Doppler curves carry,
+                        until a known-path attacker's test fails: [{"times": [s…], "factors":
+                        [received/emitted…], "closest": s}, …], ±2 min around the audio)
   octave-camo --version
 
 COMMANDS

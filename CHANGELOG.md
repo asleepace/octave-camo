@@ -9,6 +9,19 @@ are grouped by milestone, newest first, with the commits that made them.
 
 ## [Unreleased]
 
+### Track removal closes the known-path leak (engine and lab)
+
+- **`TrackFill` runs the known-path attacker's own test and removes until it fails:** the best
+  mean excess along the predicted curve over all rest frequencies and ±6 s, against the curve at
+  ten wrong times; while z ≥ 2.5, fill the best tone and test again. On three real passes the
+  attacker's z after Full + tracks: 6.3 → 0.8, 10.1 → −2.5, 2.8 → −0.2. Plane-free sessions are
+  left alone. Not on the page yet.
+- **Parity fixes:** curves that leave the band are skipped, as the attacker skips them; the
+  running median uses quarter-second blocks (1 s blocks under-scored a real pass and stopped two
+  tones short). `ExpectedPass` takes the heard closest-approach time and two minutes either side.
+- **Lab:** curves handed to the engine are cleaned (velocity glitches where two position sources
+  disagree gave factors over 2 and heard times running backwards).
+
 ### Flight-track removal (engine and lab only), a place-searching attacker, tidier docs
 
 - **`TrackFill`, removal driven by flight tracks:** given each aircraft's predicted Doppler curve

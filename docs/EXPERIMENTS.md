@@ -295,45 +295,61 @@ pass under 1 kHz that no blind detector finds survives both presets, because rem
 by what the blind check sees. The attacker with the tracks will always see more than a blind
 check, which argues for removal that uses the same tracks (see PLAN.md).
 
-## Track-driven removal (in progress, `track-fill` branch)
+## Track-driven removal: the leak closed
 
 `TrackFill` (Swift, CLI `scrub --expect passes.json`, lab `python3 -m lab trackfill`) takes each
-aircraft's predicted Doppler factor at the recording position and, around its closest approach,
-searches every rest frequency (0.2 % steps) and ±6 s of timing for tones following the curve:
-each rest frequency's best mean excess minus the same at four wrong times, scaled by its
-neighbours' spread (±25 %). Then it fills the tones it finds with noise along their curves.
+aircraft's predicted Doppler factor at the recording position and runs the known-path attacker's
+own test on the audio: the best mean excess along f0·factor(t − offset) over every rest frequency
+(100 Hz–3.5 kHz) and ±6 s of timing, around the closest approach, against the same search with
+the curve moved 20–60 s (a z). While that z is at least 2.5, it fills the best tone with noise
+along its curve and tests the filled audio again.
 
-**What worked:** on the ninth session it finds, with no blind detection at all, the tone the
-known-path attacker uses (698 Hz), plus 782 and 887 Hz. The search is the same with or without
-the low band regenerated, and the statistic cancels artefacts that sit still in time (the first
-version, which took the best of all rest frequencies for its null, was thrown by the low band's
-crossover and found nothing).
+| session | attacker z, original | Full | **Full + tracks** | Experimental | **Experimental + tracks** |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| indoors, window open (climb-out, 3.9 km) | 7.0 | 6.3 | **0.8** | 5.7 | **0.6** |
+| bathroom (B38M, 3.1 km) | 9.8 | 10.1 | **−2.5**¹ | −0.8 | – |
+| outdoors on a deck (climb-out, 2.8 km) | 4.8 | 2.8 | **−0.2** | 3.5 | **0.0** |
 
-**What didn't, yet:** removing some of a plane's tones makes it *more* detectable. The plane
-carries a family of tones (about 490, 534, 698, 782, 887, 993 Hz). After filling 698 and 782 Hz
-the known-path attacker switches to 534 Hz, which the fill never touched (0.00 dB change along
-it): its evidence is lower (+0.64 → +0.46 dB above the null), but its z rises from 6.2 to 12.0.
-The wrong-time curves of the null used to cross the plane's other tones, which spread the null
-out; with two of them gone the null tightens and what's left stands out more. So partial removal
-is worse than none: it has to take every tone the attacker could use, or nothing.
+¹ the engine's own score (9.5 → −2.5 after one fill at 1,109 Hz); the lab's attacker gave the
+Full output 10.1. The effect along the best curve after removal is +0.03 dB or less.
 
-Why it misses 534 Hz: its statistic isn't the attacker's. It scales each rest frequency against
-its neighbours (±25 %); 534 Hz sits among the family's other tones, so against its neighbours it
-scores z −0.4 (+0.33 dB), while the attacker, comparing the same curve at 34 wrong times, scores
-it z 12. **Next: give the removal the attacker's own statistic** (the best over all rest
-frequencies, against many wrong times, after the low band's crossover is excluded) and remove
-until that falls below a bar, then search engine-tone families together (E5) and make the fill's
-level unbiased along the curve. Measured on white noise (48 kHz, along a 36 s curve), the fill
-sits about +0.3 dB above its surroundings at the curve's centre and −0.3 dB at the strip's edges;
-a matched filter resolves ~0.1 dB.
+On the window-open session it filled four tones (699, 539, 805, 635 Hz): the family that defeated
+the first version, which stopped after the tones it liked and left the rest more detectable. On
+the plane-free sessions it fills nothing (scores −1.6 to 2.3, below the bar), except the street
+session, where it scored a 737 at 4.0 (the lab's attacker: 2.3) and filled two tones.
 
-**Bugs the invariant tests caught.** After finding a tone, the search masked its curve before
-looking for the next one: first with the spectrogram's floor, which lowered the nulls of other
-rest frequencies whose wrong-time curves cross it (a Doppler factor spans ~0.7–1.7, so 605 Hz
+Getting there took three fixes, each a gap between this test and the attacker's:
+- **Its statistic.** The first version scaled each rest frequency against its neighbours; the
+  attacker compares the best over all rest frequencies with the same at wrong times. Removing some
+  of a plane's tones then made a tone it missed (534 Hz) more detectable, z 6.2 → 12.0 with less
+  evidence left: the wrong-time curves had been crossing the other tones, and with those gone the
+  null tightened. Partial removal is worse than none; it now stops only when the attacker's score
+  is low.
+- **Curves off the band's edge.** It averaged a curve over whatever frames stayed inside the band;
+  the attacker only counts curves inside it throughout. Half-outside curves, averaged over fewer
+  and noisier frames, pushed the nulls' best up and hid the real tone (z 4.1 where the attacker
+  scores 6.3).
+- **The running median.** Its whitening matched the lab's emulation to 0.002 dB, but medians of
+  1 s blocks are coarser than the attacker's exact 15 s median: it scored the real pass 5.2 and
+  stopped after two of four tones. Quarter-second blocks score it 6.4.
+
+Also measured: on white noise the fill sits about +0.3 dB above its surroundings at the curve's
+centre and −0.3 dB at the strip's edges (48 kHz, along a 36 s curve). After removal the attacker
+sees ≤ 0.03 dB along its best curve, so this hasn't shown up as a trace yet; it's worth fixing
+before relying on a single long fill.
+
+**Bugs the invariant tests caught.** After finding a tone, an earlier search masked its curve
+before looking for the next one: first with the spectrogram's floor, which lowered the nulls of
+other rest frequencies whose wrong-time curves cross it (a Doppler factor spans ~0.7–1.7, so 605 Hz
 shifted in time meets 1,225 Hz): ghosts at 605 and 292 Hz on a synthetic pass. Then with the
-average, which left a loud tone's shoulders: on the same pass at 40 dB, extra tones at ±2–3 % and
-ghosts at 607 and 299 Hz. Now it fills the best tone of each pass and searches the filled audio
-again; a loud pass is one tone, filled once, with nothing left.
+average, which left a loud tone's shoulders (±2–3 %) and ghosts at 607 and 299 Hz at 40 dB. It now
+fills and tests again.
+
+**Two more sessions.** In the bathroom with the tap running and construction outside (a 737
+4.1 km away): nothing for any detector (attacker z −0.1). The recorder's new build fixes the mains
+estimate: 60 Hz grid, 59.981 ± 0.010 Hz (was "50 Hz", ±0.2), a realistic ENF trace; the ultrasonic
+band is still empty. On the deck, an aircraft climbing out 2.8 km away (148 m/s, 7,800 ft; the
+person recording marked it at 57 s, closest heard at 67 s): the third row above.
 
 ## The known-path attacker's null
 

@@ -157,6 +157,15 @@ class Plumbing(unittest.TestCase):
         y = np.concatenate([np.zeros(1_234), x])[: len(x)]
         np.testing.assert_allclose(common.align(x, y, SR)[5_000:-5_000], x[5_000:-5_000])
 
+    def test_curves_handed_to_the_engine_are_usable(self):
+        from lab.__main__ import clean_curve
+        heard = np.array([0.0, 1.0, 1.0004, 0.5, 2.0, 3.0, 4.0])          # a rounding tie, a jump back
+        fac = np.array([1.2, 1.1, 1.1, 1.0, 2.6, 0.9, np.nan])            # a glitch above 2, a NaN
+        c = clean_curve(heard, fac, 1.5)
+        self.assertEqual(c["times"], [0.0, 1.0, 3.0])
+        self.assertTrue(all(0.5 < f < 2 for f in c["factors"]))
+        self.assertEqual(c["closest"], 1.5)
+
     def test_pressure_altitude(self):
         self.assertAlmostEqual(corpus.pressure_altitude_m(101.325), 0, delta=0.01)
         self.assertAlmostEqual(corpus.pressure_altitude_m(89.876), 1_000, delta=2)    # ICAO table

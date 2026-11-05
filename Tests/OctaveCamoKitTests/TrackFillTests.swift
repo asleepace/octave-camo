@@ -11,8 +11,9 @@ final class TrackFillTests: XCTestCase {
     static func expected(seconds: Double = 60, shift: Double = 0) -> ExpectedPass {
         let heardClosest = seconds / 2 - 6 + 2_000 / FlybyGeometry.speedOfSound + shift
         let g = FlybyGeometry(f0: 1, speed: 141, t0: heardClosest, distance: 2_000)
-        let t = Array(stride(from: -5.0, through: seconds + 5, by: 0.1))
-        return ExpectedPass(times: t, factors: g.received(at: t).frequency)
+        // Two minutes either side: the test moves the curve up to a minute for its null.
+        let t = Array(stride(from: -120.0, through: seconds + 120, by: 0.1))
+        return ExpectedPass(times: t, factors: g.received(at: t).frequency, closest: heardClosest)
     }
 
     static func stage(_ passes: [ExpectedPass]) -> TrackFill {
@@ -52,36 +53,35 @@ final class TrackFillTests: XCTestCase {
 
     // MARK: Finding and removing
 
-    /// A pass too faint for the blind path search (13 dB/Hz; at 16 kHz it needs ~16) is found
-    /// along its predicted curve, once, at the right rest frequency and timing, and is gone
-    /// afterwards.
-    func testFindsAndRemovesAPassTheBlindCheckCantSee() {
-        let audio = LineFillTests.fanTone(rate: Self.rate, snr: 13)
-        let x = audio.mono
-        XCTAssertTrue(PathSearch().tracks(in: x, sampleRate: Self.rate).isEmpty, "the blind search sees it: this test lost its point")
-        let stage = Self.stage([Self.expected()])
-        let found = stage.find(x, sampleRate: Self.rate)
-        XCTAssertEqual(found.count, 1, "\(found)")
-        if let tone = found.first {
-            XCTAssertEqual(tone.rest, 1_234, accuracy: 1_234 * 0.01)
-            XCTAssertLessThanOrEqual(abs(tone.offset), 1)
-        }
-        let r = stage.process(x, sampleRate: Self.rate)
-        XCTAssertTrue(r.summary.contains("filled 1 "), r.summary)
-        let after = stage.find(r.output, sampleRate: Self.rate)
-        XCTAssertFalse(after.contains { abs($0.rest - 1_234) < 25 }, "\(after)")
+    /// The attacker's verdict on the clip's one pass.
+    static func verdict(_ x: [Double], _ stage: TrackFill) -> TrackFill.Tone? {
+        stage.verdicts(x, sampleRate: rate).first ?? nil
     }
 
-    /// A loud pass is one tone, filled once, with nothing left: no shoulders of it, no ghosts.
-    /// (Masking found tones in the spectrogram, instead of filling and searching again, left
-    /// shoulders at ±2–3 % and ghosts at 607 and 299 Hz on this clip at 40 dB.)
-    func testALoudPassIsOneToneAndNothingIsLeft() {
+    /// A pass too faint for the blind path search (13 dB/Hz; at 16 kHz it needs ~16) stands out
+    /// to an attacker who has the track, at the right rest frequency and timing; after removal
+    /// it doesn't.
+    func testFindsAndRemovesAPassTheBlindCheckCantSee() {
+        let x = LineFillTests.fanTone(rate: Self.rate, snr: 13).mono
+        XCTAssertTrue(PathSearch().tracks(in: x, sampleRate: Self.rate).isEmpty, "the blind search sees it: this test lost its point")
+        let stage = Self.stage([Self.expected()])
+        guard let before = Self.verdict(x, stage) else { return XCTFail("no verdict") }
+        XCTAssertGreaterThan(before.z, stage.stopZ + 2)
+        XCTAssertEqual(before.rest, 1_234, accuracy: 1_234 * 0.015)
+        XCTAssertLessThanOrEqual(abs(before.offset), 1.5)
+        let r = stage.process(x, sampleRate: Self.rate)
+        XCTAssertFalse(r.summary.contains("filled 0 "), r.summary)
+        XCTAssertLessThan(Self.verdict(r.output, stage)?.z ?? 0, stage.stopZ, r.summary)
+    }
+
+    /// A loud pass ends below the bar too, in a few fills, not one per shoulder.
+    func testALoudPassEndsBelowTheBar() {
         for snr in [30.0, 40] {
             let x = LineFillTests.fanTone(rate: Self.rate, snr: snr).mono
             let stage = Self.stage([Self.expected()])
             let r = stage.process(x, sampleRate: Self.rate)
-            XCTAssertTrue(r.summary.contains("filled 1 "), "\(snr) dB: \(r.summary)")
-            XCTAssertTrue(stage.find(r.output, sampleRate: Self.rate).isEmpty, "\(snr) dB")
+            XCTAssertLessThan(Self.verdict(r.output, stage)?.z ?? 0, stage.stopZ, "\(snr) dB: \(r.summary)")
+            XCTAssertTrue(["filled 1 ", "filled 2 ", "filled 3 "].contains { r.summary.contains($0) }, "\(snr) dB: \(r.summary)")
         }
     }
 
@@ -92,7 +92,7 @@ final class TrackFillTests: XCTestCase {
         let stage = Self.stage([Self.expected()])
         let y = stage.process(x, sampleRate: Self.rate).output
         XCTAssertNotEqual(x, y)
-        let c = Self.expected().steepest, guardBand = stage.halfWindow + stage.maxOffset + 1
+        let c = Self.expected().center, guardBand = stage.halfWindow + stage.maxOffset + 1
         for i in x.indices where abs(Double(i) / Double(Self.rate) - c) > guardBand {
             if x[i] != y[i] { return XCTFail("sample at \(Double(i) / Double(Self.rate)) s changed") }
         }
@@ -116,16 +116,21 @@ final class TrackFillTests: XCTestCase {
         let stage = Self.stage([Self.expected()])
         for seed in 1...4 {
             let x = DetectionScenes.white(Self.rate * 60, seed: UInt64(seed))
-            XCTAssertTrue(stage.find(x, sampleRate: Self.rate).isEmpty, "seed \(seed)")
+            XCTAssertLessThan(Self.verdict(x, stage)?.z ?? 0, stage.stopZ, "seed \(seed)")
         }
     }
 
-    /// The tone is there, but not when the tracks say: nothing is filled (it removes what the
-    /// tracks predict, not whatever moves).
-    func testAPassAtTheWrongTimeFillsNothing() {
+    /// The tone is there, but not when the tracks say: a wrong track doesn't remove the real pass
+    /// (the right track still finds it afterwards), and works only around its own closest
+    /// approach. (Its curve, at some rest frequencies, lies along the real tone's tail, which an
+    /// attacker holding that track would score too, z 4.2 here; it fills those and stops.)
+    func testAPassAtTheWrongTimeLeavesTheRealOne() {
         let x = LineFillTests.fanTone(rate: Self.rate, seconds: 120, snr: 20).mono
-        let stage = Self.stage([Self.expected(seconds: 120, shift: 45)])
-        XCTAssertFalse(stage.find(x, sampleRate: Self.rate).contains { abs($0.rest - 1_234) < 25 })
+        let wrong = Self.stage([Self.expected(seconds: 120, shift: 45)]), right = Self.stage([Self.expected(seconds: 120)])
+        let r = wrong.process(x, sampleRate: Self.rate)
+        XCTAssertGreaterThan(Self.verdict(r.output, right)?.z ?? 0, right.stopZ + 2, r.summary)
+        let c = wrong.expected[0].center, guardBand = wrong.halfWindow + wrong.maxOffset + 1
+        XCTAssertFalse(x.indices.contains { abs(Double($0) / Double(Self.rate) - c) > guardBand && x[$0] != r.output[$0] })
     }
 
     /// Speech under a predicted pass: its harmonics don't follow the curve, so it's untouched.
