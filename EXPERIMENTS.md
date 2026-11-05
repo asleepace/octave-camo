@@ -63,6 +63,43 @@ Whitened STFT (each bin over its own median in time), log-power summed along the
   can't see it, however its window is tuned. It has to be integrated.
 - Along its path it's unmistakable, best with 0.13–0.26 s windows.
 
+## E2 — blind path search (done, first pass)
+
+No flight data. 0.17 s windows, hop 43 ms; each bin whitened; in every 10 s window (every 2.5 s) a
+Viterbi search for the best path through the 0.6–2.5 kHz band; scored as z against white noise
+through the same pipeline. Scripts: scratch `e2_viterbi.py`, `e2b_falling.py`, `e2c_smooth.py`.
+Run on all six recorder sessions (quiet bedrooms, a departure heard indoors, TV with construction
+outside, and the bathroom pass).
+
+1. **Any path, whitened against each bin's median over the clip (E2a).** It finds the fan tone
+   blind and traces it to within 5–17 Hz of the true curve from 60 to 83 s (z 35–49). But real
+   rooms aren't white noise: windows with no plane score z 20–40, a TV clip has a median of 25,
+   and a steady 1,008 Hz room line scores 60. Raw z against noise is no threshold.
+2. **Only falling paths (E2b).** Physics: a straight pass is always heard with falling pitch,
+   while voices wander and hums stay flat. Requiring a ≥ 2 % fall within the window helps (TV
+   median 25 → 17), but paths cheat: they ride a steady hum and drop at the end, or hop between
+   unrelated features.
+3. **Smooth, falling, against a running median (E2c).** Two more physics priors: whiten each bin
+   against its own running median over ±7.5 s, so a steady hum *is* the reference and vanishes
+   (hums are the integrator's job) while a moving tone never sits in one bin long enough to become
+   it; and track slope as well as frequency, paying for each change of slope, so a path has to
+   bend gently like a real Doppler curve. With the recorder's own calibration chirps excluded:
+
+   | recording | typical z | max z |
+   | --- | ---: | ---: |
+   | quiet bedrooms, indoor departure, spatial test | ~0 | 1.2–1.8 |
+   | bedroom at night | 0.4 | 6 |
+   | TV + construction (the hardest background) | 4.6 | 7.4 |
+   | **bathroom with the plane pass** | 3.8 | **13.5** (the pass, 58–68 s) |
+
+   A blind detector that ranks the plane first in its recording, about 6 z above the busiest
+   background we have, from three pieces of physics: tones move, they fall, and they bend gently.
+
+Open: the threshold needs far more backgrounds (music, singing, speech up close, traffic, wind,
+outdoors); the two fainter passes in other sessions (an arrival 3.6 km away, a departure 4 km
+away) weren't found in this band, which may be right (no audible tone) or not; harmonics (E5)
+could add more; the cost in Swift should be small (a few bins of state per frame).
+
 ## The zoom-out: the real attacker isn't blind
 
 E1 *is* the attacker who has ADS-B: given the plane's track, this recording shows it at z 9.5. Our
@@ -73,11 +110,8 @@ logs the real tracks with every session.
 
 ## Next experiments
 
-1. **E2 — blind path search.** Short windows (~0.25 s), whitened, then a Viterbi search over paths
-   whose slope is limited by physics. Does it find the fan tone with no flight data? How much z
-   does searching cost against the known path (the look-elsewhere price)? False alarms on real
-   recordings without planes (TV, construction, a fan, speech) and on synthetic noise, music and
-   speech.
+1. **E2, continued:** false alarms on music, singing, close speech, traffic and outdoor clips; the
+   look-elsewhere price (blind z against the known-path z on the same pass); the band up to 8 kHz.
 2. **E3 — coherence time.** How long a real tone stays in phase (indoors vs outdoors, near vs
    far): why dechirping failed indoors, and how much long windows can ever buy.
 3. **E4 — the known-path attacker as the metric.** For every recorder session with ADS-B: score
@@ -92,5 +126,6 @@ logs the real tracks with every session.
 ## Where this is heading
 
 Probably two detectors in the check: the existing long-window integrator for steady lines, and a
-short-window path search for anything that moves. Removal (`lines`) follows whatever either finds.
+short-window path search for anything that moves (E2c's: running-median whitening, smooth falling
+paths). Removal (`lines`) follows whatever either finds.
 Scored, in the end, against the known-path attacker.
