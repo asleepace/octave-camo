@@ -87,6 +87,9 @@ public struct FlybyAnalyzer {
     public var tracker: ToneTracker
     /// Finds weak steady lines by integrating over seconds (nil: the frame tracker alone).
     public var integrator: LineIntegrator? = LineIntegrator()
+    /// Finds fast falling sweeps the tracker smears (nil: off). Only those its flyby fit accepts
+    /// are kept, so a falling note or a siren is never reported, or filled, from here.
+    public var paths: PathSearch? = PathSearch()
     var optimizer = NelderMead()
 
     /// The attacker's tracker: the scrubber's range (40 Hz–1 kHz), plus 1–8 kHz with its own peak
@@ -109,20 +112,45 @@ public struct FlybyAnalyzer {
         return Analysis(tracks: reports.sorted { $0.duration > $1.duration })
     }
 
-    /// Every line the check reports, with its frequency path: the frame tracker's tracks, then the
-    /// integrator's weak steady lines that no earlier line already covers (where both found the
-    /// same line, the tracker's version is kept). `analyze` classifies exactly these; the
-    /// `lines` scrub stage fills them in.
+    /// Every line the check reports, with its frequency path: the frame tracker's tracks and the
+    /// path search's flyby passes, then the integrator's weak steady lines that no tracker track
+    /// already covers (where both found the same line, the tracker's version is kept). `analyze`
+    /// classifies exactly these; the `lines` scrub stage fills them in.
     public func lines(in audio: Audio) -> (tracked: [Track], integrated: [Track]) {
         let mono = audio.mono
-        let tracked = tracker.tracks(in: mono, sampleRate: audio.sampleRate)
-        guard let integrator else { return (tracked, []) }
-        var boxes = tracked.map(Self.box), integrated: [Track] = []
+        let framed = tracker.tracks(in: mono, sampleRate: audio.sampleRate)
+        var passes: [Track] = []
+        if let paths {
+            for pass in paths.tracks(in: mono, sampleRate: audio.sampleRate)
+            where !framed.contains(where: { Self.follows($0, pass) }) && classify(pass).kind == .doppler {
+                passes.append(pass)
+            }
+        }
+        guard let integrator else { return (framed + passes, []) }
+        // A pass's box spans its whole sweep, so it isn't used here: it would hide the steady
+        // lines it crosses (the integrator's lines drift too slowly to be a pass themselves).
+        var boxes = framed.map(Self.box), integrated: [Track] = []
         for line in integrator.tracks(in: mono, sampleRate: audio.sampleRate) where !boxes.contains(where: { Self.sameLine($0, line) }) {
             integrated.append(line)
             boxes.append(Self.box(line))
         }
-        return (tracked, integrated)
+        return (framed + passes, integrated)
+    }
+
+    /// `a` follows `b`: at most of `b`'s times inside `a`'s span, `a` is within max(9 Hz, 1 %) of it.
+    /// (A box test would let a steady hum crossing a sweep's range hide the sweep.)
+    static func follows(_ a: Track, _ b: Track) -> Bool {
+        guard let a0 = a.times.first, let a1 = a.times.last, a.times.count > 1 else { return false }
+        var inside = 0, close = 0, j = 0
+        for (t, f) in zip(b.times, b.frequencies) where t >= a0 && t <= a1 {
+            inside += 1
+            while j + 1 < a.times.count && a.times[j + 1] < t { j += 1 }
+            let k = min(j + 1, a.times.count - 1)
+            let w = a.times[k] > a.times[j] ? (t - a.times[j]) / (a.times[k] - a.times[j]) : 0
+            let fa = a.frequencies[j] + w * (a.frequencies[k] - a.frequencies[j])
+            if abs(fa - f) <= max(9, 0.01 * f) { close += 1 }
+        }
+        return inside > 0 && 2 * close >= b.times.count
     }
 
     /// A track's time and frequency extent (the fields `sameLine` compares).

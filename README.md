@@ -158,7 +158,8 @@ shows ("saved N") is for the file you post, not only for what went into the enco
   collected.
 - Faint tones, and any above 1 kHz, are counted and outlined but not removed yet: on a real outdoor
   clip, passing cars' faint tones and a steady 5 kHz whine survived the cloak.
-- Other known gaps: a source's loudness envelope; weak curved (Doppler) lines; light flicker that
+- Other known gaps: a source's loudness envelope under Full; weak curved (Doppler) lines (the
+  check now follows a jet's fan tone above 1 kHz, but only Experimental removes it); light flicker that
   barely moves (60 Hz lights at 30 fps); timetabled sounds such as bells and horns. Details in
   [THREAT_MODEL.md](THREAT_MODEL.md).
 - Removing light flicker re-encodes the picture in standard dynamic range, so HDR footage looks a

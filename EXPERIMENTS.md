@@ -209,14 +209,60 @@ would separate everything we have, at the cost of the faintest modelled passes (
 Also worth adding: an edge guard (no path within a few bins of the band's edges; several of this session's strongest main-band paths start at its 2,500 Hz top edge too), and joining
 windows (a real pass bends over 20–30 s; a gentle drift through hiss doesn't).
 
-**The known-path attacker needs geometry tolerance.** Taking the ADS-B track as given, it barely
-sees this pass (z ~2): the sweep in the recording is about twice as steep as the published geometry
-predicts (the sound fits a closest pass of ~1.75 km at 141 m/s; ADS-B says 3.1 km slant), and a few
-seconds earlier. Searching a time offset (±6 s) and ±2 bins isn't enough. A realistic attacker fits
-the geometry locally around the track (time, distance, speed near the published values, rest
-frequency free). Why the real sweep is steeper is itself an open question: reflections off nearby
-buildings, the climbing and turning flight between 10 s position reports, or the way ADS-B
-altitude (barometric) maps to geometric height.
+**The known-path attacker needs geometry tolerance** (later corrected: it didn't; see the next
+section). Taking the ADS-B track as given, it barely saw this pass (z ~2), and the sweep seemed
+about twice as steep as the geometry predicts. That track came from the session's own polls,
+which start with the recording: the plane's track began mid-clip, and a velocity smoothed over
+20 s is poor at a track's ends. With the positions from before the first poll (backfill, once its
+bad rows were dropped) the same attacker scores z 11.1 at zero time offset.
+
+## E2 in the check — the path search ships (done)
+
+`PathSearch` (Swift) is E2 round two inside the check: 0.17 s windows over 500 Hz–4 kHz, each bin
+over its running median (median of 1 s block medians over ±7.5 s), minus each frame's median,
+clipped to −3…12 dB; smooth falling Viterbi paths (0–2 bins a frame, 2 dB per slope change) in
+10 s spans every 2.5 s, at least 2 % of fall, clear of the band's edges by 3 bins; z ≥ 10 against
+the same search on 60 s of white noise. Spans are joined where their paths agree, each frame takes
+the median bin, the ends are trimmed while the excess along the path (over ±0.5 s) is under what
+the search collects per frame from noise plus 2 dB, and the pass must last 12 s (longer than one
+span). The check then keeps it only if its flyby fit passes; `lines` fills what it keeps.
+
+**Synthetic.** The modelled fan tone (1,234 Hz, 141 m/s, 2 km): found from 14 dB/Hz at 16 kHz and
+16 dB/Hz at 48 kHz (as in the lab), and the fit recovers it (1,234.6 Hz, 140.6 m/s, 1.98 km). The
+frame tracker alone never sees it above 1.1 kHz. Speech, singing, whistling, birdsong, held notes,
+steady tones, hum and white or pink noise give no pass; a descending scale and a siren are found
+and rejected by the fit. The detection baseline's drifting 1.2 kHz pass is now covered whole at
+20 dB (was 14–17 %).
+
+**The recorder sessions, through the real wasm** (`python3 -m lab check`): the bathroom pass is
+the only pass the path search reports on any of the eight sessions, original audio. A first
+version without the duration rule also reported two single-span falls, 2.7–3.9 kHz: one through
+the TV session's sound, one created at the end of the bathroom clip by Experimental's fill. Both
+fit a flyby (rms under 0.5 % of f0) but lasted one span.
+
+| bathroom session | check: flyby passes | lab blind detector: max z, windows passing | known-path attacker (B38M, real track) |
+| --- | --- | --- | ---: |
+| original | 57–83 s, 1,770 → 984 Hz | 19.4, 4 | z 11.1 |
+| Full | the same | 19.4, 4 | z 11.3 |
+| **Experimental** | **none** | **12.5, 0** | **z −1.2** |
+
+So the page now tells the truth about this clip under Full (one flyby left), and Experimental
+removes it for every detector we have, including the attacker who knows where the plane was. The
+TV and street sessions report no pass before or after cloaking. Cost: on the 108 s, 48 kHz clip the
+check takes 12 s instead of 8 s.
+
+**Its z is not the lab's.** Real rooms score far above white noise: on the bathroom clip,
+plane-free spans reach z 30 (a broadband transient makes a steep "path"), the pass 62. The lab's
+z (null on synthetic room noise, 600–2,500 Hz) put the same pass at 19.4. So the threshold mostly
+sets the sensitivity on clean backgrounds; on real ones the duration rule and the fit decide.
+Calibrating against the clip's own span scores is an option if false passes show up.
+
+**Lab fixes found on the way.** The whitened-spectrogram cache was keyed by file name, so a
+re-cloaked file was scored from its old spectrogram (E4's Experimental row was computed before any
+re-cloak, so it stands). And the adsb.lol 10 s archive has rows that aren't positions (latitudes
+far outside ±90°); about 15 % of the backfilled rows in the first six sessions were such rows, and
+one of them in a track turned its smoothed velocity, and so its Doppler curve, into NaN. Both are
+fixed (the cache key includes the audio; rows are range-checked when fetched and when indexed).
 
 ## The zoom-out: the real attacker isn't blind
 
@@ -228,8 +274,9 @@ logs the real tracks with every session.
 
 ## Next experiments
 
-1. **E2, continued:** real music, singing, traffic, wind and outdoor clips against the shape test;
-   the band up to 8 kHz; joining windows into whole passes (and a better geometry fit).
+1. **E2, continued:** real music, singing, traffic, wind and outdoor clips against the check's
+   path search (now in Swift, with joined passes); level against pitch to tell a slowing vehicle
+   from a flyby; the band up to 8 kHz; a faster search (one forward pass shared by the spans).
 2. **E3 — coherence time.** How long a real tone stays in phase (indoors vs outdoors, near vs
    far): why dechirping failed indoors, and how much long windows can ever buy.
 3. **E4 — the known-path attacker as the metric.** For every recorder session with ADS-B: score
@@ -243,7 +290,8 @@ logs the real tracks with every session.
 
 ## Where this is heading
 
-Probably two detectors in the check: the existing long-window integrator for steady lines, and a
-short-window path search for anything that moves (E2, round two: running-median whitening, a
-broadband-aware statistic, smooth falling paths, and a flyby shape test that keeps music out). Removal (`lines`) follows whatever either finds.
-Scored, in the end, against the known-path attacker.
+Two detectors in the check: the long-window integrator for steady lines, and a short-window path
+search for anything that moves (running-median whitening, a broadband-aware statistic, smooth
+falling paths, a flyby shape test that keeps music out; shipped for falling passes, see above).
+Removal (`lines`) follows whatever either finds. Scored, in the end, against the known-path
+attacker, which now runs on every session with backfilled tracks.

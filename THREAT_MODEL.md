@@ -189,10 +189,13 @@ In order of how much we think they matter:
    spectrogram. On a real outdoor clip, 19 lines survived the cloak: faint car tones at
    500–950 Hz, a few at 1–1.3 kHz and a steady 5 kHz whine (ACOUSTICS.md §1). Removing what the
    check finds is the next step (PLAN.md).
-9. **The check can still miss weak curved lines.** It averages along slow drifts only (up to
-   1 Hz/s); a passing source's curve is found by the frame tracker when loud, but a weak one only
-   in pieces or not at all (a drifting tone at 12 dB isn't found at 48 kHz). An attacker who
-   integrates along the curve sees more. The path search in ACOUSTICS.md §4 is the fix.
+9. **The check can still miss weak curved lines.** It averages along slow drifts (the line
+   integrator, up to 1 Hz/s) and, since the path search, along falling passes over 0.5–4 kHz that
+   last over 12 s and fit a flyby (a jet's fan tone is found from about 14–16 dB/Hz). Still missed:
+   fainter passes, passes below 500 Hz too weak for the frame tracker, short ones, and rising or
+   wandering lines. An attacker who knows the flight paths integrates along the exact curve and
+   sees more (on a real recording, before cloaking, the check and that attacker both found the
+   pass). Only Experimental removes what the path search finds.
 10. **Steady sounds can link videos.** A fridge, an air conditioner or a computer fan gives no
     location on its own, but its tones can tie an anonymous video to a known one made in the same
     room. So can the room's reverberation.

@@ -10,7 +10,9 @@ python3 -m lab backfill all                                      # fetch positio
 python3 -m lab sessions                                          # sessions and their nearest passes
 python3 -m lab e2 all                                            # E2 detector + shape test: synthetic and real
 python3 -m lab e2 real --wide                                    # the same up to 8 kHz
-python3 -m lab attack <session> full.m4a experimental.m4a        # the known-path attacker, before/after
+python3 -m lab cloak <session> full experimental                 # cloak with the real wasm build
+python3 -m lab check <session> full.wav experimental.wav          # the page's check (real wasm), before/after
+python3 -m lab attack <session> full.wav experimental.wav        # the known-path attacker, before/after
 python3 -m lab plot <session>                                    # spectrogram + ADS-B Doppler curves
 ```
 
@@ -27,9 +29,10 @@ python3 -m lab plot <session>                                    # spectrogram +
   the session's polls saw within 40 km: today's full-resolution traces for a session from today
   (UTC), else the 10 s archive. Downloads are cached in `$LAB_DATA/adsb`; the extra positions sit
   beside the session (`adsb_backfill.jsonl`) and are merged into its index. `label` fixes a
-  session's context labels locally.
+  session's context labels locally. The archive also holds rows that aren't positions; rows
+  outside ±90°/±180° or 60,000 ft are dropped when fetched and when indexed.
 - **Speed.** The path search runs all windows of a clip at once; whitened spectrograms are cached
-  on disk by scene and parameters; scenes run on both cores. Results are saved as JSON in
+  on disk by scene, parameters and the audio's own bytes (a re-cloaked file keeps its name); scenes run on both cores. Results are saved as JSON in
   `$LAB_DATA/results` and printed as markdown tables ready for EXPERIMENTS.md.
 - **Pieces** (`lab/detect.py`): `whiten` (clip-median or running-median reference, optional
   broadband-aware statistic), `search` (smooth falling or any-direction paths), `shape_test`

@@ -107,6 +107,8 @@ def index(sid: str) -> dict:
     bf = d / "adsb_backfill.jsonl"
     if bf.exists():                                       # positions fetched by backfill(), same frame
         for r in (json.loads(l) for l in open(bf)):
+            if r["alt_ft"] is None or not _plausible(r["lat"], r["lon"], r["alt_ft"]):
+                continue                                  # saved before rows were checked
             X = math.radians(r["lon"] - lo0) * 6371000 * math.cos(math.radians(la0))
             Y = math.radians(r["lat"] - la0) * 6371000
             tracks[r["hex"]].append((round(r["wall_unix"] - t0, 2), X, Y, r["alt_ft"] * 0.3048 - alt0))
@@ -191,6 +193,10 @@ def _get(url: str, cache: Path) -> bytes | None:
     return data
 
 
+def _plausible(lat: float, lon: float, alt_ft: float | None) -> bool:
+    return abs(lat) <= 90 and abs(lon) <= 180 and (alt_ft is None or -2_000 <= alt_ft <= 60_000)
+
+
 def _heatmap(day: str, half_hour: int) -> list[tuple]:
     """Every aircraft position in adsb.lol's archive for one half hour (UTC), every 10 s:
     (unix s, hex, lat, lon, alt ft or None on the ground). Records are four int32: id, lat·1e6,
@@ -211,6 +217,8 @@ def _heatmap(day: str, half_hour: int) -> list[tuple]:
         rows = rows[(rows[:, 0] >= 0) & (rows[:, 0] < (1 << 24))]
         for h, la, lo, packed in rows:
             alt = int(np.int16(packed & 0xFFFF))
+            if not _plausible(la / 1e6, lo / 1e6, None if alt == -123 else alt * 25):
+                continue                                  # not a position row (e.g. a callsign)
             out.append((ts, f"{int(h):06x}", la / 1e6, lo / 1e6, None if alt == -123 else alt * 25))
     return out
 

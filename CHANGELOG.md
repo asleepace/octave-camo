@@ -9,6 +9,25 @@ are grouped by milestone, newest first, with the commits that made them.
 
 ## [Unreleased]
 
+### The check follows a jet's fan tone
+
+- **A second detector in the check, `PathSearch`:** short windows (0.17 s) over 500 Hz–4 kHz, each
+  frequency against its running median and each frame against its own median, then a search for
+  smooth falling paths in 10 s spans, joined into passes that must last longer than one span. A
+  pass is kept only if the check's flyby fit accepts it. The frame tracker's 1 s windows smear a
+  fast sweep (a fan tone falling 1.75 → 1.0 kHz in 25 s) below its threshold; the path search
+  finds it from ~14–16 dB/Hz. Because `lines` fills what the check finds, the Experimental preset
+  now removes it.
+- **On a real indoor recording with a jet overhead:** the page now reports the flyby on the
+  original and after Full (it said nothing was left); after Experimental the check, the lab's blind
+  detector and an attacker who knows the plane's real track (z 11.1 before) find nothing. Seven
+  plane-free recordings report no pass. The check takes about 45 % longer.
+- **Detection baseline:** the drifting 1.2 kHz pass is covered whole at 20 dB (was 14–17 %), and
+  partly at 12 dB at 48 kHz (was not at all).
+- **Lab:** `python3 -m lab check` runs the page's check (`web/scripts/check-raw.ts`, the real wasm)
+  on a session and its cloaked copies. Fixed: the spectrogram cache ignored a file's contents, and
+  backfill kept archive rows that aren't positions, which broke the known-path attacker's curves.
+
 ### A smaller wasm, the saved file checked again, and the tone fill keeps voices
 
 - **Smaller wasm:** release builds go through binaryen's `wasm-opt -Oz` (pinned by a lockfile in

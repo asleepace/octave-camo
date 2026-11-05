@@ -10,6 +10,8 @@
                                         into $LAB_DATA/cloaked/<session>-<preset>.wav
   attack <session> [audio …]            the known-path attacker on the session (and on other
                                         audio of it, e.g. cloaked copies, aligned automatically)
+  check <session> [audio …]             the page's check (the real wasm build) on the session and
+                                        on other audio of it: counts and flyby passes
   plot <session>                        spectrogram with ADS-B Doppler curves and detected paths
 
 Data stays in $LAB_DATA (default ~/.octave-camo-lab), never in the repo. Results are saved as JSON
@@ -32,15 +34,18 @@ P = detect.Params()
 MIN_Z_TO_FIT = 3.0
 
 
-def _cache_key(name: str, p: detect.Params, n: int) -> str:
-    return hashlib.sha1(f"{name}|{p}|{n}".encode()).hexdigest()[:16]
+def _cache_key(name: str, p: detect.Params, x: np.ndarray) -> str:
+    # The audio's own bytes are part of the key: a re-cloaked file keeps its name.
+    h = hashlib.sha1(f"{name}|{p}|{len(x)}".encode())
+    h.update(np.ascontiguousarray(x, dtype=np.float32).tobytes())
+    return h.hexdigest()[:16]
 
 
 def whitened(name: str, x: np.ndarray, sr: int, p: detect.Params):
-    """whiten(), cached on disk by scene name, parameters and length."""
+    """whiten(), cached on disk by scene name, parameters and the audio itself."""
     d = corpus.DATA / "cache"
     d.mkdir(parents=True, exist_ok=True)
-    f = d / f"{_cache_key(name, p, len(x))}.npz"
+    f = d / f"{_cache_key(name, p, x)}.npz"
     if f.exists():
         z = np.load(f)
         return z["f"], z["t"], z["L"]
@@ -53,7 +58,7 @@ def null(p: detect.Params) -> dict:
     """Mean excess and the path-score distribution on synthetic room noise (cached per params)."""
     d = corpus.DATA / "cache"
     d.mkdir(parents=True, exist_ok=True)
-    f = d / f"null-{_cache_key('null', p, 0)}.json"
+    f = d / f"null-{_cache_key('null', p, np.zeros(0))}.json"
     if f.exists():
         return json.load(open(f))
     x = synth.room(120, seed=101)
@@ -234,6 +239,39 @@ def cmd_plot(sid: str):
     print(f)
 
 
+def cmd_check(sid: str, others: list[str]):
+    """The page's check, via web/scripts/check-raw.ts, on the session's audio and on copies of it."""
+    import subprocess, tempfile
+    import soundfile as sf
+    from pathlib import Path
+    idx, x, sr = corpus.load(sid)
+    repo = Path(__file__).resolve().parent.parent
+    audios = [("original", x)]
+    for o in others:
+        y, ysr = sf.read(o)
+        y = y[:, 0] if y.ndim > 1 else y
+        if ysr != sr:
+            raise SystemExit(f"{o}: sample rate {ysr}, expected {sr}")
+        audios.append((o.rsplit("/", 1)[-1], _align(x, y, sr)))
+    rows = []
+    with tempfile.TemporaryDirectory() as tmp:
+        for name, a in audios:
+            src = Path(tmp) / "in.f32"
+            a.astype(np.float32).tofile(src)
+            out = subprocess.run(["bun", str(repo / "web/scripts/check-raw.ts"), str(src), str(sr)], check=True,
+                                 cwd=repo / "web", capture_output=True, text=True).stdout
+            r = json.loads(out.strip().splitlines()[-1])
+            r["name"] = name
+            rows.append(r)
+    print("| audio | tones | doppler | flybys | hum | passes (time, Hz) | took |\n| --- | ---: | ---: | ---: | ---: | --- | ---: |")
+    for r in rows:
+        passes = ", ".join(f"{p['start']:.0f}–{p['end']:.0f} s {p['hi']:.0f}→{p['lo']:.0f}" for p in r["passes"]) or "—"
+        print(f"| {r['name']} | {r['tones']} | {r['doppler']} | {r['flybys']} | {r['hum']} | {passes} | {r['took']:.1f} s |")
+    res = corpus.DATA / "results"
+    res.mkdir(parents=True, exist_ok=True)
+    (res / f"check-{sid}.json").write_text(json.dumps(rows, indent=1))
+
+
 def main(argv):
     if not argv or argv[0] in ("-h", "--help"):
         print(__doc__)
@@ -258,6 +296,8 @@ def main(argv):
         cmd_cloak(rest[0], rest[1:])
     elif cmd == "attack":
         cmd_attack(rest[0], rest[1:])
+    elif cmd == "check":
+        cmd_check(rest[0], rest[1:])
     elif cmd == "plot":
         cmd_plot(rest[0])
     else:

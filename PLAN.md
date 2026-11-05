@@ -41,28 +41,31 @@ judged by it. Removing what the check can't see would only make the page look be
   clips through Experimental (the blind search; the check's count on the decoded file; a listen),
   and the music policy (held notes are removed today).
 
-## Next: the check follows fast sweeps above 1 kHz (top of slice 3)
+## Done: the check follows fast sweeps above 1 kHz (top of slice 3)
 
-A jet's fan tone heard indoors swept 1.75 → 1.0 kHz in 25 s (up to ~40 Hz/s). Modelled, the check
-follows it only up to ~1.15 kHz even at 40 dB, and below 1 kHz only at 20 dB: its 1 s windows smear a
-sweep that fast over ~36 Hz, below the high band's 15 dB peak threshold. So the page can say
-"nothing left" while a clear Doppler clue is there, and `lines` (driven by the check) can't remove
-it. Being worked out in [EXPERIMENTS.md](EXPERIMENTS.md): on the real recording, per-frame detection
-can't see it at any window (6–8 dB per frame), dechirping barely helps (the real tone isn't
-coherent for long), and summing energy along its path with 0.13–0.26 s windows shows it at z 9.5.
-So: a short-window path search for moving tones, next to the integrator for steady ones. Round two
-settled its shape: running-median whitening, a broadband-aware statistic, smooth falling paths, and
-a flyby shape test, which rejected every music, singing, siren and speech window and every
-plane-free recording while keeping the real pass (z 19.4) and the modelled one from ~14 dB/Hz. Done when the modelled fan tone is followed over its whole sweep at
-20 dB, the real one is found blind, and recordings without planes stay quiet. And score the cloak
-against an attacker who knows the flight paths (E4), not only against the blind check.
+A jet's fan tone heard indoors swept 1.75 → 1.0 kHz in 25 s (up to ~40 Hz/s); the check's 1 s
+windows smeared it, so the page said "nothing left" and `lines` couldn't remove it. The check now
+has a second detector for moving tones, `PathSearch` (E2's design, [EXPERIMENTS.md](EXPERIMENTS.md),
+E5): 0.17 s windows over 500 Hz–4 kHz, running-median whitening, the broadband-aware statistic,
+smooth falling Viterbi paths in 10 s spans clear of the band's edges, z ≥ 10 against white noise,
+spans joined into passes that must outlast one span, then the check's flyby fit. The real pass is
+found blind (on the original and after Full); after Experimental, `lines` fills it and neither the
+check, the lab's blind detector nor the known-path attacker finds it; the seven plane-free sessions
+report no pass. The modelled fan tone is followed over its whole sweep from ~14–16 dB/Hz.
+
+Left over: the search costs about 45 % more check time (12 s instead of 8 s on 108 s at 48 kHz;
+spans overlap 4×, so a shared forward pass would cut it); its z is not the lab's z (real rooms
+score far above white noise, so the duration rule and the shape test do the work); a decelerating
+vehicle can still fit a flyby; and its paths are bin-quantized (fine for the fill, whose strip is
+wider).
 
 ## Later: paths, families and risk classes (slice 3, ACOUSTICS.md §4.4–6)
 
 1. **Paths:** a Viterbi path search through the whitened spectrogram, limiting how fast frequency
    may change, so a Doppler pass or a line that fades in and out is one track, and weak curved
-   lines are found (drifting tones are the weak spot: found only at 20 dB, in pieces; fast sweeps
-   above 1 kHz not at all, see above).
+   lines are found. Falling passes over 0.5–4 kHz: done (`PathSearch`, above; the drifting 1.2 kHz
+   scene is now covered whole at 20 dB, was 14–17 %). Still to do: rising or wandering lines, and
+   below 500 Hz.
 2. **Families:** combine 50/60 Hz harmonics into one grid trace; test high lines for grid lock.
 3. **Risk classes:** Doppler, grid-locked, steady (room fingerprint), musical/vocal. The page shows
    them, so singing or a whistled tune isn't presented as a location clue.
