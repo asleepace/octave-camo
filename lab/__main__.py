@@ -2,6 +2,7 @@
 
   ingest <bundle.zip | session dir> …   unpack recorder sessions into $LAB_DATA and index them
   sessions                              list sessions and their nearest aircraft passes
+  label <session> key=value …           correct a session's context labels (kept locally)
   e2 [synth|real|all|files] [x.wav …] [--wide]
                                         the E2 detector + shape test over scenes and wav files (both cores)
   cloak <session> [preset …]            cloak with the real wasm build (full, experimental, light),
@@ -240,6 +241,9 @@ def main(argv):
     if cmd == "ingest":
         for b in rest:
             print("ingested", corpus.ingest(b))
+    elif cmd == "label":
+        idx = corpus.correct(rest[0], **dict(kv.split("=", 1) for kv in rest[1:]))
+        print(idx["context"])
     elif cmd == "sessions":
         cmd_sessions()
     elif cmd == "e2":

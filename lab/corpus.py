@@ -142,11 +142,26 @@ def index(sid: str) -> dict:
         "duration_s": round(dur, 2), "sample_rate": info.samplerate, "channels": info.channels,
         "mode": meta["audio_session"].get("mode"), "chirps_s": _chirps(meta),
         "note": (meta.get("label") or {}).get("note", ""), "speed_of_sound": round(c, 1),
-        "markers": _markers(d, t0), "manifest": verify(d), "context": meta.get("context", {}), "passes": passes,
+        "markers": _markers(d, t0), "manifest": verify(d), "context": {**meta.get("context", {}), **_corrections(d).get("context", {})}, "passes": passes,
     }
     json.dump(idx, open(d / "index.json", "w"), indent=1)
     np.savez_compressed(d / "passes.npz", grid=grid, **{h: v for h, v in curves.items()})
     return idx
+
+
+def _corrections(d: Path) -> dict:
+    """Local fixes to a session's labels (corrections.json, set with `python3 -m lab label`)."""
+    f = d / "corrections.json"
+    return json.load(open(f)) if f.exists() else {}
+
+
+def correct(sid: str, **context) -> dict:
+    """Override context fields (environment=outdoor, note=…) for one session, kept beside it."""
+    d = sessions_dir() / sid
+    c = _corrections(d)
+    c.setdefault("context", {}).update(context)
+    json.dump(c, open(d / "corrections.json", "w"), indent=1)
+    return index(sid)
 
 
 def _markers(d: Path, t0: float) -> list:
