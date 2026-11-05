@@ -47,8 +47,13 @@ A jet's fan tone heard indoors swept 1.75 → 1.0 kHz in 25 s (up to ~40 Hz/s). 
 follows it only up to ~1.15 kHz even at 40 dB, and below 1 kHz only at 20 dB: its 1 s windows smear a
 sweep that fast over ~36 Hz, below the high band's 15 dB peak threshold. So the page can say
 "nothing left" while a clear Doppler clue is there, and `lines` (driven by the check) can't remove
-it. Fix with the paths item below plus shorter windows (≈ 0.25 s) or chirp-aware (dechirped) search
-for the high band; done when the modelled fan tone is followed over its whole sweep at 20 dB.
+it. Being worked out in [EXPERIMENTS.md](EXPERIMENTS.md): on the real recording, per-frame detection
+can't see it at any window (6–8 dB per frame), dechirping barely helps (the real tone isn't
+coherent for long), and summing energy along its path with 0.13–0.26 s windows shows it at z 9.5.
+So: a short-window path search (Viterbi, physics-limited slopes) for moving tones, next to the
+integrator for steady ones. Done when the modelled fan tone is followed over its whole sweep at
+20 dB, the real one is found blind, and recordings without planes stay quiet. And score the cloak
+against an attacker who knows the flight paths (E4), not only against the blind check.
 
 ## Later: paths, families and risk classes (slice 3, ACOUSTICS.md §4.4–6)
 

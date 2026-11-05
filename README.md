@@ -143,7 +143,7 @@ web app and the research harness:
 blind attacker: a frame-by-frame tone tracker (40 Hz–8 kHz, which also fits flyby curves) plus a
 line integrator that averages over seconds, as a patient attacker would, so faint steady lines
 count too. It looks further than the cloak reaches, so whatever the cloak leaves is shown, not
-hidden. [ACOUSTICS.md](ACOUSTICS.md) explains how it works and measures it.
+hidden. [ACOUSTICS.md](ACOUSTICS.md) explains how it works and measures it; [EXPERIMENTS.md](EXPERIMENTS.md) is the lab notebook for improving it.
 
 The web app also scans the picture: one decode pass measures each frame's row brightness, and a
 blind search for a band at 100 or 120 Hz (the way an attacker would look) decides whether the
