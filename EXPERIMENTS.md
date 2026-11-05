@@ -161,6 +161,32 @@ per slope change, ≥ 2 % fall per 10 s) → flyby shape test. Open: more backgr
 singing, traffic, outdoors, wind), the band to 8 kHz, harmonics, joining windows into whole passes,
 and the cost in Swift.
 
+## E4, first result — the real engine on the real pass (done)
+
+With Swift building locally, the lab cloaks recordings with the exact wasm the site serves
+(`python3 -m lab cloak`, byte-identical to CI's build) and scores them (`python3 -m lab e2 files`).
+The bathroom pass, blind detector + shape test:
+
+| version | max z | windows passing the shape test |
+| --- | ---: | ---: |
+| original | 19.4 | 4 |
+| **Full** | 19.4 | 4 |
+| **Experimental** | 13.9 | 1 (z 12.8, 65 s, 1,559 → 1,125 Hz) |
+
+Full leaves the fan tone untouched; Experimental's `lines` stage removes part of it, but the pass
+is still detectable, because `lines` only removes what the check sees, and the check can't follow
+this sweep. Exactly the gap PLAN.md's next step closes: once the path search is part of the check,
+`lines` will remove what it finds.
+
+**The known-path attacker needs geometry tolerance.** Taking the ADS-B track as given, it barely
+sees this pass (z ~2): the sweep in the recording is about twice as steep as the published geometry
+predicts (the sound fits a closest pass of ~1.75 km at 141 m/s; ADS-B says 3.1 km slant), and a few
+seconds earlier. Searching a time offset (±6 s) and ±2 bins isn't enough. A realistic attacker fits
+the geometry locally around the track (time, distance, speed near the published values, rest
+frequency free). Why the real sweep is steeper is itself an open question: reflections off nearby
+buildings, the climbing and turning flight between 10 s position reports, or the way ADS-B
+altitude (barometric) maps to geometric height.
+
 ## The zoom-out: the real attacker isn't blind
 
 E1 *is* the attacker who has ADS-B: given the plane's track, this recording shows it at z 9.5. Our

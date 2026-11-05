@@ -2,7 +2,10 @@
 
   ingest <bundle.zip | session dir> …   unpack recorder sessions into $LAB_DATA and index them
   sessions                              list sessions and their nearest aircraft passes
-  e2 [synth|real|all] [--wide]          the E2 detector + shape test over scenes (both cores)
+  e2 [synth|real|all|files] [x.wav …] [--wide]
+                                        the E2 detector + shape test over scenes and wav files (both cores)
+  cloak <session> [preset …]            cloak with the real wasm build (full, experimental, light),
+                                        into $LAB_DATA/cloaked/<session>-<preset>.wav
   attack <session> [audio …]            the known-path attacker on the session (and on other
                                         audio of it, e.g. cloaked copies, aligned automatically)
   plot <session>                        spectrogram with ADS-B Doppler curves and detected paths
@@ -23,6 +26,8 @@ import numpy as np
 from . import corpus, detect, synth
 
 P = detect.Params()
+# Windows below this z aren't fitted (they can't be detections).
+MIN_Z_TO_FIT = 3.0
 
 
 def _cache_key(name: str, p: detect.Params, n: int) -> str:
@@ -63,6 +68,16 @@ def run_scene(args):
     if kind == "synth":
         x, _ = synth.SCENES[name]()
         sr, skip = synth.SR, ()
+    elif kind == "file":                       # any wav, e.g. a cloaked session; chirps from its session if named <session>-<preset>.wav
+        import soundfile as sf
+        from pathlib import Path
+        x, sr = sf.read(name)
+        x = x[:, 0] if x.ndim > 1 else x
+        sid = Path(name).stem.rsplit("-", 1)[0]
+        try:
+            skip = tuple(json.load(open(corpus.sessions_dir() / sid / "index.json"))["chirps_s"])
+        except FileNotFoundError:
+            skip = ()
     else:
         idx, x, sr = corpus.load(name)
         skip = tuple(idx["chirps_s"])
@@ -74,18 +89,20 @@ def run_scene(args):
         if not np.isfinite(w.score):
             continue
         w.z = (w.score - nl["mean"]) / nl["sd"]
-        w.fit = detect.shape_test(w.path, p.win_s)
+        # Only a window that stands out is worth the fit (27 multi-start least squares).
+        w.fit = detect.shape_test(w.path, p.win_s) if w.z >= MIN_Z_TO_FIT else {"ok": False}
         rows.append({"start": w.start, "z": round(w.z, 2), "from_hz": round(float(w.path[0])), "to_hz": round(float(w.path[-1])), **w.fit})
     return name, kind, rows
 
 
-def cmd_e2(which: str, wide: bool):
+def cmd_e2(which: str, wide: bool, files: list[str] = ()):
     p = detect.Params(band=(600.0, 8000.0)) if wide else P
     jobs = []
     if which in ("synth", "all"):
         jobs += [(n, "synth", p) for n in synth.SCENES]
     if which in ("real", "all"):
         jobs += [(s, "real", p) for s in corpus.all_ids()]
+    jobs += [(f, "file", p) for f in files]
     null(p)                                   # once, before the pool
     t0 = time.time()
     with Pool(2) as pool:
@@ -95,7 +112,7 @@ def cmd_e2(which: str, wide: bool):
         passed = [r for r in rows if r.get("ok")]
         zmax = max((r["z"] for r in rows), default=float("nan"))
         bp = max(passed, key=lambda r: r["z"]) if passed else None
-        label = name if kind == "synth" else f"{name} ({_short(name)})"
+        label = name if kind == "synth" else _short(name) if kind == "file" else f"{name} ({_short(name)})"
         best = f"{bp['start']:.0f} s, {bp['from_hz']}→{bp['to_hz']} Hz, {bp['speed']:.0f} m/s, {bp['distance']:.0f} m" if bp else "none"
         print(f"| {label} | {len(rows)} | {zmax:.1f} | {len(passed)} | {bp['z'] if bp else float('nan'):.1f} | {best} |")
     out = corpus.DATA / "results"
@@ -106,10 +123,12 @@ def cmd_e2(which: str, wide: bool):
 
 
 def _short(sid: str) -> str:
+    if "/" in sid:                                  # a file path
+        return sid.rsplit("/", 1)[-1]
     try:
         idx = json.load(open(corpus.sessions_dir() / sid / "index.json"))
         return (idx.get("note") or "").strip()[:40] or f"{idx['duration_s']:.0f} s"
-    except FileNotFoundError:
+    except (FileNotFoundError, NotADirectoryError):
         return ""
 
 
@@ -154,12 +173,36 @@ def cmd_attack(sid: str, others: list[str]):
         for name, a in audios:
             fr, t, L = whitened(f"{sid}:{name}:attack", a, sr, p)
             A = L - L.mean()
-            best, _ = detect.known_path(fr, t, A, factor, f0s, win)
-            # null: the same track shifted in time, which can't line up with the real tone
-            nulls = [detect.known_path(fr, t, A, (lambda tt, s=s: factor(tt - s)), f0s, win)[0] for s in (-40, -30, -20, 20, 30, 40)]
+            best, bf0, boff = detect.known_path(fr, t, A, factor, f0s, win)
+            # null: the same search on the track shifted well beyond the offset range
+            nulls = [detect.known_path(fr, t, A, (lambda tt, s=s: factor(tt - s)), f0s, win)[0] for s in (-45, -38, -31, -24, 24, 31, 38, 45)]
             nulls = np.array([n for n in nulls if np.isfinite(n)])
-            zs.append((best - nulls.mean()) / nulls.std() if len(nulls) > 2 and np.isfinite(best) else float("nan"))
-        print(f"| {q['type'] or '?'} {q['hex']} | {q['closest_in_audio_km']} km | {q['heard_s']} s | " + " | ".join(f"{z:.1f}" for z in zs) + " |")
+            zs.append(((best - nulls.mean()) / nulls.std() if len(nulls) > 2 and np.isfinite(best) else float("nan"), bf0, boff))
+        print(f"| {q['type'] or '?'} {q['hex']} | {q['closest_in_audio_km']} km | {q['heard_s']} s | " + " | ".join(f"{z:.1f} ({f0:.0f} Hz, {off:+.1f} s)" for z, f0, off in zs) + " |")
+
+
+def cmd_cloak(sid: str, presets: list[str]) -> list[str]:
+    """Run web/scripts/cloak-raw.ts (the real wasm, as the page would) on the session's audio."""
+    import subprocess, tempfile
+    import soundfile as sf
+    from pathlib import Path
+    idx, x, sr = corpus.load(sid)
+    out_dir = corpus.DATA / "cloaked"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    repo = Path(__file__).resolve().parent.parent
+    outs = []
+    with tempfile.TemporaryDirectory() as tmp:
+        src = Path(tmp) / "in.f32"
+        x.astype(np.float32).tofile(src)
+        for preset in presets or ["full", "experimental"]:
+            dst = Path(tmp) / f"{preset}.f32"
+            subprocess.run(["bun", str(repo / "web/scripts/cloak-raw.ts"), str(src), str(dst), str(sr), preset], check=True, cwd=repo / "web")
+            y = np.fromfile(dst, dtype=np.float32)
+            f = out_dir / f"{sid}-{preset}.wav"
+            sf.write(f, y, sr, subtype="FLOAT")
+            outs.append(str(f))
+            print(f)
+    return outs
 
 
 def cmd_plot(sid: str):
@@ -197,7 +240,11 @@ def main(argv):
     elif cmd == "sessions":
         cmd_sessions()
     elif cmd == "e2":
-        cmd_e2(next((a for a in rest if not a.startswith("--")), "all"), "--wide" in rest)
+        words = [a for a in rest if not a.startswith("--")]
+        which = words[0] if words and words[0] in ("synth", "real", "all", "files") else "files"
+        cmd_e2(which, "--wide" in rest, [w for w in words if w.endswith(".wav")])
+    elif cmd == "cloak":
+        cmd_cloak(rest[0], rest[1:])
     elif cmd == "attack":
         cmd_attack(rest[0], rest[1:])
     elif cmd == "plot":

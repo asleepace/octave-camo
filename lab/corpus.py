@@ -116,7 +116,10 @@ def index(sid: str) -> dict:
         te = np.arange(a[0, 0], a[-1, 0], 0.1)
         q = np.stack([np.interp(te, a[:, 0], a[:, j]) for j in (1, 2, 3)], 1)
         r = np.linalg.norm(q, axis=1)
-        v = np.gradient(q, te, axis=0)
+        # Positions come every ~10 s with ~tens of metres of noise, so the velocity of a linear
+        # interpolation is jagged: smooth it over 20 s (a local, not whole-track, smoothing).
+        from scipy.ndimage import uniform_filter1d
+        v = uniform_filter1d(np.gradient(q, te, axis=0), size=201, axis=0, mode="nearest")
         vr = (q * v).sum(1) / r                           # + receding
         heard = te + r / c
         factor = 1 / (1 + vr / c)                         # received / emitted frequency

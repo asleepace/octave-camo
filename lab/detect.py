@@ -132,23 +132,33 @@ def shape_test(path: np.ndarray, win_s: float, c=C, max_rel_rms=0.005) -> dict:
             "f0": float(f0), "speed": float(v), "distance": float(d)}
 
 
-def known_path(f, t, A, factor_of_t, f0s, win: tuple[float, float]) -> tuple[float, float]:
-    """The attacker with the flight track: sum the excess along f0·factor(t) over `win`, for every
-    candidate rest frequency f0 (the engine's tone is unknown), best of ±1 bin. Returns (best sum,
-    the f0 it was found at)."""
+def known_path(f, t, A, factor_of_t, f0s, win: tuple[float, float], offsets=np.arange(-6, 6.01, 0.5), tol: int = 2):
+    """The attacker with the flight track: sum the excess along f0·factor(t − offset) over `win`,
+    for every candidate rest frequency f0 (the engine's tone is unknown) and a small time offset
+    (published positions lag and are coarse), best of ±`tol` bins. Returns (best sum, f0, offset)."""
     j = np.flatnonzero((t >= win[0]) & (t <= win[1]))
-    fac = factor_of_t(t[j])
-    ok = np.isfinite(fac)
-    j, fac = j[ok], fac[ok]
     if len(j) < 10:
-        return float("nan"), float("nan")
+        return float("nan"), float("nan"), float("nan")
     df = f[1] - f[0]
-    best = (-np.inf, np.nan)
-    for f0 in f0s:
-        k = np.round((f0 * fac - f[0]) / df).astype(int)
-        if k.min() < 1 or k.max() >= len(f) - 1:
+    # The tolerance as a max over neighbouring bins, once.
+    Am = A.copy()
+    for o in range(1, tol + 1):
+        Am[:-o] = np.maximum(Am[:-o], A[o:])
+        Am[o:] = np.maximum(Am[o:], A[:-o])
+    best = (-np.inf, np.nan, np.nan)
+    for off in offsets:
+        fac = factor_of_t(t[j] - off)
+        ok = np.isfinite(fac)
+        if ok.sum() < 10:
             continue
-        s = np.max(np.stack([A[k + o, j] for o in (-1, 0, 1)]), 0).sum()
-        if s > best[0]:
-            best = (float(s), float(f0))
+        jj, fc = j[ok], fac[ok]
+        K = np.round((np.asarray(f0s)[:, None] * fc[None, :] - f[0]) / df).astype(int)   # (n f0, n frames)
+        inside = (K.min(1) >= 0) & (K.max(1) < len(f))
+        if not inside.any():
+            continue
+        sums = np.full(len(f0s), -np.inf)
+        sums[inside] = Am[K[inside], jj[None, :]].sum(1)
+        i = int(np.argmax(sums))
+        if sums[i] > best[0]:
+            best = (float(sums[i]), float(f0s[i]), float(off))
     return best
