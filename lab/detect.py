@@ -133,9 +133,11 @@ def shape_test(path: np.ndarray, win_s: float, c=C, max_rel_rms=0.005) -> dict:
 
 
 def known_path(f, t, A, factor_of_t, f0s, win: tuple[float, float], offsets=np.arange(-6, 6.01, 0.5), tol: int = 2):
-    """The attacker with the flight track: sum the excess along f0·factor(t − offset) over `win`,
+    """The attacker with the flight track: the mean excess along f0·factor(t − offset) over `win`,
     for every candidate rest frequency f0 (the engine's tone is unknown) and a small time offset
-    (published positions lag and are coarse), best of ±`tol` bins. Returns (best sum, f0, offset)."""
+    (published positions lag and are coarse), best of ±`tol` bins. Returns (best mean, f0, offset).
+    A mean, not a sum: a curve moved in time for a null can run off its track's span, and a sum
+    over fewer frames would read as less evidence."""
     j = np.flatnonzero((t >= win[0]) & (t <= win[1]))
     if len(j) < 10:
         return float("nan"), float("nan"), float("nan")
@@ -157,8 +159,24 @@ def known_path(f, t, A, factor_of_t, f0s, win: tuple[float, float], offsets=np.a
         if not inside.any():
             continue
         sums = np.full(len(f0s), -np.inf)
-        sums[inside] = Am[K[inside], jj[None, :]].sum(1)
+        sums[inside] = Am[K[inside], jj[None, :]].mean(1)
         i = int(np.argmax(sums))
         if sums[i] > best[0]:
             best = (float(sums[i]), float(f0s[i]), float(off))
     return best
+
+
+NULL_SHIFTS = tuple(s * d for d in np.arange(20.0, 60.1, 2.5) for s in (-1, 1))
+
+
+def known_path_z(f, t, A, factor_of_t, f0s, win: tuple[float, float]):
+    """The known-path attacker's score as (z, effect in dB, f0, offset): its best mean excess
+    against the same search with the curve moved 20–60 s (34 wrong times, so the spread is
+    stable: with eight, removing a tone the wrong-time curves happened to cross could shrink it and
+    inflate z with less evidence left). The effect is best minus the null mean, per frame."""
+    best, f0, off = known_path(f, t, A, factor_of_t, f0s, win)
+    nulls = np.array([known_path(f, t, A, lambda u, s=s: factor_of_t(u - s), f0s, win)[0] for s in NULL_SHIFTS])
+    nulls = nulls[np.isfinite(nulls)]
+    if not np.isfinite(best) or len(nulls) < 10:
+        return float("nan"), float("nan"), f0, off
+    return float((best - nulls.mean()) / nulls.std()), float(best - nulls.mean()), f0, off

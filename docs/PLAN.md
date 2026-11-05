@@ -44,16 +44,19 @@ judged by it. Removing what the check can't see would only make the page look be
 ## Now: remove what the flight tracks predict
 
 The known-path attacker sees passes the blind check can't: a faint climb-out under 1 kHz on a
-real session survives both presets (z 4–5). The phone knows where and when it recorded, so the
+real session survives both presets (z 6.2 after Full, 5.6 after Experimental). The phone knows where and when it recorded, so the
 defender can run the attacker's own tool first: fetch ADS-B for a wide box around it (so the
 request doesn't give the place away), predict every aircraft's curve at the true position, find
 the tones that follow it and remove them. Opt-in; it needs the location before it is stripped.
 
 - In the engine and the lab: `TrackFill` (CLI `scrub --expect`, `python3 -m lab trackfill`). It
   finds the attacker's tone with no blind detection, but the plane carries a family of tones and
-  removing three of them leaves a fourth the attacker then prefers (EXPERIMENTS.md).
-- Next: search a pass's tone family together, fill all of it, make the fill's level unbiased
-  along the curve (±0.3 dB today), then score with the known-path attacker and the place search.
+  removing some of them makes the rest *more* detectable (z 6.2 → 12.0 on a tone it missed):
+  partial removal is worse than none (EXPERIMENTS.md). Don't use it on real clips yet.
+- Next: give it the attacker's own statistic (best over rest frequencies, against many wrong
+  times) and remove until that falls below a bar; search a pass's tone family together; make the
+  fill's level unbiased along the curve (±0.3 dB today); then score with the known-path attacker
+  and the place search.
 - Then the page: where the location comes from (the video's own metadata before it's stripped,
   or the browser), and fetching tracks without giving it away.
 

@@ -141,7 +141,7 @@ def index(sid: str) -> dict:
     meta, info, kind, alt0, c = g["meta"], g["info"], g["kind"], g["alt0"], g["speed_of_sound"]
     t0 = _audio_start(meta)
     dur = info.frames / info.samplerate
-    grid = np.arange(-30.0, dur + 30.0, 0.1)
+    grid = np.arange(-120.0, dur + 120.0, 0.1)          # wide enough for curves moved 60 s for nulls
     passes, curves = [], {}
     for h, (te, q, v) in g["tracks"].items():
         r = np.linalg.norm(q, axis=1)

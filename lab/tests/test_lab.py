@@ -39,10 +39,8 @@ P_KNOWN = detect.Params(band=(300.0, 2000.0), broadband_aware=True)
 def known(x):
     """The known-path attacker: (z against the curve at wrong times, rest frequency, offset)."""
     f, tt, L = detect.whiten(x, SR, P_KNOWN)
-    A, f0s, win = L - L.mean(), np.arange(500, 1500, 2.0), (5, 55)
-    best, rest, off = detect.known_path(f, tt, A, factor, f0s, win)
-    nulls = np.array([detect.known_path(f, tt, A, lambda u, s=s: factor(u - s), f0s, win)[0] for s in (-30, -24, -18, 18, 24, 30)])
-    return (best - nulls.mean()) / nulls.std(), rest, off
+    z, _, rest, off = detect.known_path_z(f, tt, L - L.mean(), factor, np.arange(500, 1500, 2.0), (5, 55))
+    return z, rest, off
 
 
 class WhiteningIsLevelBlind(unittest.TestCase):

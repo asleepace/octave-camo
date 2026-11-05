@@ -124,7 +124,8 @@ def cmd_attack(sid: str, others: list[str]):
     p = detect.Params(band=(80.0, 4000.0), broadband_aware=True)
     audios, sr = with_copies(sid, others)
     f0s = np.arange(100, 3500, 2.0)
-    print("| aircraft | closest | heard | " + " | ".join(f"z ({n})" for n, _ in audios) + " |\n| --- | ---: | ---: |" + " ---: |" * len(audios))
+    print("| aircraft | closest | heard | " + " | ".join(f"z, dB ({n})" for n, _ in audios) + " |\n| --- | ---: | ---: |" + " ---: |" * len(audios))
+    rows = []
     for q in idx["passes"][:6]:
         grid, fac, _ = corpus.curve(sid, q["hex"])
         factor = lambda tt, g=grid, fc=fac: np.interp(tt, g, fc, left=np.nan, right=np.nan)
@@ -132,13 +133,11 @@ def cmd_attack(sid: str, others: list[str]):
         zs = []
         for name, a in audios:
             fr, t, L = whitened(f"{sid}:{name}:attack", a, sr, p)
-            A = L - L.mean()
-            best, bf0, boff = detect.known_path(fr, t, A, factor, f0s, win)
-            # null: the same search on the track shifted well beyond the offset range
-            nulls = [detect.known_path(fr, t, A, (lambda tt, s=s: factor(tt - s)), f0s, win)[0] for s in (-45, -38, -31, -24, 24, 31, 38, 45)]
-            nulls = np.array([n for n in nulls if np.isfinite(n)])
-            zs.append(((best - nulls.mean()) / nulls.std() if len(nulls) > 2 and np.isfinite(best) else float("nan"), bf0, boff))
-        print(f"| {q['type'] or '?'} {q['hex']} | {q['closest_in_audio_km']} km | {q['heard_s']} s | " + " | ".join(f"{z:.1f} ({f0:.0f} Hz, {off:+.1f} s)" for z, f0, off in zs) + " |")
+            zs.append(detect.known_path_z(fr, t, L - L.mean(), factor, f0s, win))
+        rows.append({"hex": q["hex"], "results": dict(zip([n for n, _ in audios], zs))})
+        print(f"| {q['type'] or '?'} {q['hex']} | {q['closest_in_audio_km']} km | {q['heard_s']} s | "
+              + " | ".join(f"{z:.1f}, {e:+.2f} ({f0:.0f} Hz, {off:+.1f} s)" for z, e, f0, off in zs) + " |")
+    save_result(f"attack-{sid}", rows)
 
 
 def cmd_cloak(sid: str, presets: list[str]) -> list[str]:
@@ -260,6 +259,9 @@ def cmd_trackfill(sid: str, presets: list[str]):
     cli = repo / ".build/release/octave-camo"
     if not cli.exists():
         raise SystemExit("build the CLI first: swift build -c release --product octave-camo")
+    newest = max(f.stat().st_mtime for f in (repo / "Sources").rglob("*.swift"))
+    if newest > cli.stat().st_mtime:
+        print("warning: the CLI is older than Sources/ (swift build -c release --product octave-camo)", file=sys.stderr)
     out_dir = corpus.DATA / "cloaked"
     out_dir.mkdir(parents=True, exist_ok=True)
     passes = expected_passes(sid)

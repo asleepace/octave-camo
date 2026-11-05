@@ -15,7 +15,8 @@ are grouped by milestone, newest first, with the commits that made them.
   at the recording position (`ExpectedPass`: audio times and factors only, never a position), it
   finds the tones following the curve (rest frequency free, a few seconds of timing slack, against
   the same curve at wrong times) and fills them. CLI `scrub --expect passes.json`, lab `trackfill`.
-  Not in the page; not yet effective on the one real session it was tried on (docs/EXPERIMENTS.md).
+  Not in the page, and not to be used on real clips yet: on the one real session it was tried on,
+  removing some of a plane's tones made the rest more detectable (docs/EXPERIMENTS.md).
 - **The place-searching attacker** (`python3 -m lab locate`), after the video that inspired the
   project: every point of a grid scored by every aircraft's predicted curve on one timeline.
 - **Invariant tests:** the path search ignores gain (boosting can't help it, attenuating can't hide
@@ -29,6 +30,10 @@ are grouped by milestone, newest first, with the commits that made them.
 - **Docs moved to `docs/`** (ACOUSTICS, EXPERIMENTS, IDEAS, PLAN, RESEARCH, SOURCES, with an
   index); README, CHANGELOG, CONTRIBUTING, SECURITY and THREAT_MODEL stay at the root. The README's
   layout, check and limits are up to date; PLAN is reorganized into done, now and next.
+- **Second review:** track removal fills one tone per pass and searches again instead of masking
+  (masking left a loud tone's shoulders and ghosts); the lab's known-path attacker uses means and
+  34 wrong-time curves (eight made its spread fragile: z could jump after a cloak with less
+  evidence left) and reports the effect in dB; key numbers re-measured.
 - **Review fixes:** the path search's cache is marked as single-threaded state; the pipeline runs
   track removal between two explicit stage groups; passes are validated (finite, increasing,
   physical factors); the lab's shared plumbing moved out of `__main__` (`lab/common.py`), and its
@@ -45,7 +50,7 @@ are grouped by milestone, newest first, with the commits that made them.
   now removes it.
 - **On a real indoor recording with a jet overhead:** the page now reports the flyby on the
   original and after Full (it said nothing was left); after Experimental the check, the lab's blind
-  detector and an attacker who knows the plane's real track (z 11.1 before) find nothing. Seven
+  detector and an attacker who knows the plane's real track (z 9.8 before) find nothing. Seven
   plane-free recordings report no pass. The check takes about 45 % longer.
 - **Detection baseline:** the drifting 1.2 kHz pass is covered whole at 20 dB (was 14–17 %), and
   partly at 12 dB at 48 kHz (was not at all).

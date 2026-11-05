@@ -61,8 +61,6 @@ final class TrackFillTests: XCTestCase {
         XCTAssertTrue(PathSearch().tracks(in: x, sampleRate: Self.rate).isEmpty, "the blind search sees it: this test lost its point")
         let stage = Self.stage([Self.expected()])
         let found = stage.find(x, sampleRate: Self.rate)
-        // One tone, not ghosts: masking a found tone with a hole once made other rest frequencies,
-        // whose wrong-time curves cross it, look like tones (605 and 292 Hz here).
         XCTAssertEqual(found.count, 1, "\(found)")
         if let tone = found.first {
             XCTAssertEqual(tone.rest, 1_234, accuracy: 1_234 * 0.01)
@@ -72,6 +70,19 @@ final class TrackFillTests: XCTestCase {
         XCTAssertTrue(r.summary.contains("filled 1 "), r.summary)
         let after = stage.find(r.output, sampleRate: Self.rate)
         XCTAssertFalse(after.contains { abs($0.rest - 1_234) < 25 }, "\(after)")
+    }
+
+    /// A loud pass is one tone, filled once, with nothing left: no shoulders of it, no ghosts.
+    /// (Masking found tones in the spectrogram, instead of filling and searching again, left
+    /// shoulders at ±2–3 % and ghosts at 607 and 299 Hz on this clip at 40 dB.)
+    func testALoudPassIsOneToneAndNothingIsLeft() {
+        for snr in [30.0, 40] {
+            let x = LineFillTests.fanTone(rate: Self.rate, snr: snr).mono
+            let stage = Self.stage([Self.expected()])
+            let r = stage.process(x, sampleRate: Self.rate)
+            XCTAssertTrue(r.summary.contains("filled 1 "), "\(snr) dB: \(r.summary)")
+            XCTAssertTrue(stage.find(r.output, sampleRate: Self.rate).isEmpty, "\(snr) dB")
+        }
     }
 
     /// Only the strip along the found curve changes: every sample outside the searched window is

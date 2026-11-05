@@ -60,7 +60,8 @@ public struct ExpectedPass: Codable, Equatable {
 /// the known curve can, and so can this.
 public struct TrackFill {
     public var expected: [ExpectedPass] = []
-    /// Tones per pass at most (an engine has several: fan, shaft orders, harmonics).
+    /// Tones per pass at most (an engine has several: fan, shaft orders, harmonics). Each round
+    /// fills the best tone of every pass and searches the filled audio again.
     public var maxTones = 4
     /// A tone is filled when its z against neighbouring rest frequencies reaches this *and* it
     /// stands `minExcessDB` above the same curve at wrong times. Filling a strip of noise along a
@@ -68,8 +69,6 @@ public struct TrackFill {
     /// frequencies reaches z 4–5.4 but only 0.17–0.41 dB, a real session's engine tones 1.0–1.4 dB.
     public var minZ = 3.5
     public var minExcessDB = 0.6
-    /// Search, then fill, then search what is left again.
-    public var rounds = 2
     /// Timing slack, s (published positions lag and are coarse).
     public var maxOffset = 6.0
     public var offsetStep = 1.0
@@ -110,12 +109,18 @@ public struct TrackFill {
         var filled: [Tone] = []
         var fill = LineFill()
         fill.marginHz = marginHz
-        for _ in 0..<rounds {
-            let tones = stage.find(y, sampleRate: sampleRate)
+        // One tone per pass per round, filled, then the filled audio searched again. (Masking a
+        // found tone in the spectrogram instead leaves its edges, or a hole, that other rest
+        // frequencies' curves cross: ghosts and duplicates. A fill puts noise back at the level
+        // around it, which is what the next search should see.)
+        var count = [Int](repeating: 0, count: usable.count)
+        for _ in 0..<maxTones {
+            let tones = stage.find(y, sampleRate: sampleRate).filter { count[$0.pass] < maxTones }
             if tones.isEmpty { break }
             for tone in tones {
                 if let line = stage.track(tone, sampleRate: sampleRate, count: y.count), fill.fill(&y, line, sampleRate: sampleRate, rng: &rng) {
                     filled.append(tone)
+                    count[tone.pass] += 1
                 }
             }
         }
@@ -141,7 +146,7 @@ public struct TrackFill {
         return Track(times: times, frequencies: freqs, levels: [Double](repeating: 0, count: times.count))
     }
 
-    /// Tones standing out along each pass's curve, strongest first per pass.
+    /// Each pass's best tone, if one stands out along its curve.
     func find(_ x: [Double], sampleRate: Int) -> [Tone] {
         let ps = search
         guard let g = ps.grid(count: x.count, sampleRate: sampleRate) else { return [] }
@@ -162,25 +167,7 @@ public struct TrackFill {
             }
         }
         let rests = Array(sequence(first: restRange.lowerBound) { $0 * ratio < restRange.upperBound ? $0 * ratio : nil })
-        var out: [Tone] = []
-        for (pi, pass) in expected.enumerated() {
-            var masked = am
-            for _ in 0..<maxTones {
-                guard let tone = best(pass, pi, masked, g, rests) else { break }
-                out.append(tone)
-                // Mask this tone's curve (±3 bins) so the next search finds a different one. The
-                // mask is the average excess (0, the excess being centred), not the floor: the
-                // wrong-time curves of other rest frequencies cross this one, and a hole along it
-                // would lower their nulls and make them stand out.
-                for m in 0..<g.frames {
-                    guard let f = pass.factor(at: g.time(m) - tone.offset) else { continue }
-                    let k = Int(((tone.rest * f) / g.binHz).rounded()) - g.kLo
-                    guard k + 3 >= 0, k - 3 < g.bins else { continue }
-                    for kk in max(0, k - 3)...min(g.bins - 1, k + 3) { masked[m * g.bins + kk] = 0 }
-                }
-            }
-        }
-        return out
+        return expected.indices.compactMap { best(expected[$0], $0, am, g, rests) }
     }
 
     /// The pass's best tone. For every rest frequency: the best mean excess along its curve over
