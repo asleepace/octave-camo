@@ -264,6 +264,35 @@ far outside ±90°); about 15 % of the backfilled rows in the first six sessions
 one of them in a track turned its smoothed velocity, and so its Doppler curve, into NaN. Both are
 fixed (the cache key includes the audio; rows are range-checked when fetched and when indexed).
 
+## The place search (first result)
+
+`python3 -m lab locate`, after the video in SOURCES.md: a 500 m grid over 16 × 16 km around the
+true position (1,089 points), then 100 m grids around the best point and the truth. At each point,
+each aircraft's Doppler curve is predicted from its real track (sound travel included), scored
+along the whitened spectrogram with the rest frequency free and against the same curve at six
+wrong times; aircraft beyond 10 km of a point count 0; all aircraft are summed on one timeline. The
+recording time is given exactly (a stronger attacker than one who knows the post time). Silence
+isn't modelled yet. Distances only.
+
+| bathroom session | true point's rank | best guess off by | area within 3 of the best |
+| --- | ---: | ---: | ---: |
+| original | 22 of 1,089 (top 2 %) | 8.5 km | 2.0 km² |
+| Full | 26 (top 2.3 %) | 2.5 km | 0.25 km² |
+| **Experimental** | **888** (bottom 19 %) | 8.2 km | 0.75 km² |
+
+One plane in 108 s narrows the place to the top few percent of the box but doesn't pin it:
+another aircraft's chance match elsewhere beats it, and a single pass only fixes a band at the
+right distance from the track. A clip with two or more passes is where the video's locked scoring
+would pin it. Full leaves the evidence (the B38M's z at the true point stays 6.9); Experimental
+removes it (−2.1).
+
+**A ninth session, indoors with the window open and the TV on**, an aircraft climbing out 3.9 km
+away: the blind check sees only three 5 s pieces (550–620 Hz) and no pass; the known-path attacker
+scores it z 6.5 (712 Hz) on the original, **4.7 after Full and 4.1 after Experimental**. A faint
+pass under 1 kHz that no blind detector finds survives both presets, because removal is driven
+by what the blind check sees. The attacker with the tracks will always see more than a blind
+check, which argues for removal that uses the same tracks (see PLAN.md).
+
 ## The zoom-out: the real attacker isn't blind
 
 E1 *is* the attacker who has ADS-B: given the plane's track, this recording shows it at z 9.5. Our

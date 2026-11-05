@@ -12,6 +12,8 @@
                                         audio of it, e.g. cloaked copies, aligned automatically)
   check <session> [audio …]             the page's check (the real wasm build) on the session and
                                         on other audio of it: counts and flyby passes
+  locate <session> [audio …]            the place-searching attacker: rank of the true position
+                                        among a grid of candidates (distances and areas only)
   plot <session>                        spectrogram with ADS-B Doppler curves and detected paths
 
 Data stays in $LAB_DATA (default ~/.octave-camo-lab), never in the repo. Results are saved as JSON
@@ -272,6 +274,32 @@ def cmd_check(sid: str, others: list[str]):
     (res / f"check-{sid}.json").write_text(json.dumps(rows, indent=1))
 
 
+def cmd_locate(sid: str, others: list[str]):
+    """The place-searching attacker (lab/locate.py) on the session and on copies of it."""
+    import soundfile as sf
+    from . import locate
+    idx, x, sr = corpus.load(sid)
+    audios = [("original", x)]
+    for o in others:
+        y, ysr = sf.read(o)
+        y = y[:, 0] if y.ndim > 1 else y
+        if ysr != sr:
+            raise SystemExit(f"{o}: sample rate {ysr}, expected {sr}")
+        audios.append((o.rsplit("/", 1)[-1], _align(x, y, sr)))
+    t = time.time()
+    rows = locate.locate(sid, audios, sr)
+    print("| audio | aircraft | true point's rank (of grid) | best guess off by | fine best off by | area within 3 / 6 of best | truth z by aircraft |")
+    print("| --- | ---: | ---: | ---: | ---: | ---: | --- |")
+    for r in rows:
+        z = ", ".join(f"{v}" for v in r["truth_z_by_aircraft"].values() if v is not None)
+        print(f"| {r['name']} | {r['aircraft']} | {r['truth_rank']} of {r['points']} ({r['truth_percentile']} %) | "
+              f"{r['best_error_m']} m | {r['fine_best_error_m']} m | {r['area_within_3_km2']} / {r['area_within_6_km2']} km² | {z} |")
+    print(f"\n{time.time() - t:.0f} s")
+    res = corpus.DATA / "results"
+    res.mkdir(parents=True, exist_ok=True)
+    (res / f"locate-{sid}.json").write_text(json.dumps(rows, indent=1))
+
+
 def main(argv):
     if not argv or argv[0] in ("-h", "--help"):
         print(__doc__)
@@ -296,6 +324,8 @@ def main(argv):
         cmd_cloak(rest[0], rest[1:])
     elif cmd == "attack":
         cmd_attack(rest[0], rest[1:])
+    elif cmd == "locate":
+        cmd_locate(rest[0], rest[1:])
     elif cmd == "check":
         cmd_check(rest[0], rest[1:])
     elif cmd == "plot":

@@ -81,7 +81,11 @@ def _polls(path: Path) -> list[dict]:
     return [p] if "received_wall_unix" in p else []
 
 
-def index(sid: str) -> dict:
+def geometry(sid: str) -> dict:
+    """Each aircraft's track in the session's local frame (metres east, north, up from the
+    recording position; never printed or saved), 10 Hz from first to last position, with its
+    smoothed velocity. Returns {speed_of_sound, duration_s, alt0, meta, info, kind, tracks: {hex:
+    (te, q, v)}}, `te` in seconds from the audio's start."""
     d = sessions_dir() / sid
     meta = json.load(open(d / "meta.json"))
     info = sf.info(str(d / meta["audio"]["file"]))
@@ -113,9 +117,7 @@ def index(sid: str) -> dict:
             Y = math.radians(r["lat"] - la0) * 6371000
             tracks[r["hex"]].append((round(r["wall_unix"] - t0, 2), X, Y, r["alt_ft"] * 0.3048 - alt0))
             kind.setdefault(r["hex"], {"type": None, "kt": None, "fpm": None})
-    dur = info.frames / info.samplerate
-    grid = np.arange(-30.0, dur + 30.0, 0.1)
-    passes, curves = [], {}
+    tr = {}
     for h, pts in tracks.items():
         a = np.array(sorted(set(pts)))
         _, u = np.unique(a[:, 0], return_index=True)
@@ -124,11 +126,25 @@ def index(sid: str) -> dict:
             continue
         te = np.arange(a[0, 0], a[-1, 0], 0.1)
         q = np.stack([np.interp(te, a[:, 0], a[:, j]) for j in (1, 2, 3)], 1)
-        r = np.linalg.norm(q, axis=1)
         # Positions come every ~10 s with ~tens of metres of noise, so the velocity of a linear
         # interpolation is jagged: smooth it over 20 s (a local, not whole-track, smoothing).
         from scipy.ndimage import uniform_filter1d
         v = uniform_filter1d(np.gradient(q, te, axis=0), size=201, axis=0, mode="nearest")
+        tr[h] = (te, q, v)
+    return {"speed_of_sound": c, "duration_s": info.frames / info.samplerate, "alt0": alt0, "meta": meta,
+            "info": info, "kind": kind, "tracks": tr}
+
+
+def index(sid: str) -> dict:
+    d = sessions_dir() / sid
+    g = geometry(sid)
+    meta, info, kind, alt0, c = g["meta"], g["info"], g["kind"], g["alt0"], g["speed_of_sound"]
+    t0 = _audio_start(meta)
+    dur = info.frames / info.samplerate
+    grid = np.arange(-30.0, dur + 30.0, 0.1)
+    passes, curves = [], {}
+    for h, (te, q, v) in g["tracks"].items():
+        r = np.linalg.norm(q, axis=1)
         vr = (q * v).sum(1) / r                           # + receding
         heard = te + r / c
         factor = 1 / (1 + vr / c)                         # received / emitted frequency

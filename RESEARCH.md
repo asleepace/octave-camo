@@ -23,12 +23,27 @@ leaning on a number. Experiments of our own are in [EXPERIMENTS.md](EXPERIMENTS.
   retrieval works best (from the abstract).
 
 - **The video that started this project** ([YT-UytYrhYLOKI], from a summary of its transcript):
-  one person, Python and public ADS-B located a clip to about 100 m from aircraft flyovers nobody
-  could hear, by modelling each candidate location's received Doppler curves in 3D and scoring
-  them against the audio. A high-pass filter or phone-call compression didn't remove it (a fan
-  tone at 1–2 kHz sits inside the telephone band). This is our threat model's attacker, built by
-  one person, and it searches **locations**, not only times: the lab's known-path attacker scores
-  the true location; a location search ranks it among all candidates, which is the number to beat.
+  one person, Python and public ADS-B located a clip to about 100 m from aircraft nobody heard.
+  Three ideas in it go beyond our threat model's single-pass fitter:
+  - **Several events on one timeline.** Two propeller planes 920 s apart, scored jointly with the
+    gap fixed: one unknown time offset for all events, so each extra pass multiplies the
+    evidence. Long clips (we allow 10 minutes) are where this bites.
+  - **Silence is evidence.** Points that would have heard a third aircraft between the two were
+    ruled out. A clip scrubbed perfectly clean still says "no plane was audible here from t₁ to
+    t₂", which rules out places under busy routes.
+  - **The place is searched, not given.** Every point of a 200 m grid gets its own predicted
+    curves from the real (curving, climbing) tracks, sound travel and terrain included.
+
+  And the end of the video is a list of defences that fail: a high-pass filter (the tones overlap
+  the voice band, and a tone that is only *attenuated* comes back when boosted), talking over it,
+  phone codecs and noise suppression. The one that works in their telling is cutting the video so
+  the events' time offsets break.
+
+**For us:** octave-camo already avoids the attenuation trap (tones are subtracted and the low band
+is replaced with new noise, not filtered), and it doesn't rely on noise to mask. What it should
+take from this: test against a place search scoring every pass together (`python3 -m lab locate`),
+think about what a clean result's silence says, and treat time-structure attacks (the gaps between
+events, the wobble stage's time warp, cuts) as first-class.
 
 **For us:** the attacker who matters most may be one that fuses picture, speech and background,
 not a lone Doppler fitter. Our scope stays the background, but the page should say plainly that

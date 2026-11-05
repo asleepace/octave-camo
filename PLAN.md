@@ -59,6 +59,21 @@ score far above white noise, so the duration rule and the shape test do the work
 vehicle can still fit a flyby; and its paths are bin-quantized (fine for the fill, whose strip is
 wider).
 
+## Next: remove what the tracks predict, and decoys (to discuss)
+
+The known-path attacker sees passes the blind check can't (a faint climb-out under 1 kHz, z 4–5
+after either preset). Two directions, both from the video and the sessions:
+
+1. **Defender-side known-path removal.** The phone knows where and when it recorded. Fetch ADS-B
+   for a wide box around it (so the request doesn't give the place away), predict every aircraft's
+   curve at the true position, and subtract or fill along exactly those curves, rest frequency and
+   harmonics found from the audio. The attacker's own tool, run first. Needs the location before
+   it is stripped, opt-in.
+2. **Decoys.** Silence is evidence, and so is the time between events. Synthetic passes consistent
+   with real logged aircraft heard from a *different* place would point a place search elsewhere;
+   random fake curves only fool blind checks. Open questions: where to "put" the recording (not
+   someone else's home), and whether the decoy itself becomes a fingerprint.
+
 ## Later: paths, families and risk classes (slice 3, ACOUSTICS.md §4.4–6)
 
 1. **Paths:** a Viterbi path search through the whitened spectrogram, limiting how fast frequency

@@ -32,7 +32,9 @@ Every audio location attack in scope has the same shape:
    approach time, distance and speed), the loudness envelope (distance over time), the arrival
    time of a scheduled sound.
 3. **The attacker predicts that signature** for each candidate place and time, and integrates
-   evidence along it. This is matched filtering: it finds tones far below what a person or a
+   evidence along it, over every event in the clip at once (their gaps are fixed, so one time
+   offset serves them all), and counts silence too: a place that should have heard a plane that
+   isn't in the audio is ruled out. This is matched filtering: it finds tones far below what a person or a
    blind tracker could see (`harness/src/matched.ts` reaches about −20 dB SNR in tests).
 
 So the defense must destroy the *fine time-frequency structure* the predictor matches against.
@@ -53,6 +55,8 @@ Lowering a tone's level is not enough while its curve survives.
 | Data inside the video packets (H.264/HEVC SEI: encoder settings, camcorder date and GPS, drone telemetry) | Device, time, place | – | SEI removed from copied packets and from the HEVC configuration | Covered for H.264/HEVC; AV1 metadata units are copied |
 | The source's own timestamps (a TS stream starting hours in, a recorder's clock) | Time | – | Timestamps rebased to zero | Covered |
 | Loudness envelope of a pass | Closest-approach time and d/v | Any of the tracks above | `lowband` smoothing and jitter (partial) | **Open:** no envelope attacker yet |
+| Time between events (two passes, a pass and a bell) | One time offset locks every event together, multiplying the evidence | Any of the tracks above | Removing each event's signature; `wobble` warps time by a little | **Open:** measured by `lab locate`; cuts would break it |
+| Silence: no pass where one was due | Rules out places under busy routes; a clean clip still says "nothing audible from t₁ to t₂" | ADS-B | – | **Open:** inherent to removal; decoys would blur it |
 | Scheduled sounds (bells, horns, foghorns) | Time, plus rough distance from level and echo | Timetables | None | **Open** |
 | Room and outdoor acoustics | Place type, not position | – | None | Out of scope |
 | ENF as light flicker in video | Recording time, grid region | ENF archives | Optional de-flicker (re-encodes the picture) | Partly covered, see below |

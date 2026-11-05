@@ -87,11 +87,17 @@ reading in place; RESEARCH.md discusses the recent work.
 
 - **[YT-UytYrhYLOKI]** YouTube video on geolocating a clip from aircraft Doppler, ~29 min
   (title and creator not yet recorded). https://www.youtube.com/watch?v=UytYrhYLOKI — The post
-  that inspired this project. Inaudible flyover signatures matched against public ADS-B with
-  Python and 3D propagation modelling, scoring candidate locations, claimed to ~100 m; high-pass
-  filtering and phone-call compression shown not to remove the signature. RESEARCH.md §1,
-  THREAT_MODEL.md. *abstract* (from a third-party summary of the transcript; the page couldn't be
-  fetched here)
+  that inspired this project. Method (2:37–20:57): one day of ADS-B for the continental US, jets
+  removed (propeller aircraft only); a 200 m grid, each point's sound-delayed closest-approach
+  times (slant distance, terrain from a DEM) to find where one plane is heard and another exactly
+  920 s later; the audio's Doppler curves (the drop gives speed, its rate the closest distance);
+  a silence filter (no other aircraft audible between the two); then each candidate's exact curve
+  from the real, non-linear tracks, scored against the spectrogram with both events locked to one
+  timeline. Located to ~100 m. Ending (26:09–29:12): a high-pass filter fails (the tones overlap
+  the voice band, and an attenuated tone is recovered by boosting it), talking over it fails, and
+  phone codecs and noise suppression leave the signature reconstructible; intentional cuts that
+  break the time offset between events would help. RESEARCH.md §1, THREAT_MODEL.md, `lab/locate.py`.
+  *abstract* (from a third-party summary of the transcript; the page couldn't be fetched here)
 
 ## Rooms and devices
 

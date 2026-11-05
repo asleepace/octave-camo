@@ -13,6 +13,7 @@ python3 -m lab e2 real --wide                                    # the same up t
 python3 -m lab cloak <session> full experimental                 # cloak with the real wasm build
 python3 -m lab check <session> full.wav experimental.wav          # the page's check (real wasm), before/after
 python3 -m lab attack <session> full.wav experimental.wav        # the known-path attacker, before/after
+python3 -m lab locate <session> full.wav experimental.wav         # the place-searching attacker (slow: ~5 min each)
 python3 -m lab plot <session>                                    # spectrogram + ADS-B Doppler curves
 ```
 
@@ -34,6 +35,11 @@ python3 -m lab plot <session>                                    # spectrogram +
 - **Speed.** The path search runs all windows of a clip at once; whitened spectrograms are cached
   on disk by scene, parameters and the audio's own bytes (a re-cloaked file keeps its name); scenes run on both cores. Results are saved as JSON in
   `$LAB_DATA/results` and printed as markdown tables ready for EXPERIMENTS.md.
+- **The place search** (`lab/locate.py`, after the video in SOURCES.md): every point of a grid
+  around the true position gets each aircraft's predicted Doppler curve from its real track,
+  scored against the audio with the rest frequency free and against the same curve at wrong
+  times; the aircraft are summed on one timeline. It reports the true point's rank, how far the
+  best guess is, and the area scoring near the best: distances only, never positions.
 - **Pieces** (`lab/detect.py`): `whiten` (clip-median or running-median reference, optional
   broadband-aware statistic), `search` (smooth falling or any-direction paths), `shape_test`
   (straight-flyby fit), `known_path` (the attacker with the track, searching the unknown rest
