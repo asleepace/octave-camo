@@ -353,6 +353,13 @@ while it was audible (the recorder's new sensors: a mains-hum estimate, on-devic
 an ultrasonic band, impulse responses at both ends): the check reports no flyby, and track removal
 has no expected pass to work on. A plane-free control with construction, as intended.
 
+**An eleventh, outdoors with construction (190 s):** two aircraft passed 5.3 and 6.2 km away while
+it ran; the known-path attacker finds neither (z ≤ −1, all six nearest under 1). The check reports
+one 2 s Doppler-shaped piece from the frame tracker (420 Hz, construction), no path-search pass.
+The recorder build was the same as the tenth session's, so its mains-hum estimate still reports a
+50 Hz grid (median 50.26 Hz, ±0.28 Hz) beside a clean 60 Hz line, and the ultrasonic band is
+still empty.
+
 ## The zoom-out: the real attacker isn't blind
 
 E1 *is* the attacker who has ADS-B: given the plane's track, this recording shows it at z 9.5. Our
