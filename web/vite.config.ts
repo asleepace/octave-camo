@@ -1,8 +1,9 @@
 import tailwindcss from "@tailwindcss/vite";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
+import { gzipSync } from "node:zlib";
 import { defineConfig, type Plugin } from "vite";
 import pkg from "./package.json" with { type: "json" };
 
@@ -46,6 +47,37 @@ function checksumsFile(): Plugin {
   };
 }
 
+/** Size as the README badges show it: decimal megabytes, one decimal ("3.6 MB"). */
+export const megabytes = (bytes: number) => `${(bytes / 1e6).toFixed(1)} MB`;
+
+/**
+ * shields.io endpoint badges for the wasm's size, raw and gzipped (what a browser downloads), from
+ * the exact file the site serves. Deterministic (gzip level 9), so the site build stays reproducible.
+ */
+export function wasmBadges(wasm: Uint8Array): Record<string, { schemaVersion: 1; label: string; message: string; color: string }> {
+  return {
+    "wasm.json": { schemaVersion: 1, label: "wasm", message: megabytes(wasm.length), color: "blue" },
+    "wasm-gzip.json": { schemaVersion: 1, label: "wasm gzipped", message: megabytes(gzipSync(wasm, { level: 9 }).length), color: "brightgreen" },
+  };
+}
+
+function badgeFiles(): Plugin {
+  let outDir = "dist";
+  return {
+    name: "octave-camo-badges",
+    apply: "build",
+    configResolved: (config) => { outDir = resolve(config.root, config.build.outDir); },
+    closeBundle: () => {
+      const wasm = join(outDir, "octave-camo.wasm");
+      if (!existsSync(wasm)) return;                       // a local build without the Swift toolchain
+      mkdirSync(join(outDir, "badges"), { recursive: true });
+      for (const [name, badge] of Object.entries(wasmBadges(readFileSync(wasm)))) {
+        writeFileSync(join(outDir, "badges", name), JSON.stringify(badge) + "\n");
+      }
+    },
+  };
+}
+
 /**
  * The page handles people's videos, so the built site pins down what it may load or contact:
  * only its own files. No connect-src beyond 'self' means no script on the page can send data
@@ -79,7 +111,8 @@ function contentSecurityPolicy(): Plugin {
 // GitHub Pages serves the site at /octave-camo/.
 export default defineConfig({
   base: process.env.BASE_PATH ?? "/octave-camo/",
-  plugins: [tailwindcss(), contentSecurityPolicy(), checksumsFile()],
+  // Badges before checksums: checksums.txt covers every file the site serves.
+  plugins: [tailwindcss(), contentSecurityPolicy(), badgeFiles(), checksumsFile()],
   define: {
     __VERSION__: JSON.stringify(pkg.version),
     __COMMIT__: JSON.stringify(commit()),

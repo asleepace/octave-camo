@@ -3,6 +3,8 @@
 # octave-camo
 
 [![CI](https://github.com/asleepace/octave-camo/actions/workflows/ci.yml/badge.svg)](https://github.com/asleepace/octave-camo/actions/workflows/ci.yml)
+[![wasm](https://img.shields.io/endpoint?url=https%3A%2F%2Fasleepace.github.io%2Foctave-camo%2Fbadges%2Fwasm.json)](https://asleepace.github.io/octave-camo/octave-camo.wasm)
+[![wasm gzipped](https://img.shields.io/endpoint?url=https%3A%2F%2Fasleepace.github.io%2Foctave-camo%2Fbadges%2Fwasm-gzip.json)](https://asleepace.github.io/octave-camo/checksums.txt)
 
 **Active camouflage for the sound (and light) in your videos.**
 
