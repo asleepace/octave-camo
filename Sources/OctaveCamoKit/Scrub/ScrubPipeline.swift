@@ -45,6 +45,9 @@ public struct ScrubPipeline {
     public var lowband = LowBandRegeneration()
     public var wobble = BandWobble()
     public var lines = LineFill()
+    /// Removes the tones flight tracks predict (runs only when given expected passes, before
+    /// `wobble` and `lines`).
+    public var tracks = TrackFill()
     /// Output is scaled down if it would exceed this peak.
     public var peakCeiling = 0.99
 
@@ -76,13 +79,32 @@ public struct ScrubPipeline {
         }
 
         let stages: [any ScrubStage] = [hum, subtraction, scurve, lowband, wobble, lines]
+        var tracksDone = false
         for stage in stages where steps.contains(stage.step) {
+            if stage.step == .wobble || stage.step == .lines, !tracksDone {
+                runTracks(&y, &log, sampleRate: input.sampleRate)
+                tracksDone = true
+            }
             let result = stage.process(y, sampleRate: input.sampleRate)
             y = result.output
             log.append(result.summary)
         }
+        if !tracksDone { runTracks(&y, &log, sampleRate: input.sampleRate) }
 
         DSP.limitPeak(&y, to: peakCeiling)
         return ScrubResult(audio: Audio(sampleRate: input.sampleRate, channels: [y]), log: log)
+    }
+}
+
+extension ScrubPipeline {
+    func runTracks(_ y: inout [Double], _ log: inout [String], sampleRate: Int) {
+        guard !tracks.expected.isEmpty else { return }
+        var tracks = tracks
+        if steps.contains(.lowband), lowband.cutoff < tracks.band.upperBound - 100 {
+            tracks.band = max(tracks.band.lowerBound, lowband.cutoff)...tracks.band.upperBound
+        }
+        let result = tracks.process(y, sampleRate: sampleRate)
+        y = result.output
+        log.append(result.summary)
     }
 }

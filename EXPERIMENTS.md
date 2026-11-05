@@ -293,6 +293,33 @@ pass under 1 kHz that no blind detector finds survives both presets, because rem
 by what the blind check sees. The attacker with the tracks will always see more than a blind
 check, which argues for removal that uses the same tracks (see PLAN.md).
 
+## Track-driven removal (in progress, `track-fill` branch)
+
+`TrackFill` (Swift, CLI `scrub --expect passes.json`, lab `python3 -m lab trackfill`) takes each
+aircraft's predicted Doppler factor at the recording position and, around its closest approach,
+searches every rest frequency (0.2 % steps) and ±6 s of timing for tones following the curve:
+each rest frequency's best mean excess minus the same at four wrong times, scaled by its
+neighbours' spread (±25 %). Then it fills the tones it finds with noise along their curves.
+
+**What worked:** on the ninth session it finds, with no blind detection at all, the tone the
+known-path attacker uses (698 Hz), plus 782 and 887 Hz. The search is the same with or without
+the low band regenerated, and the statistic cancels artefacts that sit still in time (the first
+version, which took the best of all rest frequencies for its null, was thrown by the low band's
+crossover and found nothing).
+
+**What didn't, yet:** the attacker's z after removal went *up* (Full 4.7 → 6.2), on a fourth tone
+at 534 Hz the fill never touched (0.00 dB change along it): removing the three strongest tones
+cleaned the attacker's null, so the next one stood out more. The plane carries a family of tones
+(about 490, 534, 698, 782, 887, 993 Hz); one at a time, each is marginal against ~1,800 rest
+frequencies (z 2–4 locally, 0.9–1.4 dB). Also measured: the noise fill sits about +0.3 dB above
+its surroundings at the curve's centre and −0.3 dB at the strip's edges (white noise, 48 kHz,
+averaged along a 36 s curve). Against a matched filter whose nulls vary by ~0.1 dB, even that
+could become a trace.
+
+**Next:** search engine-tone families together (E5: sum the evidence of related tones, as an
+attacker would), fill all of a pass's tones down to a low bar, and make the fill's level unbiased
+along the curve, then score again with the known-path attacker and the place search.
+
 ## The zoom-out: the real attacker isn't blind
 
 E1 *is* the attacker who has ADS-B: given the plane's track, this recording shows it at z 9.5. Our

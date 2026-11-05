@@ -1,3 +1,4 @@
+import Foundation
 import OctaveCamoKit
 import OctaveCamoIO
 
@@ -12,7 +13,7 @@ let commands = [
     Command(name: "synth", options: ["f0", "speed", "distance", "t0", "duration", "seed"],
             flags: ["hard"], run: synth),
     Command(name: "analyze", options: ["threshold"], flags: ["json"], run: analyze),
-    Command(name: "scrub", options: ["steps", "mains", "passes", "cutoff", "lowband-mode", "flatten", "depth", "wobble-top", "seed"],
+    Command(name: "scrub", options: ["steps", "mains", "passes", "cutoff", "lowband-mode", "flatten", "depth", "wobble-top", "seed", "expect"],
             flags: ["no-keep-voice"], run: scrub),
 ]
 
@@ -27,6 +28,8 @@ USAGE
                         [--mains 50,60] [--passes 3] [--cutoff 300] [--lowband-mode regenerate|highpass]
                         [--flatten 5] (experimental: flatten low-band swells slower than N s)
                         [--no-keep-voice] [--depth 0.015] [--wobble-top 600] [--seed N]
+                        [--expect passes.json] (fill the tones these predicted Doppler curves
+                        carry: [{"times": [s…], "factors": [received/emitted…]}, …])
   octave-camo --version
 
 COMMANDS
@@ -105,6 +108,13 @@ func scrub(_ args: Arguments) throws {
     pipeline.lowband.seed = pipeline.wobble.seed
     pipeline.hum.seed = pipeline.wobble.seed
     pipeline.lines.seed = pipeline.wobble.seed
+    pipeline.tracks.seed = pipeline.wobble.seed
+    if let path = args.string("expect") {
+        let data = try Data(contentsOf: URL(fileURLWithPath: path))
+        pipeline.tracks.expected = try JSONDecoder().decode([ExpectedPass].self, from: data)
+        try require(pipeline.tracks.expected.allSatisfy { $0.times.count == $0.factors.count && $0.times.count > 1 },
+                    "--expect: each pass needs times and factors of the same length")
+    }
     try require(pipeline.subtraction.passes >= 0, "--passes must be 0 or more")
     try require(pipeline.wobble.depth >= 0 && pipeline.wobble.depth <= 0.1, "--depth must be between 0 and 0.1")
     try require(pipeline.lowband.cutoff > 20 && pipeline.lowband.cutoff.isFinite, "--cutoff must be above 20 Hz")

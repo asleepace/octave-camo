@@ -14,6 +14,9 @@
                                         on other audio of it: counts and flyby passes
   locate <session> [audio …]            the place-searching attacker: rank of the true position
                                         among a grid of candidates (distances and areas only)
+  trackfill <session> [preset …]        cloak with flight-track removal (the CLI's --expect, curves
+                                        predicted at the true position), into
+                                        $LAB_DATA/cloaked/<session>-<preset>-tracks.wav
   plot <session>                        spectrogram with ADS-B Doppler curves and detected paths
 
 Data stays in $LAB_DATA (default ~/.octave-camo-lab), never in the repo. Results are saved as JSON
@@ -300,6 +303,54 @@ def cmd_locate(sid: str, others: list[str]):
     (res / f"locate-{sid}.json").write_text(json.dumps(rows, indent=1))
 
 
+def expected_passes(sid: str, max_km: float = 15.0) -> list[dict]:
+    """Each aircraft's predicted Doppler factor over the audio at the recording position (audio
+    times and factors only), for aircraft within `max_km` while the audio runs."""
+    from . import locate
+    geo = corpus.geometry(sid)
+    dur, out = geo["duration_s"], []
+    for h, (heard, fac, tc, rmin) in locate.curves(geo, np.zeros(2)).items():
+        keep = (heard >= -5) & (heard <= dur + 5)
+        if rmin > max_km * 1000 or keep.sum() < 20 or not (-30 < tc < dur + 30):
+            continue
+        out.append({"times": [round(float(v), 3) for v in heard[keep]], "factors": [round(float(v), 7) for v in fac[keep]]})
+    return out
+
+
+PRESET_ARGS = {
+    "full": ["--steps", "mono,hum,subtract,scurve,lowband"],
+    "experimental": ["--steps", "mono,hum,subtract,scurve,lowband,lines", "--flatten", "5"],
+}
+
+
+def cmd_trackfill(sid: str, presets: list[str]):
+    """The CLI's scrub with --expect: flight-track removal on top of a preset."""
+    import subprocess, tempfile
+    import soundfile as sf
+    from pathlib import Path
+    idx, x, sr = corpus.load(sid)
+    repo = Path(__file__).resolve().parent.parent
+    cli = repo / ".build/release/octave-camo"
+    if not cli.exists():
+        raise SystemExit("build the CLI first: swift build -c release --product octave-camo")
+    out_dir = corpus.DATA / "cloaked"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    passes = expected_passes(sid)
+    print(f"{len(passes)} expected pass(es)")
+    with tempfile.TemporaryDirectory() as tmp:
+        src, exp = Path(tmp) / "in.wav", Path(tmp) / "expect.json"
+        sf.write(src, x, sr, subtype="FLOAT")
+        exp.write_text(json.dumps(passes))
+        for preset in presets or ["experimental"]:
+            dst = out_dir / f"{sid}-{preset}-tracks.wav"
+            r = subprocess.run([str(cli), "scrub", str(src), str(dst), *PRESET_ARGS[preset], "--seed", "7", "--expect", str(exp)],
+                               check=True, capture_output=True, text=True)
+            for line in (r.stdout + r.stderr).splitlines():
+                if line.strip().startswith("tracks:") or "tracks:" in line:
+                    print(" ", line.strip())
+            print(dst)
+
+
 def main(argv):
     if not argv or argv[0] in ("-h", "--help"):
         print(__doc__)
@@ -324,6 +375,8 @@ def main(argv):
         cmd_cloak(rest[0], rest[1:])
     elif cmd == "attack":
         cmd_attack(rest[0], rest[1:])
+    elif cmd == "trackfill":
+        cmd_trackfill(rest[0], rest[1:])
     elif cmd == "locate":
         cmd_locate(rest[0], rest[1:])
     elif cmd == "check":
