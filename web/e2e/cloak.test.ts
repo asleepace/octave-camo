@@ -15,6 +15,7 @@ import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { type Browser, chromium } from "playwright";
 import { expectClean, FAKE_GPS, ffmpeg, flybyWav, pictureHash, probe, row, Session, URL_, videoHash, workDir } from "./helpers.ts";
+import { writeArchive } from "../test/archive.ts";
 
 const dir = workDir();
 
@@ -74,6 +75,32 @@ describe.skipIf(!URL_)("cloak in the browser", () => {
     expectClean(out, { video: true });
     expect(videoHash(out)).toBe(videoHash(input));
     expect(session.problems).toEqual([]);
+    await session.close();
+  }, 900_000);
+
+  test("flight tracks: place and time read from the file, the archive added by hand, nothing fetched, metadata still gone", async () => {
+    const input = webm("tracks");
+    // An aircraft passing 2 km from the clip's (fake) place at its (fake) time, in adsb.lol's format.
+    const start = Date.UTC(2026, 0, 1, 12) / 1000, R = 6_371_000, cos = Math.cos((37.7749 * Math.PI) / 180);
+    const archive = join(dir, "24.bin.ttf");
+    writeFileSync(archive, writeArchive(Array.from({ length: 60 }, (_, j) => {
+      const time = start + (j - 25) * 10, east = 141 * (time - start - 10);
+      return { time, aircraft: [{ id: 0xa1b2c3, lat: 37.7749 + (1_300 / R) * 180 / Math.PI, lon: -122.4194 + (east / (R * cos)) * 180 / Math.PI,
+        feet: 4_900, knots: 274 }] };
+    })));
+    const page = await fresh().open(input);
+    await page.click("#tracks summary");
+    expect(await page.inputValue("#tracks-lat")).toBe("37.7749");
+    expect(await page.inputValue("#tracks-time")).toStartWith("2026-01-01T12:00");
+    // 12:00:00 sharp: the half hour before it too, for positions in the two minutes leading up.
+    expect(await page.$$eval("#tracks a[href*='adsb.lol']", (as) => as.map((a) => a.getAttribute("href"))))
+      .toEqual(["https://adsb.lol/globe_history/2026/01/01/heatmap/23.bin.ttf", "https://adsb.lol/globe_history/2026/01/01/heatmap/24.bin.ttf"]);
+    await page.setInputFiles("#tracks-file", archive);
+    await page.waitForFunction(() => /1 aircraft passed/.test(document.querySelector("#tracks [data-status]")?.textContent ?? ""), null, { timeout: 60_000 });
+    const out = await session.cloakAndSave();
+    expect(await session.status()).toContain("with flight tracks");
+    expectClean(out, { video: true });
+    expect(session.problems).toEqual([]);          // includes: no request left the page
     await session.close();
   }, 900_000);
 

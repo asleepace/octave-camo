@@ -8,6 +8,7 @@ import { Camo, type Clip, type Profiles } from "../src/engine/camo.ts";
 import { analyzeInParts, plan, scrubInParts } from "../src/engine/chunks.ts";
 import { spectrogram } from "../src/spectrum.ts";
 import { seededRandom } from "../src/random.ts";
+import { writeArchive } from "./archive.ts";
 
 const BUILDS = [
   ["release", new URL("../public/octave-camo.wasm", import.meta.url).pathname],
@@ -59,7 +60,53 @@ function flickerProfiles(withFlicker: boolean): Profiles {
   return { frames, strips, rows, values, times };
 }
 
+/** A made-up place and time (nobody's location), and a flyby there: 141 m/s, 2 km at closest
+ *  (1.5 km up), closest emission 24 s into a 60 s clip, a 1,234 Hz tone over noise; its archive
+ *  positions every 10 s, each up to 5 s stale, as on real data. */
+const PLACE = { latitude: 40, longitude: -100, altitude: 0, start: Date.UTC(2026, 10, 5, 8, 38, 25) / 1000, duration: 60 };
+function archivedFlyby(): { clip: Clip; archive: Uint8Array<ArrayBuffer> } {
+  const c = 343, v = 141, d = 2_000, up = 1_500, side = Math.sqrt(d * d - up * up), tc = 24, f0 = 1_234;
+  const n = SR * 60, x = new Float32Array(n), rand = seededRandom(5);
+  let phase = 0;
+  for (let i = 0; i < n; i++) {
+    const t = i / SR;
+    let te = t - d / c;
+    for (let k = 0; k < 6; k++) te = t - Math.hypot(d, v * (te - tc)) / c;
+    const along = v * (te - tc), r = Math.hypot(d, along);
+    phase += (2 * Math.PI * f0 / (1 + (v * along) / (c * r))) / SR;
+    x[i] = 0.003 * (d / r) * Math.sin(phase) + 0.01 * (rand() + rand() + rand() - 1.5);
+  }
+  const R = 6_371_000, cos = Math.cos((PLACE.latitude * Math.PI) / 180);
+  const blocks = Array.from({ length: 67 }, (_, j) => {
+    const time = PLACE.start + (j - 30) * 10, age = 5 * rand(), east = v * (time - age - PLACE.start - tc);
+    return { time, aircraft: [{ id: 0xa1b2c3, lat: PLACE.latitude + (side / R) * 180 / Math.PI,
+      lon: PLACE.longitude + (east / (R * cos)) * 180 / Math.PI, feet: up / 0.3048, knots: v / 0.514444 }] };
+  });
+  return { clip: { sampleRate: SR, channels: [x] }, archive: writeArchive(blocks) };
+}
+
 for (const [name, WASM] of BUILDS) describe.skipIf(!existsSync(WASM))(`octave-camo.wasm (${name})`, () => {
+  test("flight tracks from the archive: predicted, removed, and only for their own time", async () => {
+    const camo = await Camo.load(readFileSync(WASM));
+    const { clip, archive } = archivedFlyby();
+    expect(camo.archive(archive, PLACE)).toEqual({ nearby: 1, passing: 1, curves: 4 });
+    const r = camo.scrub(clip, { steps: ["mono"], seed: 3, tracksFrom: 0 });
+    const line = r.log.find((l) => l.startsWith("tracks:")) ?? "";
+    expect(line).toMatch(/^tracks: 4 expected pass\(es\), filled [1-9]/);
+    expect(r.output).not.toEqual(clip.channels[0]);
+    // A part of the clip, told where it starts, still finds it; told the wrong start, it has nothing to do.
+    const part: Clip = { sampleRate: SR, channels: [clip.channels[0]!.slice(10 * SR) as Float32Array<ArrayBuffer>] };
+    expect(camo.scrub(part, { steps: ["mono"], seed: 3, tracksFrom: 10 }).log.join("\n")).toMatch(/tracks: \d+ expected pass\(es\), filled [1-9]/);
+    expect(camo.scrub(part, { steps: ["mono"], seed: 3, tracksFrom: 400 }).log.some((l) => l.startsWith("tracks:"))).toBe(false);
+    // Without the option, or once cleared, nothing is removed.
+    expect(camo.scrub(clip, { steps: ["mono"], seed: 3 }).log.some((l) => l.startsWith("tracks:"))).toBe(false);
+    camo.clearArchive();
+    expect(camo.scrub(clip, { steps: ["mono"], seed: 3, tracksFrom: 0 }).log.some((l) => l.startsWith("tracks:"))).toBe(false);
+    // Somewhere else, nothing passes; a place out of range is refused.
+    expect(camo.archive(archive, { ...PLACE, latitude: 45 })).toEqual({ nearby: 0, passing: 0, curves: 0 });
+    expect(() => camo.archive(archive, { ...PLACE, latitude: 91 })).toThrow();
+  }, 120_000);
+
   test("exposes the default steps", async () => {
     const camo = await Camo.load(readFileSync(WASM));
     expect(camo.defaultSteps).toEqual(["mono", "hum", "subtract", "scurve", "lowband"]);

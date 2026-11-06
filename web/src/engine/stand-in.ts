@@ -3,7 +3,7 @@
  * not been built). It is NOT a defense: it just high-passes below the cutoff so the UI has
  * something to show. Production builds never load it.
  */
-import type { Clip, Flicker, Profiles, Samples, Trace } from "./camo.ts";
+import type { ArchiveSummary, Clip, Flicker, Place, Profiles, Samples, Trace } from "./camo.ts";
 import type { ScrubRequest } from "./protocol.ts";
 
 function mono(clip: Clip): Samples {
@@ -35,6 +35,11 @@ export const standIn = {
     return { checked: true, detected: found, z: found ? 300 : 5, flickerHz: found ? 120 : 0, readoutMs: found ? 16 : 0,
       after: { detected: false, z: 5 }, passesRemoved: found ? 1 : 0, gains };
   },
+  /** Dev only: pretends one aircraft passes, so the flight-track panel has something to show. */
+  archive(_bytes: Uint8Array, _place: Place): ArchiveSummary {
+    return { nearby: 1, passing: 1, curves: 4 };
+  },
+  clearArchive() {},
   scrub(clip: Clip, r: ScrubRequest) {
     const x = mono(clip), y = new Float32Array(x.length);
     const a = Math.exp((-2 * Math.PI * r.cutoff) / clip.sampleRate);

@@ -9,6 +9,29 @@ are grouped by milestone, newest first, with the commits that made them.
 
 ## [Unreleased]
 
+### Flight-track removal on the page
+
+- **The page can remove what flight logs predict.** It reads where and when the clip was recorded
+  from the file's own metadata before dropping it (Apple's ISO 6709 key or the `©xyz` atom, and
+  the creation date), or takes them typed in. It links adsb.lol's half-hour archive for that time,
+  which the user downloads and adds: one worldwide file per half hour, so the download says the
+  time and never the place, and the page itself still makes no requests (adsb.lol sends no CORS
+  headers anyway). The engine picks the aircraft near the place, predicts their Doppler curves and
+  runs `TrackFill` after the preset's stages. Optional and off until an archive is added.
+- **`FlightArchive` and `PassPrediction`:** the archive's positions carry their 10 s block's time,
+  a few seconds stale, so one predicted curve's shape is unreliable; each aircraft gets four
+  (two interpolations, a local straight-line fit, one anchored to the archive's ground speed). On
+  the three real passes, removal driven only by the archive leaves the attacker holding the exact
+  tracks at −1.6, −0.5 and −0.2 (one curve per aircraft left the deck pass at 2.8).
+- **`TrackFill` faster and wider:** every rest frequency scored at once on a log-frequency axis,
+  timings shared between offsets and null shifts (a synthetic 4-curve case: 71 s → 4 s; a
+  3-minute 48 kHz clip with 40 curves adds about 16 s in wasm). Fills reach the timing slack
+  beyond the searched window and widen by 1 % of frequency, for curve error. Passes are handled
+  in a fixed order (the order of a dictionary was random per run).
+- **CLI:** `scrub --archive file[,file] --at lat,lon[,alt] --start unix [--temp C]` and
+  `predict` (the curves, without positions). **Lab:** `trackfill <session> … --archive` runs the
+  page's path.
+
 ### The curve benchmark and a first learned detector (lab)
 
 - **`python3 -m lab bench`:** realistic synthetic passes (engine tone families, air absorption,

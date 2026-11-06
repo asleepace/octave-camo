@@ -32,7 +32,8 @@ public struct AircraftPosition: Equatable {
 /// NN = half hours since 00:00 UTC): every aircraft's position about every 10 s. One file covers
 /// the whole world, so fetching it reveals the time and nothing about the place.
 ///
-/// The file (once un-gzipped) is little-endian Int32 records of four: a marker record
+/// The file (once un-gzipped) is little-endian Int32 records of four: a table of where its blocks
+/// start (a count, then offsets; skipped, since it comes before the first marker), then a marker record
 /// (`0x0E7F7C9D`, then the time in ms as high and low words) starts each 10 s block; the records
 /// after it are an aircraft's ICAO address, latitude·1e6, longitude·1e6, and its altitude in 25 ft
 /// units (−123 on the ground) in the low 16 bits with ground speed·10 kt in the high 16. Other
@@ -66,7 +67,8 @@ public enum FlightArchive {
                 guard let t = time, t >= from, t <= to, id >= 0, id < 1 << 24 else { continue }
                 let lat = Double(a) / 1e6, lon = Double(b) / 1e6
                 let alt = Int16(truncatingIfNeeded: packed)
-                guard abs(lat) <= 90, abs(lon) <= 180, alt != groundAltitude else { continue }
+                // (0, 0) is the start-of-file table's rows when files are concatenated, not a position.
+                guard abs(lat) <= 90, abs(lon) <= 180, a != 0 || b != 0, alt != groundAltitude else { continue }
                 let feet = Double(alt) * 25
                 guard feet >= -2_000, feet <= 60_000 else { continue }
                 let dx = (lon - longitude) * .pi / 180 * earthRadius * cosLat, dy = (lat - latitude) * .pi / 180 * earthRadius

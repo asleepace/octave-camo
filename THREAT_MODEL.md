@@ -44,7 +44,7 @@ Lowering a tone's level is not enough while its curve survives.
 
 | Channel | What leaks | Attacker needs | Defense | Status |
 | --- | --- | --- | --- | --- |
-| Aircraft tones (fan, prop, rotor) | Doppler curve → closest approach, distance, speed | ADS-B tracks | `subtract`, `scurve`, `lowband` | Covered, benched |
+| Aircraft tones (fan, prop, rotor) | Doppler curve → closest approach, distance, speed | ADS-B tracks | `subtract`, `scurve`, `lowband`; optionally `TrackFill` from adsb.lol's archive (the known-path attacker's own test, removed until it fails) | Covered, benched; known-path attacker beaten on three real passes |
 | Train wheel and motor tones | Same, along a fixed track (often close to people) | GTFS-RT positions | `subtract`, `scurve`, `lowband` | Covered, benched (synthetic) |
 | Ship engines and foghorns | Same, slow and long | AIS | `lowband` | Covered, benched (synthetic) |
 | Buses, drones | Same | GTFS-RT, Remote ID | Same family | Expected covered, not benched |
@@ -61,6 +61,18 @@ Lowering a tone's level is not enough while its curve survives.
 | Room and outdoor acoustics | Place type, not position | – | None | Out of scope |
 | ENF as light flicker in video | Recording time, grid region | ENF archives | Optional de-flicker (re-encodes the picture) | Partly covered, see below |
 | Picture, speech content, account history | Anything | – | None | Out of scope |
+
+### Flight-track removal and what it reveals
+
+Removal driven by flight logs needs the place and time, which the page reads from the file before
+dropping its metadata (or takes typed in), and adsb.lol's archive for the half hour. The page
+never fetches it: the user follows a link and adds the file. That download is one worldwide file
+per half hour, so adsb.lol learns the time (and the user's IP address), never the place; a user who
+wants to hide even that can fetch it elsewhere or later, or fetch several. The place and time stay
+in the browser and are never written to the saved file. The archive's positions are a few seconds
+stale, so the page's curves are less exact than an attacker's could be (live feeds, full traces);
+four estimates per aircraft and fills widened by the timing slack cover that on the passes we have,
+three real and a synthetic set, which is still a small sample.
 
 ## Evidence
 

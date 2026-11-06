@@ -9,6 +9,7 @@ import { bandCenters, demo, type Detail, detailPercentile, meanBands, percentile
 import { bandChart } from "./ui/bands.ts";
 import { Heatmap, rampCss, renderHeatmapAxes } from "./ui/heatmap.ts";
 import { Terrain } from "./ui/terrain.ts";
+import { archiveBytes, archiveFiles, concat, fromUtcField, looksLikeArchive, toUtcField } from "./tracks.ts";
 import { measureProfiles, ROWS } from "./video.ts";
 
 type FlickerScan = { detected: boolean; z: number; flickerHz: number; readoutMs: number; gains?: Float32Array<ArrayBuffer>; frames: number };
@@ -71,6 +72,26 @@ const state = {
   ms: 0,
   engine: "wasm" as "wasm" | "stand-in",
   error: "",
+  /** Flight-track removal: where and when (from the file or typed in) and the archive dropped in. */
+  tracks: {
+    latitude: null as number | null,
+    longitude: null as number | null,
+    altitude: 0,
+    /** Unix time of the audio's first sample, s. */
+    time: null as number | null,
+    /** What the file itself gave. */
+    fromFile: { place: false, time: false },
+    /** The archive files read, by name, kept to re-send when the place or time changes. */
+    archives: [] as { name: string; bytes: Uint8Array }[],
+    status: "none" as "none" | "reading" | "ready" | "error",
+    summary: null as { nearby: number; passing: number; curves: number } | null,
+    message: "",
+    /** Use them in the next cloak. */
+    on: false,
+  },
+  /** The tracks setting the current output was made with ("" = none), and the pending cloak's. */
+  outputTracks: "",
+  pendingTracks: "",
   /** The picture's flicker scan (mains clock in rolling-shutter bands). */
   picture: {
     status: "none" as "none" | "scanning" | "done" | "error" | "short" | "unchecked",
@@ -115,7 +136,12 @@ const worker = new Worker(URL.createObjectURL(new Blob([`import ${JSON.stringify
 /** A silent video: no sound to cloak, only the picture and metadata to handle. */
 const silent = () => !!state.loaded && !state.loaded.clip;
 /** What the button would save is ready: the cloaked audio for this preset, or (silent) the picture as is. */
-const fresh = () => silent() || (!!state.outputSamples && state.outputPreset === state.preset);
+const fresh = () => silent() || (!!state.outputSamples && state.outputPreset === state.preset && state.outputTracks === tracksKey());
+/** What flight-track removal the next cloak would use ("" = none): changing it makes the output stale. */
+const tracksKey = () => {
+  const t = state.tracks;
+  return t.on && t.status === "ready" ? `${t.archives.map((a) => a.name).join(",")}|${t.latitude}|${t.longitude}|${t.altitude}|${t.time}` : "";
+};
 
 // ---------- worker ----------
 
@@ -161,7 +187,7 @@ worker.onmessage = (event) => {
       const clip = state.loaded?.clip;
       if (!clip) return;
       Object.assign(state, {
-        busy: null, outputSamples: m.output, outputPreset: state.pendingPreset, after: m.after, log: m.log, ms: m.ms,
+        busy: null, outputSamples: m.output, outputPreset: state.pendingPreset, outputTracks: state.pendingTracks, after: m.after, log: m.log, ms: m.ms,
         engine: m.engine, output: toSpectrogram(m.spectrum), outputDetail: m.detail,
       });
       player.set("out", [m.output], clip.sampleRate);
@@ -191,9 +217,16 @@ worker.onmessage = (event) => {
     case "checked":
       if (m.seq === saveSeq) state.saved = m.trace;
       break;
+    case "archive":
+      Object.assign(state.tracks, { status: "ready", summary: { nearby: m.nearby, passing: m.passing, curves: m.curves }, message: "", on: m.passing > 0 });
+      break;
     case "error":
       if (m.scope === "saved") {
         if (m.seq === saveSeq) state.savedError = m.message;
+        break;
+      }
+      if (m.scope === "tracks") {
+        Object.assign(state.tracks, { status: "error", message: m.message, summary: null, on: false });
         break;
       }
       if (m.scope === "picture" && m.purpose === "verify") {
@@ -226,12 +259,24 @@ async function open(file: File) {
     after: null, saved: null, savedError: "", log: [], busy: "decoding", busyPart: "", error: "",
   });
   state.picture = { status: "none", progress: 0, scan: null, fix: false, verify: null, codec: "", message: "", verifyError: "" };
+  state.tracks = { latitude: null, longitude: null, altitude: 0, time: null, fromFile: { place: false, time: false }, archives: [],
+                   status: "none", summary: null, message: "", on: false };
+  Object.assign(state, { outputTracks: "", pendingTracks: "" });
   const token = ++fileToken;
   render();
   try {
     const loaded = await load(file);
     if (token !== fileToken) return;           // another file was opened while this one decoded
     state.loaded = loaded;
+    const r = loaded.recorded;
+    if (r.latitude !== undefined && r.longitude !== undefined) {
+      Object.assign(state.tracks, { latitude: r.latitude, longitude: r.longitude, altitude: r.altitude ?? 0 });
+      state.tracks.fromFile.place = true;
+    }
+    if (r.time !== undefined) {
+      state.tracks.time = r.time + loaded.audioStart;
+      state.tracks.fromFile.time = true;
+    }
     if (loaded.clip) {
       player.set("in", loaded.clip.channels, loaded.clip.sampleRate);
       setSide("in");
@@ -325,17 +370,137 @@ function cloak() {
   // The previous output is no longer what the button would save: if this run fails, there must be
   // nothing left over to save under the new preset's name.
   Object.assign(state, { error: "", busy: "loading", busyPart: "", outputSamples: null, outputPreset: null, output: null, outputDetail: null, after: null,
-    saved: null, savedError: "", pendingPreset: state.preset });
+    saved: null, savedError: "", pendingPreset: state.preset, pendingTracks: tracksKey() });
   try {
     send({
       type: "scrub", token: fileToken, sampleRate: loaded.clip.sampleRate, channels: loaded.clip.channels,
       steps: ["mono", ...PRESETS[state.preset].steps], seed: randomSeed(), cutoff: CUTOFF, keepVoice: true,
-      flattenSeconds: PRESETS[state.preset].flattenSeconds,
+      flattenSeconds: PRESETS[state.preset].flattenSeconds, tracks: tracksKey() !== "",
     });
   } catch (error) {
     return fail(`couldn't start the cloak (${(error as Error).message})`);
   }
   render();
+}
+
+// ---------- flight tracks ----------
+
+/** An archive file by its name (adsb.lol's are "NN.bin.ttf"; saved copies may lose the ".ttf"). */
+const isArchiveName = (name: string) => /\.bin(\.ttf)?$/i.test(name);
+
+/** Read archive files the user downloaded and hand them to the engine with the place and time. */
+async function addArchive(files: File[]) {
+  const t = state.tracks;
+  if (!state.loaded?.clip || state.busy || workerDead) return;
+  Object.assign(t, { status: "reading", message: "", summary: null, on: false });
+  render();
+  const token = fileToken;
+  try {
+    const read: { name: string; bytes: Uint8Array }[] = [];
+    for (const f of files) {
+      const bytes = await archiveBytes(f);
+      if (!looksLikeArchive(bytes)) throw new Error(`${f.name} isn't an adsb.lol half-hour archive (its globe_history/…/heatmap/NN.bin.ttf file)`);
+      read.push({ name: f.name, bytes });
+    }
+    if (token !== fileToken) return;
+    // Keep an earlier file for the other half hour of a clip that spans two; a file added again replaces itself.
+    const names = new Set(read.map((r) => r.name));
+    t.archives = [...t.archives.filter((a) => !names.has(a.name)), ...read].sort((a, b) => a.name.localeCompare(b.name));
+    sendArchive();
+  } catch (error) {
+    if (token !== fileToken) return;
+    Object.assign(t, { status: "error", message: (error as Error).message });
+    render();
+  }
+}
+
+/** (Re)send the archive with the current place and time; the worker answers with what it found. */
+function sendArchive() {
+  const t = state.tracks, loaded = state.loaded;
+  if (!loaded?.clip || !t.archives.length) return;
+  if (t.latitude === null || t.longitude === null || t.time === null) {
+    Object.assign(t, { status: "error", message: "enter where and when the clip was recorded first", summary: null, on: false });
+    return render();
+  }
+  Object.assign(t, { status: "reading", message: "", summary: null, on: false });
+  const bytes = concat(t.archives.map((a) => a.bytes));
+  send({ type: "archive", token: fileToken, bytes, latitude: t.latitude, longitude: t.longitude, altitude: t.altitude,
+         start: t.time, duration: loaded.duration }, [bytes.buffer]);
+  render();
+}
+
+function renderTracks() {
+  const el = $("tracks"), t = state.tracks, loaded = state.loaded;
+  const show = !!loaded?.clip;
+  el.classList.toggle("hidden", !show);
+  if (!show || !loaded) return;
+  // Leave the fields alone while someone is typing in them.
+  if (el.contains(document.activeElement) && document.activeElement?.tagName === "INPUT" && (document.activeElement as HTMLInputElement).type !== "file"
+      && el.dataset.token === String(fileToken)) {
+    const status = el.querySelector("[data-status]");
+    if (status) status.innerHTML = tracksStatus();
+    return;
+  }
+  el.dataset.token = String(fileToken);
+  const known = t.latitude !== null && t.longitude !== null && t.time !== null;
+  const links = known ? archiveFiles(t.time!, loaded.duration) : [];
+  const from = t.fromFile.place && t.fromFile.time ? "from the video" : t.fromFile.place || t.fromFile.time ? "partly from the video" : "not in the video: enter them";
+  const field = "h-8 border border-neutral-800 bg-black px-2 text-[11px] text-white focus:border-neutral-500 disabled:text-neutral-600";
+  const disabled = state.busy ? "disabled" : "";
+  el.innerHTML = `<details class="group border border-neutral-800 px-4 py-3 text-[11px] leading-relaxed" ${t.status !== "none" || el.dataset.open === "1" ? "open" : ""}>
+    <summary class="cursor-pointer list-none text-white"><span aria-hidden="true" class="mr-1 text-neutral-500 group-open:hidden">▸</span><span aria-hidden="true" class="mr-1 hidden text-neutral-500 group-open:inline">▾</span>Remove what flight tracks predict
+      <span class="text-neutral-500">· optional · ${t.on && t.status === "ready" ? `<span class="text-accent">on: ${t.summary?.passing} aircraft</span>` : "off"}</span></summary>
+    <p class="mt-2 text-neutral-500">An attacker with the flight logs knows exactly which tones to look for. Given the same logs, the cloak runs that
+      test first and fills in whatever it finds. The logs come from adsb.lol's public archive: one worldwide file per half hour, so downloading it
+      tells adsb.lol the time, never the place. The place and time below stay in this browser.</p>
+    <div class="mt-3 flex flex-wrap items-end gap-3">
+      <label class="flex flex-col gap-1 text-neutral-500">recorded (UTC)<input id="tracks-time" type="datetime-local" step="1" class="${field}" value="${t.time !== null ? toUtcField(t.time) : ""}" ${disabled} /></label>
+      <label class="flex flex-col gap-1 text-neutral-500">latitude<input id="tracks-lat" inputmode="decimal" class="${field} w-28" value="${t.latitude ?? ""}" placeholder="37.7749" ${disabled} /></label>
+      <label class="flex flex-col gap-1 text-neutral-500">longitude<input id="tracks-lon" inputmode="decimal" class="${field} w-28" value="${t.longitude ?? ""}" placeholder="-122.4194" ${disabled} /></label>
+      <span class="pb-2 text-neutral-500">${from}</span>
+    </div>
+    ${known ? `<ol class="mt-3 list-decimal space-y-1 pl-4 text-neutral-400">
+      <li>Download the archive for ${links.length > 1 ? "these half hours" : "that half hour"} (about 25 MB each, the whole world):
+        ${links.map((l) => `<a class="text-neutral-200 underline decoration-neutral-700 underline-offset-4 hover:text-white" href="${l.url}" download="${l.name}" rel="noreferrer">${esc(l.label)}</a>`).join(" and ")}</li>
+      <li>Add ${links.length > 1 ? "them" : "it"} here:
+        <label class="cursor-pointer text-neutral-200 underline decoration-neutral-700 underline-offset-4 hover:text-white">choose file${links.length > 1 ? "s" : ""}<input id="tracks-file" type="file" multiple class="sr-only" ${disabled} /></label>
+        or drop ${links.length > 1 ? "them" : "it"} on the page.</li>
+    </ol>` : ""}
+    <p data-status class="mt-2">${tracksStatus()}</p>
+  </details>`;
+  const details = el.querySelector("details")!;
+  details.addEventListener("toggle", () => { el.dataset.open = details.open ? "1" : "0"; });
+  const changed = () => {
+    const time = fromUtcField($<HTMLInputElement>("tracks-time").value);
+    const lat = Number($<HTMLInputElement>("tracks-lat").value.trim()), lon = Number($<HTMLInputElement>("tracks-lon").value.trim());
+    const okLat = $<HTMLInputElement>("tracks-lat").value.trim() !== "" && Math.abs(lat) <= 90;
+    const okLon = $<HTMLInputElement>("tracks-lon").value.trim() !== "" && Math.abs(lon) <= 180;
+    Object.assign(t, { time, latitude: okLat ? lat : null, longitude: okLon ? lon : null });
+    if (t.archives.length) sendArchive();
+    else render();
+  };
+  for (const id of ["tracks-time", "tracks-lat", "tracks-lon"]) $(id).addEventListener("change", changed);
+  el.querySelector<HTMLInputElement>("#tracks-file")?.addEventListener("change", (e) => {
+    const input = e.target as HTMLInputElement, files = [...(input.files ?? [])];
+    input.value = "";
+    if (files.length) void addArchive(files);
+  });
+}
+
+function tracksStatus(): string {
+  const t = state.tracks;
+  if (t.status === "reading") return "reading the archive…";
+  if (t.status === "error") return `<span class="text-red-400">${esc(t.message)}</span>`;
+  if (t.status === "ready" && t.summary) {
+    const s = t.summary;
+    const used = fresh() && state.outputTracks ? " · used in this cloak" : t.on ? " · used when you cloak" : "";
+    return s.passing
+      ? `<span class="text-accent">${s.passing} aircraft</span> passed within 15 km while this clip ran (${s.curves} predicted curves)${used}.
+         <label class="ml-1 cursor-pointer"><input id="tracks-on" type="checkbox" class="mr-1 align-middle accent-[#ffd23f]" ${t.on ? "checked" : ""} ${state.busy ? "disabled" : ""} />use them</label>`
+      : `no aircraft passed within 15 km while this clip ran (${s.nearby} within 40 km around it): nothing to remove.`;
+  }
+  if (state.tracks.latitude === null || state.tracks.longitude === null || state.tracks.time === null) return "the video doesn't say where or when it was recorded; enter both to use flight tracks.";
+  return "";
 }
 
 /** The picture scan is still running: saving now would skip removing flicker it may yet find. */
@@ -430,8 +595,9 @@ function renderPrimary() {
   else if (fresh() && s.after) {
     const word = s.preset === "full" ? "cloaked" : COMPLETE.includes(s.preset) ? `cloaked (${PRESETS[s.preset].label.toLowerCase()})`
       : `partly cloaked (${PRESETS[s.preset].label})`;
-    text = `<span class="text-accent">${word}</span> · ${s.after.tones} trackable tone${s.after.tones === 1 ? "" : "s"} left (was ${s.before?.tones ?? "?"}) · ${(s.ms / 1000).toFixed(1)} s · press x to compare`;
-  } else if (s.outputSamples) text = `preset changed · cloak again to apply ${PRESETS[s.preset].label.toLowerCase()}`;
+    text = `<span class="text-accent">${word}</span>${s.outputTracks ? " with flight tracks" : ""} · ${s.after.tones} trackable tone${s.after.tones === 1 ? "" : "s"} left (was ${s.before?.tones ?? "?"}) · ${(s.ms / 1000).toFixed(1)} s · press x to compare`;
+  } else if (s.outputSamples) text = s.outputPreset !== s.preset ? `preset changed · cloak again to apply ${PRESETS[s.preset].label.toLowerCase()}`
+    : "flight tracks changed · cloak again to apply them";
   else if (s.before) {
     const t = s.before;
     text = t.tones
@@ -559,7 +725,7 @@ function renderSteps() {
     ? { lowband: ` ${PRESETS[state.preset].label}: its loudness also loses every swell slower than ${flatten} s, so a plane's rise and fall can't be lined up with flight tracks; thumps and doors stay.` } : {};
   $("steps-explained").innerHTML = (Object.entries(STEP_TEXT) as [Step, [string, string]][]).map(([step, [title, body0]], i) => [step, [title, body0 + (extra[step] ?? "")], i] as const).map(([step, [title, body], i]) =>
     `<li class="${on.has(step) ? "" : "text-neutral-500"}"><span class="${on.has(step) ? "text-neutral-200" : "text-neutral-400"}">${i + 1}. ${title}.</span> ${body}${on.has(step) ? "" : ` <span class="text-neutral-500">(off in ${PRESETS[state.preset].label})</span>`}</li>`,
-  ).join("") + `<li class="${state.loaded && !state.loaded.video ? "text-neutral-500" : ""}"><span class="${state.loaded && !state.loaded.video ? "text-neutral-400" : "text-neutral-200"}">${Object.keys(STEP_TEXT).length + 1}. Remove light flicker (picture).</span> When the scan finds bands from flickering lights, each row is divided by its estimated band, which takes the grid clock out of the picture. On when bands are found (untick it to keep the picture untouched), since it re-encodes the video.</li>`;
+  ).join("") + `<li class="${tracksKey() ? "" : "text-neutral-500"}"><span class="${tracksKey() ? "text-neutral-200" : "text-neutral-400"}">${Object.keys(STEP_TEXT).length + 1}. Remove what flight tracks predict (optional).</span> With adsb.lol's archive for the half hour and where the clip was recorded, each aircraft that passed within 15 km gets four predicted Doppler curves (its logged positions are a few seconds stale, so their shapes differ). Along each, the cloak runs the test an attacker holding the logs would: every rest frequency and a few seconds of timing slack, against the same curve at wrong times. Whatever stands out is filled with noise and tested again, until nothing does.</li>` + `<li class="${state.loaded && !state.loaded.video ? "text-neutral-500" : ""}"><span class="${state.loaded && !state.loaded.video ? "text-neutral-400" : "text-neutral-200"}">${Object.keys(STEP_TEXT).length + 2}. Remove light flicker (picture).</span> When the scan finds bands from flickering lights, each row is divided by its estimated band, which takes the grid clock out of the picture. On when bands are found (untick it to keep the picture untouched), since it re-encodes the video.</li>`;
 }
 
 const REPO = "https://github.com/asleepace/octave-camo";
@@ -578,6 +744,7 @@ function renderEngine() {
 function render() {
   renderPrimary();
   renderPicture();
+  renderTracks();
   renderTrace();
   renderTransport();
   renderBands();
@@ -684,6 +851,12 @@ presetSelect.addEventListener("change", () => {
 });
 
 $("cloak").addEventListener("click", primary);
+$("tracks").addEventListener("change", (e) => {
+  const target = e.target as HTMLInputElement;
+  if (target.id !== "tracks-on") return;
+  state.tracks.on = target.checked;
+  render();
+});
 $("play").addEventListener("click", togglePlay);
 $("side-in").addEventListener("click", () => setSide("in"));
 $("side-out").addEventListener("click", () => setSide("out"));
@@ -719,8 +892,9 @@ window.addEventListener("drop", (e) => {
   e.preventDefault();
   depth = 0;
   veil.classList.replace("flex", "hidden");
-  const file = e.dataTransfer?.files[0];
-  if (file) void open(file);
+  const files = [...(e.dataTransfer?.files ?? [])];
+  if (files.length && state.loaded?.clip && files.every((f) => isArchiveName(f.name))) return void addArchive(files);
+  if (files[0]) void open(files[0]);
 });
 
 window.addEventListener("keydown", (e) => {

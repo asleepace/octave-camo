@@ -25,7 +25,7 @@ overall sound.
 
 | Side channel | What it gives away | What octave-camo does |
 | --- | --- | --- |
-| Doppler curves of planes, trains, ships | Your position, matched against public tracks (ADS-B, transit feeds, AIS) | Cancels long tones below 1 kHz, searches blind for flyby-shaped curves and cancels them, regenerates the low band as information-free noise. **Experimental** also fills in every tone the check still finds up to 8 kHz (a jet's fan tone near 1–2 kHz, an electrical whine) |
+| Doppler curves of planes, trains, ships | Your position, matched against public tracks (ADS-B, transit feeds, AIS) | Cancels long tones below 1 kHz, searches blind for flyby-shaped curves and cancels them, regenerates the low band as information-free noise. **Experimental** also fills in every tone the check still finds up to 8 kHz (a jet's fan tone near 1–2 kHz, an electrical whine). Optionally, with adsb.lol's flight archive for the half hour, it runs the test an attacker holding the flight logs would and fills what that finds |
 | Mains hum | Recording time and grid region (ENF) | Notches both 50 and 60 Hz harmonic families, right to the clip's edges, and refills the notches, so neither the hum nor the notch pattern survives |
 | Light flicker in the picture | The same grid timestamp, as rolling-shutter bands | Scans every frame; if found, divides the bands out (optional: re-encodes the picture) |
 | Loudness rising and falling as a plane passes (below 300 Hz) | The recording's time, by lining it up with flight tracks; it can work even indoors, from a rumble no one in the room hears | Regenerated low band follows loudness smoothed over 0.75 s, so slow swells survive in **Full**. The **Experimental** preset flattens every swell slower than 5 s (thumps and doors stay) |
@@ -158,8 +158,11 @@ shows ("saved N") is for the file you post, not only for what went into the enco
 - The evidence table is synthetic. Real phone recordings with ADS-B ground truth are scored in the
   lab (kept private; results in [docs/EXPERIMENTS.md](docs/EXPERIMENTS.md)): so far, Experimental
   removes a real jet pass that Full leaves, but a fainter one survived both presets for an
-  attacker who has the flight tracks. Removal driven by those tracks closes it in the engine and
-  the lab (attacker z 6.3 → 0.8); it isn't on the page yet.
+  attacker who has the flight tracks. Removal driven by those tracks closes it (attacker z
+  6.3 → 0.1 driven by the exact tracks, → −0.5 driven by only the page's archive), but on the page
+  it's optional: it needs where and when the clip was recorded and the archive file, which you
+  download yourself (the download tells adsb.lol the time). On busy indoor audio it can also fill a
+  stray tone that happens to fit a predicted curve (a TV's, for one).
 - Faint tones, and any above 1 kHz, are counted and outlined but only **Experimental** removes
   them: on a real outdoor clip, passing cars' faint tones and a steady 5 kHz whine survived Full.
 - Other known gaps: a source's loudness envelope under Full; weak curved (Doppler) lines (the
@@ -211,11 +214,12 @@ Sources/
     Analysis/         the check: FlybyAnalyzer over ToneTracker, LineIntegrator and PathSearch;
                       PitchTracker (YIN), FlickerScan
     Scrub/            ScrubPipeline: HumNotch, ToneSubtraction, SCurveCancel, LowBandRegeneration,
-                      BandWobble, LineFill (Experimental), TrackFill (flight tracks, engine and lab)
+                      BandWobble, LineFill (Experimental), TrackFill (flight tracks)
+    Tracks/           FlightArchive (adsb.lol's half-hour archive), PassPrediction (curves at a place)
     Synth/            FlybySynth: known-truth test clips
   OctaveCamoIO/       WAV read/write
   OctaveCamoWasm/     WebAssembly exports for the web app (WASI reactor)
-  octave-camo/        CLI: synth, analyze, scrub
+  octave-camo/        CLI: synth, analyze, scrub, predict
 Tests/                Swift tests: behaviour snapshots, invariants, the detection baseline
 web/                  web app: Vite, TypeScript, Tailwind; worker, Mediabunny remux, WebGL de-flicker
 harness/              Bun/TypeScript: matched (ADS-B) attacker, defense modules, benchmark gate,

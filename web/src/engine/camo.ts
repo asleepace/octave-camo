@@ -62,6 +62,33 @@ export type ScrubOptions = {
   keepVoice?: boolean;
   /** Flatten loudness swells below the cutoff slower than this, s (omitted or 0 = off). */
   flattenSeconds?: number;
+  /** Remove the aircraft `archive()` predicted, this audio starting this many seconds into the
+   *  recording (omitted: no flight-track removal). */
+  tracksFrom?: number;
+};
+
+/** Where and when a recording was made, for predicting the aircraft it heard (never sent anywhere). */
+export type Place = {
+  latitude: number;
+  longitude: number;
+  /** Height, m (the pressure-altitude scale ADS-B uses; GPS height is close enough). */
+  altitude: number;
+  /** Unix time of the audio's first sample, s. */
+  start: number;
+  /** The whole recording's length, s. */
+  duration: number;
+  /** Air temperature, °C (the speed of sound); 15 when unknown. */
+  temperature?: number;
+};
+
+/** What the engine made of a flight archive for a place and time. */
+export type ArchiveSummary = {
+  /** Aircraft in the archive near the place (40 km) around the recording. */
+  nearby: number;
+  /** Aircraft predicted to pass within 15 km while the audio runs. */
+  passing: number;
+  /** Predicted Doppler curves (several per aircraft). */
+  curves: number;
 };
 
 type Exports = {
@@ -71,7 +98,11 @@ type Exports = {
   camo_free(pointer: number): void;
   camo_steps(): number;
   camo_scrub(pointer: number, channels: number, frames: number, sampleRate: number,
-             steps: number, seedLo: number, seedHi: number, cutoffHz: number, keepVoice: number, flattenSeconds: number): number;
+             steps: number, seedLo: number, seedHi: number, cutoffHz: number, keepVoice: number, flattenSeconds: number,
+             tracksFrom: number): number;
+  camo_archive(pointer: number, bytes: number, latitude: number, longitude: number, altitude: number,
+               start: number, duration: number, temperature: number): number;
+  camo_archive_clear(): void;
   camo_analyze(pointer: number, channels: number, frames: number, sampleRate: number): number;
   camo_flicker(pointer: number, frames: number, strips: number, rows: number, clean: number): number;
   camo_flicker_gains(): number;
@@ -84,7 +115,7 @@ type Exports = {
 };
 
 const EXPORTS = ["camo_alloc", "camo_free", "camo_steps", "camo_scrub", "camo_analyze", "camo_flicker",
-  "camo_flicker_gains", "camo_flicker_gains_length", "camo_tracks", "camo_tracks_length", "camo_output", "camo_log", "camo_log_length"] as const;
+  "camo_flicker_gains", "camo_flicker_gains_length", "camo_tracks", "camo_tracks_length", "camo_output", "camo_log", "camo_log_length", "camo_archive", "camo_archive_clear"] as const;
 
 export class Camo {
   private constructor(private readonly x: Exports) {}
@@ -125,12 +156,34 @@ export class Camo {
     const seed = options.seed ?? 0;
     return this.withInput(clip, (pointer, frames) => {
       const n = this.x.camo_scrub(pointer, clip.channels.length, frames, clip.sampleRate, mask,
-        seed >>> 0, Math.floor(seed / 2 ** 32) >>> 0, options.cutoff ?? 0, options.keepVoice === false ? 0 : 1, options.flattenSeconds ?? 0);
+        seed >>> 0, Math.floor(seed / 2 ** 32) >>> 0, options.cutoff ?? 0, options.keepVoice === false ? 0 : 1, options.flattenSeconds ?? 0,
+        options.tracksFrom ?? -1);
       if (n !== frames) throw new Error("the scrubber rejected this audio");
       const output = new Float32Array(this.x.memory.buffer, this.x.camo_output(), n).slice();
       const bytes = new Uint8Array(this.x.memory.buffer, this.x.camo_log(), this.x.camo_log_length());
       return { output, log: new TextDecoder().decode(bytes).split("\n").filter(Boolean) };
     });
+  }
+
+  /** Read adsb.lol half-hour archive bytes (un-gzipped; files may be concatenated) for a place and
+   *  time, and keep what's near it for `scrub(…, { tracksFrom })`. Replaces any earlier archive. */
+  archive(bytes: Uint8Array, place: Place): ArchiveSummary {
+    const pointer = this.x.camo_alloc(Math.max(1, Math.ceil(bytes.length / 4)));
+    try {
+      new Uint8Array(this.x.memory.buffer, pointer, bytes.length).set(bytes);
+      const at = this.x.camo_archive(pointer, bytes.length, place.latitude, place.longitude, place.altitude, place.start,
+        place.duration, place.temperature ?? 15);
+      const [nearby, passing, curves] = new Int32Array(this.x.memory.buffer, at, 3);
+      if (nearby! < 0) throw new Error("the place or time is out of range");
+      return { nearby: nearby!, passing: passing!, curves: curves! };
+    } finally {
+      this.x.camo_free(pointer);
+    }
+  }
+
+  /** Forget the archive (the next clip shouldn't inherit the last one's aircraft). */
+  clearArchive(): void {
+    this.x.camo_archive_clear();
   }
 
   analyze(clip: Clip): Trace {

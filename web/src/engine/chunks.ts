@@ -149,12 +149,13 @@ export function mergeTraces(parts: Part[], traces: Trace[], sampleRate: number):
 export type PartProgress = (part: number, parts: number) => void;
 
 /** Cloaks a clip part by part (one part for a short clip). Part k uses seed + k. */
-export function scrubInParts(clip: Clip, seed: number, scrubPart: (clip: Clip, seed: number) => { output: Samples; log: string[] },
+export function scrubInParts(clip: Clip, seed: number,
+                             scrubPart: (clip: Clip, seed: number, startSeconds: number) => { output: Samples; log: string[] },
                              progress: PartProgress = () => {}): { output: Samples; log: string[] } {
   const frames = clip.channels[0]?.length ?? 0, parts = plan(frames, clip.sampleRate);
   const results = parts.map((p, k) => {
     progress(k + 1, parts.length);
-    return scrubPart(slice(clip, p), seed === 0 ? 0 : ((seed - 1 + k) % Number.MAX_SAFE_INTEGER) + 1);
+    return scrubPart(slice(clip, p), seed === 0 ? 0 : ((seed - 1 + k) % Number.MAX_SAFE_INTEGER) + 1, p.start / clip.sampleRate);
   });
   const log = parts.length === 1 ? results[0]!.log
     : [`cloaked in ${parts.length} parts of about ${Math.round((parts[0]!.coreEnd - parts[0]!.coreStart) / clip.sampleRate)} s, crossfaded at the seams`,

@@ -351,6 +351,44 @@ estimate: 60 Hz grid, 59.981 ± 0.010 Hz (was "50 Hz", ±0.2), a realistic ENF t
 band is still empty. On the deck, an aircraft climbing out 2.8 km away (148 m/s, 7,800 ft; the
 person recording marked it at 57 s, closest heard at 67 s): the third row above.
 
+## Removal from the archive alone (the page's path)
+
+The page can't fetch flight data (adsb.lol sends no CORS headers, and the page makes no requests),
+so the user downloads adsb.lol's half-hour archive: every aircraft's position about every 10 s,
+worldwide. Can curves predicted from it alone drive removal that beats an attacker holding the
+exact tracks (the app's polls plus full traces)?
+
+**Staleness.** Each archive position carries its block's time, not its own: matched against the
+full traces, positions are about 2 s old on average, spread 1–3 s (up to 6 s). At 140 m/s that
+is up to ~800 m along track, so velocity from interpolated positions jumps 100 → 180 m/s between
+blocks and the curve's shape depends on how it's smoothed. Scored by the attacker on the original
+audio, one aircraft's curve under different smoothings ranged 3.9–6.5 (bathroom), 5.3–14.4 (window
+open) and 1.5–6.6 (deck); no single estimate was best everywhere.
+
+**One curve per aircraft** (interpolated, velocity over 20 s): removal left the exact-track
+attacker at −1.6, 0.8 and **2.8** (the deck pass: its archive curve scored 1.9, under the bar, so
+nothing was filled). **Four curves per aircraft** (interpolated over 10 s and 20 s, a ±30 s
+straight-line fit, and one anchored to the archive's ground speed), each tested against its own
+null: **−1.6, −0.5, −0.2**. Synthetic check (60 s at 16 kHz, positions uniformly 0–5 s stale, the
+fan-tone pass at 13–20 dB/Hz, 12 cases on four noise draws): the attacker after removal at most
+1.1. The ground-speed curve is the closest (within 2.5 % of the truth after the timing slip), the
+interpolated ones the furthest (up to 13 %), and the ensemble beats any one of them.
+
+**What else had to change.** Fills reach the timing slack beyond the searched window (an attacker
+whose track puts the closest approach a few seconds elsewhere centres its window there) and widen
+by 1 % of frequency (a strip that half-covers a tone leaves its edge). A ridge search, and filling
+along warped copies of the curve, did no better than the wider strip and were dropped. The search
+now scores every rest frequency at once on a log-frequency axis and shares timings between offsets
+and null shifts: a 4-curve synthetic case went from 71 s to 4 s; a 3-minute 48 kHz clip with ten
+aircraft (40 curves) costs Full + 16 s in wasm.
+
+**Plane-free sessions:** six of eight had nothing filled; one filled a tone at 2.5 kHz and one four
+tones at 2–2.6 kHz. On the busy indoor session (TV, fan) one run filled two tones near 200 Hz that
+a predicted curve fitted at z 8 (most likely the TV's sound): a false fill, narrow and harmless to
+the cloak, but a sign that the null curves don't capture non-stationary audio. A related caution
+for the attacker's own threshold: on one of three white-noise draws the best of ~45,000 rest and
+timing combinations along a fixed curve scored z 4.4 with nothing there.
+
 ## The known-path attacker's null
 
 The lab's known-path attacker (`python3 -m lab attack`) scored each aircraft as a z against the

@@ -2,7 +2,7 @@
 /**
  * Runs the Swift scrubber (WebAssembly) off the main thread. Audio never leaves the browser.
  */
-import { Camo, type Clip, type Flicker, type Profiles, type Samples, type Trace } from "./camo.ts";
+import { type ArchiveSummary, Camo, type Clip, type Flicker, type Place, type Profiles, type Samples, type Trace } from "./camo.ts";
 import { z } from "zod";
 import { Request, type ScrubRequest, type Stage, type WorkerMessage } from "./protocol.ts";
 import { analyzeInParts, scrubInParts } from "./chunks.ts";
@@ -20,9 +20,14 @@ const post = (message: WorkerMessage, transfer: Transferable[] = []) => self.pos
 type Engine = {
   kind: "wasm" | "stand-in";
   analyze(clip: Clip): Trace;
-  scrub(clip: Clip, request: ScrubRequest): { output: Samples; log: string[] };
+  scrub(clip: Clip, request: ScrubRequest & { tracksFrom?: number }): { output: Samples; log: string[] };
   flicker(profiles: Profiles, clean: boolean): Flicker;
+  archive(bytes: Uint8Array, place: Place): ArchiveSummary;
+  clearArchive(): void;
 };
+
+/** The file whose flight archive the engine holds (its aircraft must not reach another file's cloak). */
+let archiveToken = -1;
 
 let engine: Promise<Engine> | undefined;
 /** Compiled once: after a trap the instance is replaced from this, with no network (offline use). */
@@ -59,8 +64,11 @@ async function loadEngine(): Promise<Engine> {
   return {
     kind: "wasm",
     analyze: (clip) => camo.analyze(clip),
-    scrub: (clip, r) => camo.scrub(clip, { steps: r.steps, seed: r.seed, cutoff: r.cutoff, keepVoice: r.keepVoice, flattenSeconds: r.flattenSeconds }),
+    scrub: (clip, r) => camo.scrub(clip, { steps: r.steps, seed: r.seed, cutoff: r.cutoff, keepVoice: r.keepVoice, flattenSeconds: r.flattenSeconds,
+                                           tracksFrom: r.tracksFrom }),
     flicker: (profiles, clean) => camo.flicker(profiles, clean),
+    archive: (bytes, place) => camo.archive(bytes, place),
+    clearArchive: () => camo.clearArchive(),
   };
 }
 
@@ -72,20 +80,28 @@ setTimeout(() => {
 
 self.onmessage = async (event: MessageEvent<unknown>) => {
   const data = event.data as { type?: unknown; token?: unknown } | null;
-  const picture = data?.type === "flicker", savedCheck = data?.type === "check";
+  const picture = data?.type === "flicker", savedCheck = data?.type === "check", archive = data?.type === "archive";
   const purpose = (data as { purpose?: unknown } | null)?.purpose === "verify" ? "verify" as const : "clip" as const;
   const seq = typeof (data as { seq?: unknown } | null)?.seq === "number" ? (data as { seq: number }).seq : 0;
   const token = typeof data?.token === "number" ? data.token : 0;
   try {
     const request = Request.parse(event.data);
     // Stages describe the audio work; picture scans run alongside without touching them.
-    if (!picture && !savedCheck) post({ type: "stage", token, stage: "loading" });
+    if (!picture && !savedCheck && !archive) post({ type: "stage", token, stage: "loading" });
     engine ??= loadEngine();
     const e = await engine;
     if (request.type === "flicker") {
       const { values, times, frames, strips, rows } = request;
       const f = e.flicker({ values, times, frames, strips, rows }, request.clean);
       post({ type: "flicker", token, purpose: request.purpose, seq: request.seq, ...f }, f.gains ? [f.gains.buffer] : []);
+      return;
+    }
+    if (request.type === "archive") {
+      archiveToken = -1;
+      const { bytes, latitude, longitude, altitude, start, duration } = request;
+      const summary = e.archive(bytes, { latitude, longitude, altitude, start, duration });
+      archiveToken = token;
+      post({ type: "archive", token, ...summary });
       return;
     }
     const clip: Clip = { sampleRate: request.sampleRate, channels: request.channels };
@@ -108,7 +124,10 @@ self.onmessage = async (event: MessageEvent<unknown>) => {
     }
     post({ type: "stage", token, stage: "scrubbing" });
     const start = performance.now();
-    const { output, log } = scrubInParts(clip, request.seed, (part, seed) => e.scrub(part, { ...request, seed }), progress("scrubbing"));
+    const tracks = request.tracks === true && archiveToken === token;
+    if (request.tracks && !tracks) throw new Error("the flight archive for this clip isn't loaded; add it again");
+    const { output, log } = scrubInParts(clip, request.seed,
+      (part, seed, from) => e.scrub(part, { ...request, seed, tracksFrom: tracks ? from : undefined }), progress("scrubbing"));
     const ms = performance.now() - start;
     post({ type: "stage", token, stage: "verifying" });
     const after = analyze({ sampleRate: request.sampleRate, channels: [output] }, "verifying");
@@ -122,7 +141,8 @@ self.onmessage = async (event: MessageEvent<unknown>) => {
     const message = error instanceof z.ZodError ? "the page sent the scrubber a malformed request"
       : error instanceof WebAssembly.RuntimeError ? `the scrubber failed on this clip (${error.message})`
       : error instanceof Error ? error.message : String(error);
-    post({ type: "error", token, scope: picture ? "picture" : savedCheck ? "saved" : "audio", message, ...(picture ? { purpose, seq } : savedCheck ? { seq } : {}) });
+    post({ type: "error", token, scope: picture ? "picture" : savedCheck ? "saved" : archive ? "tracks" : "audio", message,
+      ...(picture ? { purpose, seq } : savedCheck ? { seq } : {}) });
   }
 };
 

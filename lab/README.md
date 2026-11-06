@@ -15,6 +15,7 @@ python3 -m lab check <session> full.wav experimental.wav          # the page's c
 python3 -m lab attack <session> full.wav experimental.wav        # the known-path attacker, before/after (z and dB)
 python3 -m lab locate <session> full.wav experimental.wav         # the place-searching attacker (slow: ~5 min each)
 python3 -m lab trackfill <session> full experimental             # flight-track removal (the CLI's --expect)
+python3 -m lab trackfill <session> full --archive                 # the page's path: curves from adsb.lol's archive
 python3 -m lab plot <session>                                    # spectrogram + ADS-B Doppler curves
 python3 -m lab bench                                             # the curve benchmark (~45 min on 2 cores)
 python3 -m lab ml data && python3 -m lab ml train && python3 -m lab ml report   # the learned detector (needs jax, optax)

@@ -26,8 +26,24 @@ export const ScrubRequest = z.object({
   keepVoice: z.boolean(),
   /** Experimental: flatten slow loudness swells below the cutoff (s; 0 = off). */
   flattenSeconds: z.number().min(0).max(120).optional(),
+  /** Remove what the flight archive (sent earlier for this token) predicts. */
+  tracks: z.boolean().optional(),
 }).refine(sameLength, sameLengthIssue);
 export type ScrubRequest = z.infer<typeof ScrubRequest>;
+
+/** adsb.lol's half-hour archive (un-gzipped, files concatenated) and where and when the clip was
+ *  recorded: the worker keeps the aircraft near it for this token's cloak. Stays in the browser. */
+export const ArchiveRequest = z.object({
+  type: z.literal("archive"),
+  token,
+  bytes: z.instanceof(Uint8Array).refine((b) => b.length <= 512 * 1024 ** 2, { message: "archive too large" }),
+  latitude: z.number().min(-90).max(90),
+  longitude: z.number().min(-180).max(180),
+  altitude: z.number().min(-1_000).max(9_000),
+  start: z.number().finite(),
+  duration: z.number().positive().max(3_600),
+});
+export type ArchiveRequest = z.infer<typeof ArchiveRequest>;
 
 export const FlickerRequest = z.object({
   type: z.literal("flicker"),
@@ -49,7 +65,7 @@ export type FlickerRequest = z.infer<typeof FlickerRequest>;
 /** The check on the saved file's sound, decoded again (by save `seq`): no stages, no heatmaps. */
 export const CheckRequest = z.object({ type: z.literal("check"), ...clip, seq: z.number().int().nonnegative() }).refine(sameLength, sameLengthIssue);
 
-export const Request = z.union([AnalyzeRequest, ScrubRequest, FlickerRequest, CheckRequest]);
+export const Request = z.union([AnalyzeRequest, ScrubRequest, FlickerRequest, CheckRequest, ArchiveRequest]);
 export type Request = z.infer<typeof Request>;
 
 const Found = z.object({
@@ -105,7 +121,9 @@ export const WorkerMessage = z.discriminatedUnion("type", [
     passesRemoved: z.number(),
     gains: samples.optional(),
   }),
-  z.object({ type: z.literal("error"), token, scope: z.enum(["audio", "picture", "saved"]), message: z.string(),
+  /** What the flight archive held for this clip's place and time. */
+  z.object({ type: z.literal("archive"), token, nearby: z.number().int(), passing: z.number().int(), curves: z.number().int() }),
+  z.object({ type: z.literal("error"), token, scope: z.enum(["audio", "picture", "saved", "tracks"]), message: z.string(),
     /** For picture errors: which scan failed (the clip's, or a saved file's check, by save seq); for
      *  "saved" (the saved file's sound), which save. */
     purpose: z.enum(["clip", "verify"]).optional(), seq: z.number().optional() }),

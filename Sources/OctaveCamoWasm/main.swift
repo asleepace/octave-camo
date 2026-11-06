@@ -6,7 +6,9 @@
 // Calling convention (all sizes in elements, all audio Float32):
 //   ptr = camo_alloc(channels * frames)      write planar input samples at ptr
 //   n   = camo_scrub(ptr, channels, frames, sampleRate, stepsMask, seedLo, seedHi, cutoffHz, keepVoice,
-//                    flattenSeconds)            flattenSeconds 0 = off (LowBandRegeneration.flattenSeconds)
+//                    flattenSeconds, tracksFrom) flattenSeconds 0 = off (LowBandRegeneration.flattenSeconds);
+//                                             tracksFrom >= 0: remove the aircraft camo_archive predicted,
+//                                             this audio starting tracksFrom s into the recording (< 0: off)
 //   out = camo_output()                       n mono output samples (valid until the next scrub)
 //   log = camo_log(), len = camo_log_length() UTF-8, one line per stage
 //   camo_free(ptr)
@@ -25,6 +27,12 @@
 //         passes removed, checked (0: too few frames or too high a frame rate to look; not clean)
 //   g   = camo_flicker_gains(), n = camo_flicker_gains_length()
 //         n Float32 gains, frames × rows after a clean (1 where untouched), 0 otherwise
+// Flight tracks (adsb.lol's half-hour archive, un-gzipped; several files may be concatenated):
+//   ptr = camo_alloc(ceil(bytes / 4))          write the archive's bytes at ptr
+//   st  = camo_archive(ptr, bytes, lat, lon, altM, startUnix, durationS, tempC)
+//         3 Int32: aircraft near the place in the archive's window, aircraft predicted to pass
+//         within 15 km while the audio runs, predicted curves (all -1: rejected). Kept for
+//         camo_scrub until the next camo_archive or camo_archive_clear.
 // stepsMask bit i enables ScrubStep.allCases[i]; 0 means the default steps. cutoffHz <= 0 keeps the
 // lowband default; keepVoice is 0 or 1.
 
@@ -63,6 +71,10 @@ enum Shared {
     nonisolated(unsafe) static let flicker = Outbox<Double>()
     nonisolated(unsafe) static let gains = Outbox<Float>()
     nonisolated(unsafe) static let tracks = Outbox<Float>()
+    nonisolated(unsafe) static let archiveStats = Outbox<Int32>()
+    /// Positions near the recording (from camo_archive) and where and when it was made.
+    nonisolated(unsafe) static var positions: [String: [AircraftPosition]] = [:]
+    nonisolated(unsafe) static var listener: Listener? = nil
 }
 
 /// `a × b × …` if it fits in Int (32 bits in wasm32), else nil: sizes come from JavaScript.
@@ -114,7 +126,7 @@ func camoSteps() -> Int32 {
 @_cdecl("camo_scrub")
 func camoScrub(_ input: UnsafePointer<Float>, _ channelCount: Int32, _ frames: Int32, _ sampleRate: Int32,
                _ stepsMask: Int32, _ seedLo: UInt32, _ seedHi: UInt32,
-               _ cutoffHz: Double, _ keepVoice: Int32, _ flattenSeconds: Double) -> Int32 {
+               _ cutoffHz: Double, _ keepVoice: Int32, _ flattenSeconds: Double, _ tracksFrom: Double) -> Int32 {
     guard let clip = audio(input, channelCount, frames, sampleRate) else {
         Shared.output.set([])
         Shared.logBytes.set(Array("scrub: input rejected".utf8))
@@ -135,6 +147,12 @@ func camoScrub(_ input: UnsafePointer<Float>, _ channelCount: Int32, _ frames: I
         pipeline.wobble.seed = seed
         pipeline.hum.seed = seed
         pipeline.lines.seed = seed
+        pipeline.tracks.seed = seed
+    }
+    if tracksFrom.isFinite, tracksFrom >= 0, var l = Shared.listener {
+        l.audioStart += tracksFrom
+        l.duration = Double(frames) / Double(sampleRate)
+        pipeline.tracks.expected = PassPrediction().predict(Shared.positions, listener: l).map(\.pass)
     }
 
     let result = pipeline.run(clip)
@@ -232,6 +250,34 @@ func camoTracks() -> UnsafePointer<Float> {
 @_cdecl("camo_tracks_length")
 func camoTracksLength() -> Int32 {
     Int32(Shared.tracks.count)
+}
+
+@_expose(wasm, "camo_archive")
+@_cdecl("camo_archive")
+func camoArchive(_ input: UnsafePointer<UInt8>, _ byteCount: Int32, _ latitude: Double, _ longitude: Double, _ altitude: Double,
+                 _ start: Double, _ duration: Double, _ temperature: Double) -> UnsafePointer<Int32> {
+    Shared.positions = [:]
+    Shared.listener = nil
+    let l = Listener(latitude: latitude, longitude: longitude, altitude: altitude.isFinite ? altitude : 0, audioStart: start,
+                     duration: duration, temperature: temperature.isFinite ? temperature : 15)
+    guard byteCount >= 0, l.isValid, duration <= 3_600 else {
+        Shared.archiveStats.set([-1, -1, -1])
+        return UnsafePointer(Shared.archiveStats.pointer)
+    }
+    let bytes = Array(UnsafeBufferPointer(start: input, count: Int(byteCount)))
+    let margin = PassPrediction().positionMargin
+    Shared.positions = FlightArchive.positions(bytes, near: latitude, longitude, radiusKm: 40, from: start - margin, to: start + duration + margin)
+    Shared.listener = l
+    let predicted = PassPrediction().predict(Shared.positions, listener: l)
+    Shared.archiveStats.set([Int32(Shared.positions.count), Int32(Set(predicted.map(\.aircraft)).count), Int32(predicted.count)])
+    return UnsafePointer(Shared.archiveStats.pointer)
+}
+
+@_expose(wasm, "camo_archive_clear")
+@_cdecl("camo_archive_clear")
+func camoArchiveClear() {
+    Shared.positions = [:]
+    Shared.listener = nil
 }
 
 @_expose(wasm, "camo_output")

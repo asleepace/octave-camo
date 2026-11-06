@@ -10,6 +10,7 @@ import {
 } from "mediabunny";
 import type { Clip } from "./engine/camo.ts";
 import { lengthSize, type NalCodec, stripSei, stripSeiFromConfig } from "./sei.ts";
+import { type Recorded, recordedFrom } from "./tracks.ts";
 import { GainRenderer, ROWS } from "./video.ts";
 
 /** Clips longer than this are refused. Past 5 minutes the scrubber works in parts (engine/chunks.ts),
@@ -38,6 +39,9 @@ export type Loaded = {
   /** The picture's own length (it can differ from the audio's), s. */
   videoDuration: number;
   videoStart: number;
+  /** Where and when the file says it was recorded (read before the metadata is dropped; used only
+   *  here, for flight-track removal). */
+  recorded: Recorded;
 };
 
 export class MediaError extends Error {}
@@ -56,6 +60,7 @@ export async function load(file: File): Promise<Loaded> {
   }
   // computeDuration() is the end timestamp, not the length: a TS stream (a camcorder's .MTS) can
   // start hours in.
+  const recorded = await input.getMetadataTags().then(recordedFrom, () => ({}));
   const videoStart = video ? await video.getFirstTimestamp() : 0;
   const videoDuration = video ? (await video.computeDuration()) - videoStart : 0;
   if (videoDuration > MAX_SECONDS + 1) throw new MediaError(`the picture runs ${Math.round(videoDuration)} s; the limit is ${MAX_SECONDS} s`);
@@ -65,7 +70,7 @@ export async function load(file: File): Promise<Loaded> {
     // A silent video: nothing for the audio cloak to do, but its metadata, embedded data and
     // light flicker still need handling.
     return { name: file.name, clip: null, sourceChannels: 0, duration: videoDuration, audioStart: 0, audio: null, video,
-             videoDuration, videoStart };
+             videoDuration, videoStart, recorded };
   }
   // The primary track among those this browser can decode (an undecodable spatial or surround
   // track may outrank a plain one).
@@ -122,7 +127,7 @@ export async function load(file: File): Promise<Loaded> {
   }
   return {
     name: file.name, clip: { sampleRate, channels: [samples] }, sourceChannels: channelCount,
-    duration: samples.length / sampleRate, audioStart, audio, video, videoDuration, videoStart,
+    duration: samples.length / sampleRate, audioStart, audio, video, videoDuration, videoStart, recorded,
   };
 }
 

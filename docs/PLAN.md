@@ -51,15 +51,17 @@ The known-path attacker saw passes the blind check can't (a faint climb-out unde
 both presets, z 6.3 / 5.7). The phone knows where and when it recorded, so the defender runs the
 attacker's own test first and removes until it fails.
 
-- **In the engine and the lab: works.** `TrackFill` (CLI `scrub --expect`, `python3 -m lab
-  trackfill`) takes the attacker's statistic and fills until it's below 2.5. On the three real
-  passes we have, the attacker's z after Full + tracks is 0.8, −2.5 and −0.2 (docs/EXPERIMENTS.md).
-- **Next, for the page:** where the location and time come from (the video's own metadata before
-  it's stripped, or the browser), fetching tracks for a wide box so the request doesn't give the
-  place away, and speed (about a minute per 2-minute clip in native code today; the null's
-  10 wrong-time searches dominate).
-- **Then:** fill level unbiased along the curve (±0.3 dB today); engine-tone families searched
-  together; a decoy-aware attacker before any decoys.
+- **Done, engine, lab and page.** `TrackFill` takes the attacker's statistic and fills until it's
+  below 2.5. The page reads the place and time from the file (or takes them typed in) and the user
+  adds adsb.lol's half-hour archive (a worldwide file: the download reveals the time only);
+  `PassPrediction` makes four curves per aircraft from its stale positions. On the three real
+  passes: the attacker with the exact tracks ends at −1.6, 0.1, −0.2 after removal with the exact
+  tracks, and −1.6, −0.5, −0.2 after removal with only the archive (docs/EXPERIMENTS.md).
+- **Next:** more real passes to test it on (three is thin); a false fill on busy indoor audio (a
+  TV's tones fitted one curve at z 8); fill level unbiased along the curve (±0.3 dB); engine-tone
+  families searched together; the attacker's z on pure noise has a heavy tail (about one white-
+  noise draw in three scores 4 along some fixed curve), so its threshold needs a calibrated null;
+  a decoy-aware attacker before any decoys.
 
 ## Now, alongside: the curve benchmark and a learned detector
 
