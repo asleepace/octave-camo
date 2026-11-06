@@ -14,7 +14,7 @@ let commands = [
             flags: ["hard"], run: synth),
     Command(name: "analyze", options: ["threshold"], flags: ["json"], run: analyze),
     Command(name: "scrub", options: ["steps", "mains", "passes", "cutoff", "lowband-mode", "flatten", "depth", "wobble-top", "seed", "expect",
-                                     "archive", "at", "start", "temp"],
+                                     "archive", "at", "start", "temp", "track-stop"],
             flags: ["no-keep-voice"], run: scrub),
     Command(name: "predict", options: ["at", "start", "duration", "temp"], flags: [], run: predict),
 ]
@@ -37,6 +37,7 @@ USAGE
                         [--archive heatmap.bin[,next.bin] --at lat,lon[,alt] --start unix [--temp 15]]
                         (or predict those curves from adsb.lol's half-hour archive: where and
                         when the audio starts, alt in metres on the pressure-altitude scale)
+                        [--track-stop 2.5] (remove until each pass's attacker z is below this)
   octave-camo predict <heatmap.bin> --at lat,lon[,alt] --start unix --duration s [--temp 15]
   octave-camo --version
 
@@ -123,6 +124,7 @@ func scrub(_ args: Arguments) throws {
     pipeline.hum.seed = pipeline.wobble.seed
     pipeline.lines.seed = pipeline.wobble.seed
     pipeline.tracks.seed = pipeline.wobble.seed
+    pipeline.tracks.stopZ = try args.value("track-stop", default: pipeline.tracks.stopZ)
     if let path = args.string("expect") {
         let data = try Data(contentsOf: URL(fileURLWithPath: path))
         pipeline.tracks.expected = try JSONDecoder().decode([ExpectedPass].self, from: data)
@@ -131,6 +133,7 @@ func scrub(_ args: Arguments) throws {
     }
     let archive = args.string("archive")
     try require(archive == nil || args.string("expect") == nil, "--archive and --expect are alternatives")
+    try require(pipeline.tracks.stopZ.isFinite, "--track-stop must be a number")
     try require(pipeline.subtraction.passes >= 0, "--passes must be 0 or more")
     try require(pipeline.wobble.depth >= 0 && pipeline.wobble.depth <= 0.1, "--depth must be between 0 and 0.1")
     try require(pipeline.lowband.cutoff > 20 && pipeline.lowband.cutoff.isFinite, "--cutoff must be above 20 Hz")
