@@ -182,3 +182,66 @@ class Plumbing(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SyntheticPasses(unittest.TestCase):
+    """The benchmark's generator (lab/passes.py)."""
+
+    def test_draws_stay_in_bounds(self):
+        from lab import passes
+        rng = np.random.default_rng(0)
+        for _ in range(200):
+            p = passes.draw(rng, 60)
+            self.assertTrue(500 <= p.distance <= 6_000)
+            self.assertTrue(0.15 * 60 <= p.t_close <= 0.85 * 60)
+            swing = (1 / (1 + p.speed / passes.C), 1 / (1 - p.speed / passes.C))
+            for f, _, _ in p.tones:                         # every tone stays in the band all pass
+                self.assertGreaterEqual(f * swing[0], passes.BAND[0])
+                self.assertLessEqual(f * swing[1], passes.BAND[1])
+
+    def test_curve_falls_through_the_rest_frequency_at_closest_approach(self):
+        from lab import passes
+        p = passes.Pass(speed=150, altitude=1_000, offset=500, t_close=30, tones=[(1_000.0, 0.0, 0.0)])
+        t = np.arange(0, 60, 0.05)
+        factor = passes.geometry(p, t)[0]
+        self.assertTrue(np.all(np.diff(factor) < 1e-12))
+        self.assertAlmostEqual(float(np.interp(30, t, factor)), 1.0, delta=1e-3)
+
+    def test_strength_is_what_was_asked_for(self):
+        from lab import passes
+        from scipy.signal import welch
+        sr, rng = 16_000, np.random.default_rng(3)
+        p = passes.Pass(speed=60, altitude=3_000, offset=0, t_close=30, tones=[(1_000.0, 0.0, 0.0)],
+                        wander=0.0, scintillation_db=0.0, reflection=0.0)
+        bg = rng.normal(0, 1, 60 * sr)
+        x, _ = passes.mix(bg, sr, p, 20.0, rng)
+        f, P = welch(x[28 * sr: 32 * sr], sr, nperseg=sr)              # 1 Hz bins around closest
+        tone = P[(f > 990) & (f < 1_010)].sum()                        # power, summed over the line
+        noise = np.median(P[(f > 900) & (f < 1_100)])                   # per Hz
+        self.assertAlmostEqual(10 * np.log10(tone / noise), 20.0, delta=1.5)
+
+
+class LearnedDetectorPlumbing(unittest.TestCase):
+    """lab/ml.py's data path (no training: jax isn't needed for these)."""
+
+    def test_a_tone_lands_on_its_log_bin_and_is_labelled_there(self):
+        from lab import ml, passes
+        rng = np.random.default_rng(1)
+        p = passes.Pass(speed=120, altitude=1_500, offset=0, t_close=15, tones=[(900.0, 0.0, 0.0)],
+                        wander=0.0, scintillation_db=0.0, reflection=0.0)
+        x, truth = passes.mix(rng.normal(0, 1, 30 * ml.SR), ml.SR, p, 20.0, rng)
+        F, t = ml.features(x, ml.SR)
+        self.assertEqual(F.shape[0], ml.NBINS)
+        y, w = ml.labels(truth, 20.0, t)
+        j = int(np.argmin(np.abs(t - 15)))                      # at closest approach
+        b = int(np.argmax(y[:, j]))
+        self.assertEqual(y[b, j], 1)
+        self.assertLess(abs(ml.CENTERS[b] / 900 - 1), 0.03)
+        self.assertGreater(F[b, j], 6)                           # the tone stands out in the input
+        self.assertEqual(w[b - 1, j], 0)                         # neighbours don't count
+
+    def test_windows_group_into_passes_of_two_or_more(self):
+        from lab import ml
+        wins = [(10, 20, 900, 1000, 0.9), (12.5, 22.5, 880, 990, 0.8), (40, 50, 500, 520, 0.95), (60, 70, 300, 320, 0.1)]
+        self.assertEqual(ml.group(wins, 0.5), [(10, 22.5, 880, 1000, 0.9)])
+        self.assertEqual(len(ml.group(wins, 0.5, min_windows=1)), 2)

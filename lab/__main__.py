@@ -17,6 +17,8 @@
   trackfill <session> [preset …]        cloak with flight-track removal (the CLI's --expect, curves
                                         predicted at the true position), into
                                         $LAB_DATA/cloaked/<session>-<preset>-tracks.wav
+  bench [--synth-only] [--per N]       the curve benchmark (N clips per strength, default 16): synthetic passes in real and synthetic
+                                        backgrounds; detection by strength, false alarms per hour
   plot <session>                        spectrogram with ADS-B Doppler curves and detected paths
 
 Data stays in $LAB_DATA (default ~/.octave-camo-lab), never in the repo. Results are saved as JSON
@@ -293,6 +295,16 @@ def cmd_trackfill(sid: str, presets: list[str]):
             print(dst)
 
 
+def cmd_bench(args: list[str]):
+    from . import bench
+    per = int(args[args.index("--per") + 1]) if "--per" in args else 16
+    clips = bench.plan(per_snr=per, real="--synth-only" not in args)
+    t = time.time()
+    rows = bench.run(clips)
+    print(bench.summarize(rows))
+    print(f"\n{len(clips)} clips ({time.time() - t:.0f} s); per-clip results in $LAB_DATA/results/bench.jsonl")
+
+
 def main(argv):
     if not argv or argv[0] in ("-h", "--help"):
         print(__doc__)
@@ -317,6 +329,8 @@ def main(argv):
         cmd_cloak(rest[0], rest[1:])
     elif cmd == "attack":
         cmd_attack(rest[0], rest[1:])
+    elif cmd == "bench":
+        cmd_bench(rest)
     elif cmd == "trackfill":
         cmd_trackfill(rest[0], rest[1:])
     elif cmd == "locate":

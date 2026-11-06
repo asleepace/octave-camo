@@ -123,22 +123,38 @@ def flyby(par, t, c=C):
     return f0 / (1 + v * x / (c * r))
 
 
+def flyby_no_travel(par, t, c=C):
+    """`flyby` without the sound's travel time (receive time taken as emission time): ~10× cheaper,
+    the same family of shapes up to a warp of time, so a fine first pass for the fit."""
+    f0, v, d, t0 = par
+    x = v * (t - t0)
+    r = np.hypot(d, x)
+    return f0 / (1 + v * x / (c * r))
+
+
 def shape_test(path: np.ndarray, win_s: float, c=C, max_rel_rms=0.005, dt: float | None = None) -> dict:
     """Fit a straight flyby to a path; passes with rms < 0.5 % of f0, 20–300 m/s, 50 m–30 km. `dt` is
-    the path's frame spacing (default: the window over the path's length)."""
+    the path's frame spacing (default: the window over the path's length). Multi-start on the
+    model without travel time, then one refinement with it (the geometry is then unbiased)."""
     if len(path) < 10:
         return {"ok": False}
     t = np.arange(len(path)) * (dt if dt else win_s / len(path))
+    bounds = ([50, 5, 10, -60], [12000, 340, 50000, 70])
     best = None
     for v0 in (60, 140, 250):
         for d0 in (300, 1500, 5000):
             for t00 in (0, win_s / 2, win_s):
-                r = least_squares(lambda q: flyby(q, t, c) - path, [path.mean(), v0, d0, t00],
-                                  bounds=([50, 5, 10, -60], [12000, 340, 50000, 70]), loss="soft_l1", f_scale=5)
+                r = least_squares(lambda q: flyby_no_travel(q, t, c) - path, [path.mean(), v0, d0, t00],
+                                  bounds=bounds, loss="soft_l1", f_scale=5)
                 rms = float(np.sqrt(np.mean(r.fun ** 2)))
                 if best is None or rms < best[0]:
                     best = (rms, r.x)
-    rms, (f0, v, d, t0) = best
+    start = best[1].copy()
+    start[3] = start[3] + start[2] / c                     # heard closest approach ≈ emitted + d/c
+    start = np.clip(start, bounds[0], bounds[1])
+    r = least_squares(lambda q: flyby(q, t, c) - path, start, bounds=bounds, loss="soft_l1", f_scale=5)
+    rms_t = float(np.sqrt(np.mean(r.fun ** 2)))
+    rms, (f0, v, d, t0) = (rms_t, r.x) if rms_t <= best[0] * 1.5 else best
     return {"ok": bool(rms < max_rel_rms * f0 and 20 <= v <= 300 and 50 <= d <= 30_000), "rel_rms": rms / f0,
             "f0": float(f0), "speed": float(v), "distance": float(d)}
 
@@ -180,13 +196,13 @@ def known_path(f, t, A, factor_of_t, f0s, win: tuple[float, float], offsets=np.a
 NULL_SHIFTS = tuple(s * d for d in np.arange(20.0, 60.1, 2.5) for s in (-1, 1))
 
 
-def known_path_z(f, t, A, factor_of_t, f0s, win: tuple[float, float]):
+def known_path_z(f, t, A, factor_of_t, f0s, win: tuple[float, float], offsets=np.arange(-6, 6.01, 0.5), shifts=NULL_SHIFTS):
     """The known-path attacker's score as (z, effect in dB, f0, offset): its best mean excess
     against the same search with the curve moved 20–60 s (34 wrong times, so the spread is
     stable: with eight, removing a tone the wrong-time curves happened to cross could shrink it and
     inflate z with less evidence left). The effect is best minus the null mean, per frame."""
-    best, f0, off = known_path(f, t, A, factor_of_t, f0s, win)
-    nulls = np.array([known_path(f, t, A, lambda u, s=s: factor_of_t(u - s), f0s, win)[0] for s in NULL_SHIFTS])
+    best, f0, off = known_path(f, t, A, factor_of_t, f0s, win, offsets)
+    nulls = np.array([known_path(f, t, A, lambda u, s=s: factor_of_t(u - s), f0s, win, offsets)[0] for s in shifts])
     nulls = nulls[np.isfinite(nulls)]
     if not np.isfinite(best) or len(nulls) < 10:
         return float("nan"), float("nan"), f0, off
