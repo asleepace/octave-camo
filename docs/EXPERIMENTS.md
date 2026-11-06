@@ -476,6 +476,11 @@ a 6 dB rise in broadband level anywhere within 20 s is easy to get with applianc
 from something in the room for three quarters of the clip, which Full passes through unchanged:
 a room fingerprint above the band anything in the cloak looks at.
 
+**The same room again, wind outside** (190 s; stereo was asked for and iOS gave mono again; a
+737 MAX 9 at 2.2 km whose closest approach reached the phone 8 s before recording began): the
+attacker scores 0.5 on its receding half, the check and the learned detector find nothing. Wind
+gusts fill the clip, and still raise no false pass.
+
 **Verdict:** worth pursuing, not yet worth porting (step 3 was "only if it clearly wins"). It wins
 on sensitivity and loses on real-world false alarms. Next: harder negatives in training (vehicles
 slowing down, reversing beepers, more real outdoor backgrounds: the construction session is where
