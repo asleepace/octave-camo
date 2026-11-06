@@ -441,15 +441,21 @@ function renderTracks() {
     if (status) status.innerHTML = tracksStatus();
     return;
   }
+  if (el.dataset.token !== String(fileToken)) delete el.dataset.open;   // a new file starts collapsed
   el.dataset.token = String(fileToken);
   const known = t.latitude !== null && t.longitude !== null && t.time !== null;
   const links = known ? archiveFiles(t.time!, loaded.duration) : [];
   const from = t.fromFile.place && t.fromFile.time ? "from the video" : t.fromFile.place || t.fromFile.time ? "partly from the video" : "not in the video: enter them";
   const field = "h-8 border border-neutral-800 bg-black px-2 text-[11px] text-white focus:border-neutral-500 disabled:text-neutral-600";
   const disabled = state.busy ? "disabled" : "";
-  el.innerHTML = `<details class="group border border-neutral-800 px-4 py-3 text-[11px] leading-relaxed" ${t.status !== "none" || el.dataset.open === "1" ? "open" : ""}>
-    <summary class="cursor-pointer list-none text-white"><span aria-hidden="true" class="mr-1 text-neutral-500 group-open:hidden">▸</span><span aria-hidden="true" class="mr-1 hidden text-neutral-500 group-open:inline">▾</span>Remove what flight tracks predict
-      <span class="text-neutral-500">· optional · ${t.on && t.status === "ready" ? `<span class="text-accent">on: ${t.summary?.passing} aircraft</span>` : "off"}</span></summary>
+  // A button and a hidden body, not <details>: controls inside a closed <details> still count as
+  // laid out, but can't take focus.
+  const open = el.dataset.open ? el.dataset.open === "1" : t.status !== "none";
+  el.innerHTML = `<div class="border border-neutral-800 px-4 py-3 text-[11px] leading-relaxed">
+    <button id="tracks-toggle" type="button" aria-expanded="${open}" aria-controls="tracks-body" class="text-left text-white">
+      <span aria-hidden="true" class="mr-1 text-neutral-500">${open ? "▾" : "▸"}</span>Remove what flight tracks predict
+      <span class="text-neutral-500">· optional · ${t.on && t.status === "ready" ? `<span class="text-accent">on: ${t.summary?.passing} aircraft</span>` : "off"}</span></button>
+    <div id="tracks-body" ${open ? "" : "hidden"}>
     <p class="mt-2 text-neutral-500">An attacker with the flight logs knows exactly which tones to look for. Given the same logs, the cloak runs that
       test first and fills in whatever it finds. The logs come from adsb.lol's public archive: one worldwide file per half hour, so downloading it
       tells adsb.lol the time, never the place. The place and time below stay in this browser.</p>
@@ -467,9 +473,13 @@ function renderTracks() {
         or drop ${links.length > 1 ? "them" : "it"} on the page.</li>
     </ol>` : ""}
     <p data-status class="mt-2">${tracksStatus()}</p>
-  </details>`;
-  const details = el.querySelector("details")!;
-  details.addEventListener("toggle", () => { el.dataset.open = details.open ? "1" : "0"; });
+    </div>
+  </div>`;
+  $("tracks-toggle").addEventListener("click", () => {
+    el.dataset.open = open ? "0" : "1";
+    render();
+    $("tracks-toggle").focus();
+  });
   const changed = () => {
     const time = fromUtcField($<HTMLInputElement>("tracks-time").value);
     const lat = Number($<HTMLInputElement>("tracks-lat").value.trim()), lon = Number($<HTMLInputElement>("tracks-lon").value.trim());

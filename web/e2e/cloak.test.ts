@@ -89,7 +89,7 @@ describe.skipIf(!URL_)("cloak in the browser", () => {
         feet: 4_900, knots: 274 }] };
     })));
     const page = await fresh().open(input);
-    await page.click("#tracks summary");
+    await page.click("#tracks-toggle");
     expect(await page.inputValue("#tracks-lat")).toBe("37.7749");
     expect(await page.inputValue("#tracks-time")).toStartWith("2026-01-01T12:00");
     // 12:00:00 sharp: the half hour before it too, for positions in the two minutes leading up.

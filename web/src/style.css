@@ -19,7 +19,8 @@
 }
 /* The file input is visually hidden; show its focus on what stands for it. */
 body:has(#file:focus-visible) #drop:not(.hidden),
-body:has(#file:focus-visible) #open-another:not(.hidden) {
+body:has(#file:focus-visible) #open-another:not(.hidden),
+label:has(> #tracks-file:focus-visible) {
   outline: 2px solid var(--color-accent);
   outline-offset: 2px;
 }
