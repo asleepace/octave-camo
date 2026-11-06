@@ -159,38 +159,66 @@ def shape_test(path: np.ndarray, win_s: float, c=C, max_rel_rms=0.005, dt: float
             "f0": float(f0), "speed": float(v), "distance": float(d)}
 
 
-def known_path(f, t, A, factor_of_t, f0s, win: tuple[float, float], offsets=np.arange(-6, 6.01, 0.5), tol: int = 2):
-    """The attacker with the flight track: the mean excess along f0·factor(t − offset) over `win`,
-    for every candidate rest frequency f0 (the engine's tone is unknown) and a small time offset
-    (published positions lag and are coarse), best of ±`tol` bins. Returns (best mean, f0, offset).
-    A mean, not a sum: a curve moved in time for a null can run off its track's span, and a sum
-    over fewer frames would read as less evidence."""
-    j = np.flatnonzero((t >= win[0]) & (t <= win[1]))
-    if len(j) < 10:
-        return float("nan"), float("nan"), float("nan")
-    df = f[1] - f[0]
-    # The tolerance as a max over neighbouring bins, once.
+RATIO = 1.002    # rest-frequency step (0.2 %), as the engine's TrackFill searches
+
+
+def _tolerant(A, tol: int):
+    """Each bin the best of ±`tol` bins (the curve is only as good as the track), once."""
     Am = A.copy()
     for o in range(1, tol + 1):
         Am[:-o] = np.maximum(Am[:-o], A[o:])
         Am[o:] = np.maximum(Am[o:], A[:-o])
-    best = (-np.inf, np.nan, np.nan)
-    for off in offsets:
-        fac = factor_of_t(t[j] - off)
-        ok = np.isfinite(fac)
+    return Am
+
+
+def _known_path_search(f, t, A, factor_of_t, f0s, win, taus, tol: int = 2):
+    """The best mean excess along f0·factor(t − τ) over `win` for each timing τ: {τ: (mean, f0)}.
+
+    On a log-frequency axis a rest frequency times a Doppler factor is a shift, so each frame's
+    excess is resampled once onto that axis (rests `RATIO` apart over the span of `f0s`) and all
+    rests are scored at once by one gather per frame. A curve that leaves the band in any frame
+    scores far below anything real (the attacker counts only curves inside the band throughout)."""
+    j = np.flatnonzero((t >= win[0]) & (t <= win[1]))
+    out = {}
+    if len(j) < 10:
+        return {tau: (float("nan"), float("nan")) for tau in taus}
+    lo, hi = float(np.min(f0s)), float(np.max(f0s))
+    rests = lo * RATIO ** np.arange(int(np.log(hi / lo) / np.log(RATIO)) + 1)
+    span = int(np.ceil(np.log(2) / np.log(RATIO))) + 1          # factors 0.5–2
+    lj = np.arange(-span, len(rests) + span)
+    df = f[1] - f[0]
+    k = np.round((lo * RATIO ** lj - f[0]) / df).astype(int)
+    valid = (k >= 0) & (k < len(f))
+    Am = _tolerant(A, tol).astype(np.float32)
+    rows = np.full((len(j), len(lj)), -1e9, np.float32)
+    rows[:, valid] = Am[k[valid]][:, j].T
+    R = len(rests)
+    cols = np.arange(R)
+    for tau in taus:
+        fac = factor_of_t(t[j] - tau)
+        ok = np.isfinite(fac) & (fac > 0)
         if ok.sum() < 10:
+            out[tau] = (float("nan"), float("nan"))
             continue
-        jj, fc = j[ok], fac[ok]
-        K = np.round((np.asarray(f0s)[:, None] * fc[None, :] - f[0]) / df).astype(int)   # (n f0, n frames)
-        inside = (K.min(1) >= 0) & (K.max(1) < len(f))
-        if not inside.any():
-            continue
-        sums = np.full(len(f0s), -np.inf)
-        sums[inside] = Am[K[inside], jj[None, :]].mean(1)
-        i = int(np.argmax(sums))
-        if sums[i] > best[0]:
-            best = (float(sums[i]), float(f0s[i]), float(off))
-    return best
+        shift = np.round(np.log(fac[ok]) / np.log(RATIO)).astype(int) + span
+        means = rows[np.flatnonzero(ok)[:, None], shift[:, None] + cols[None, :]].mean(0, dtype=np.float64)
+        i = int(np.argmax(means))
+        out[tau] = (float(means[i]), float(rests[i])) if means[i] > -1e6 else (float("nan"), float("nan"))
+    return out
+
+
+def known_path(f, t, A, factor_of_t, f0s, win: tuple[float, float], offsets=np.arange(-6, 6.01, 0.5), tol: int = 2):
+    """The attacker with the flight track: the mean excess along f0·factor(t − offset) over `win`,
+    for every candidate rest frequency f0 over the span of `f0s` (the engine's tone is unknown;
+    0.2 % steps) and a small time offset (published positions lag and are coarse), best of ±`tol`
+    bins. Returns (best mean, f0, offset). A mean, not a sum: a curve moved in time for a null can
+    run off its track's span, and a sum over fewer frames would read as less evidence."""
+    res = _known_path_search(f, t, A, factor_of_t, f0s, win, [float(o) for o in offsets], tol)
+    best = (-np.inf, np.nan, np.nan)
+    for o, (m, f0) in res.items():
+        if np.isfinite(m) and m > best[0]:
+            best = (m, f0, o)
+    return best if np.isfinite(best[0]) else (float("nan"), float("nan"), float("nan"))
 
 
 NULL_SHIFTS = tuple(s * d for d in np.arange(20.0, 60.1, 2.5) for s in (-1, 1))
@@ -200,10 +228,23 @@ def known_path_z(f, t, A, factor_of_t, f0s, win: tuple[float, float], offsets=np
     """The known-path attacker's score as (z, effect in dB, f0, offset): its best mean excess
     against the same search with the curve moved 20–60 s (34 wrong times, so the spread is
     stable: with eight, removing a tone the wrong-time curves happened to cross could shrink it and
-    inflate z with less evidence left). The effect is best minus the null mean, per frame."""
-    best, f0, off = known_path(f, t, A, factor_of_t, f0s, win, offsets)
-    nulls = np.array([known_path(f, t, A, lambda u, s=s: factor_of_t(u - s), f0s, win, offsets)[0] for s in shifts])
+    inflate z with less evidence left). The effect is best minus the null mean, per frame.
+    Offsets and shifts that add up to the same timing are searched once."""
+    offsets = [float(o) for o in offsets]
+    taus = sorted({round(s + o, 6) for s in (0.0, *shifts) for o in offsets})
+    res = _known_path_search(f, t, A, factor_of_t, f0s, win, taus)
+
+    def best(shift):
+        top = (-np.inf, np.nan, np.nan)
+        for o in offsets:
+            m, f0 = res[round(shift + o, 6)]
+            if np.isfinite(m) and m > top[0]:
+                top = (m, f0, o)
+        return top
+
+    b, f0, off = best(0.0)
+    nulls = np.array([best(s)[0] for s in shifts])
     nulls = nulls[np.isfinite(nulls)]
-    if not np.isfinite(best) or len(nulls) < 10:
+    if not np.isfinite(b) or len(nulls) < 10:
         return float("nan"), float("nan"), f0, off
-    return float((best - nulls.mean()) / nulls.std()), float(best - nulls.mean()), f0, off
+    return float((b - nulls.mean()) / nulls.std()), float(b - nulls.mean()), f0, off

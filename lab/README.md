@@ -58,5 +58,6 @@ python3 -m unittest discover -s lab/tests -t .                   # invariants (s
 - **Pieces** (`lab/detect.py`): `whiten` (clip-median or running-median reference, optional
   broadband-aware statistic), `search` (smooth falling or any-direction paths), `shape_test`
   (straight-flyby fit), `known_path` (the attacker with the track, searching the unknown rest
-  frequency). Synthetic scenes are in `lab/synth.py`; the spectrogram cache, aligning a cloaked
+  frequency in 0.2 % steps; all rests at once on a log-frequency axis, as the engine's
+  `TrackFill` does, about 10× faster than a lookup per rest: ~5 s per session). Synthetic scenes are in `lab/synth.py`; the spectrogram cache, aligning a cloaked
   copy with its original and saving results are in `lab/common.py`.

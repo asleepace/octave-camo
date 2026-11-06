@@ -142,6 +142,26 @@ class KnownPath(unittest.TestCase):
         self.assertAlmostEqual(rest, 900, delta=30)
         self.assertLessEqual(abs(off), 3.0)
 
+    def test_the_fast_search_agrees_with_a_lookup_per_rest(self):
+        """The log-axis search (all rests at once, timings shared) against the plain one: for
+        each rest, the excess looked up along its curve, frame by frame."""
+        x = passing_tone(snr_db_hz=12)
+        f, tt, L = detect.whiten(x, SR, P_KNOWN)
+        A = detect._tolerant(L - L.mean(), 2)
+        rests = 500 * detect.RATIO ** np.arange(0, 550, 25)
+        for tau in (0.0, 1.5, -22.5):
+            fast = detect._known_path_search(f, tt, L - L.mean(), factor, (500, 1500), (5, 55), [tau])[tau]
+            j = np.flatnonzero((tt >= 5) & (tt <= 55))
+            fac = factor(tt[j] - tau)
+            slow = []
+            for r in rests:
+                k = np.round((r * fac - f[0]) / (f[1] - f[0])).astype(int)
+                slow.append(A[k, j].mean() if k.min() >= 0 and k.max() < len(f) else -np.inf)
+            # The fast one searches every 0.2 % step, so its best is at least the coarse grid's best,
+            # and not above the best within a step of it.
+            self.assertGreaterEqual(fast[0] + 1e-4, max(slow))
+            self.assertLess(fast[0] - max(slow), 0.5)
+
 
 class Plumbing(unittest.TestCase):
     def test_cache_key_follows_the_audio(self):

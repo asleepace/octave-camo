@@ -192,7 +192,7 @@ shows ("saved N") is for the file you post, not only for what went into the enco
 
 ```sh
 swift build -c release && swift test -c release      # library + CLI (macOS, Linux)
-scripts/build-wasm.sh                                # WebAssembly build (Swift 6.4.2 + its wasm SDK)
+scripts/build-wasm.sh                                # WebAssembly build (Swift 6.4.2 + its wasm SDK), in .build-wasm
 cd web && bun install && bun run dev                 # web app (a JS stand-in runs without the wasm)
 cd harness && bun install && bun test                # attackers, defenses, benchmarks
 python3 -m unittest discover -s lab/tests -t .       # lab invariants (numpy, scipy, soundfile)

@@ -28,6 +28,11 @@ are grouped by milestone, newest first, with the commits that made them.
   3-minute 48 kHz clip with 40 curves adds about 16 s in wasm). Fills reach the timing slack
   beyond the searched window and widen by 1 % of frequency, for curve error. Passes are handled
   in a fixed order (the order of a dictionary was random per run).
+- **Faster testing:** the lab's known-path attacker searches all rests at once on a log-frequency
+  axis (48 s → 5 s per session, scores within a few tenths); the wasm build has its own folder
+  (`.build-wasm`), so switching no longer relinks the native build or swaps out its CLI (a no-op
+  native build: 67 s → 1 s), and reuses wasm-opt's output when its input hasn't changed (65 s →
+  2 s).
 - **CLI:** `scrub --archive file[,file] --at lat,lon[,alt] --start unix [--temp C]` and
   `predict` (the curves, without positions). **Lab:** `trackfill <session> … --archive` runs the
   page's path.
