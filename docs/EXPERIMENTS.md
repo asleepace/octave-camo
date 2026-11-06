@@ -533,7 +533,14 @@ rotor would sit near 26 Hz, which the cloak's low band replaces anyway). Removal
 filled one tone at 1.9 kHz along one of 22 curves: a false fill in the TV's sound, the second.
 
 **A 30 s clip in the same room**, started 11 s after a Boeing 737-800's closest approach (4.5 km):
-its receding half scores 0.8, nothing else stands out, and removal from the archive fills nothing.
+its receding half scores 0.8 and removal from the archive fills nothing, but the recorder heard
+it. Without any detector (raw spectrogram, quiet-percentile band levels per second): no tone at
+all, yet 40–500 Hz falls by about 4.5 dB from 3 s to 25 s, where spreading alone from 4.8 to
+6.8 km predicts 3.1 dB (plus a little air absorption and the jet's rearward lobe fading). The next
+clip, 6 s later in the same room, is flat within ±1 dB in those bands for 52 s, so the background
+isn't drifting. A jet's roar is broadband: the tone attackers can't see it, and the cloak leaves
+its slow envelope above the low band. Whether a loudness envelope matched to candidate flights
+gives an attacker anything is untested.
 
 **And 52 s right after it**, with a Boeing 737 at 5.0 km heard 42 s in and a Challenger 350 at
 10 km: the attacker scores 1.4 and 0.4, the check finds nothing, removal from the archive fills
