@@ -2,6 +2,7 @@
 
   ingest <bundle.zip | session dir> …   unpack recorder sessions into $LAB_DATA and index them
   sessions                              list sessions and their nearest aircraft passes
+  (the holdout sessions in corpus.HOLDOUT are refused by scoring commands unless --holdout is given)
   label <session> key=value …           correct a session's context labels (kept locally)
   backfill <session | all>              fetch aircraft positions from before the first poll (adsb.lol)
   e2 [synth|real|all|files] [x.wav …] [--wide]
@@ -117,14 +118,15 @@ def _short(sid: str) -> str:
 
 
 def cmd_sessions():
-    for sid in corpus.all_ids():
+    for sid in corpus.all_ids(holdout=True):
         idx = json.load(open(corpus.sessions_dir() / sid / "index.json"))
         ps = idx["passes"][:3]
         near = "; ".join(f"{q['type'] or '?'} {q['closest_in_audio_km']} km heard {q['heard_s']} s" for q in ps)
         ctx = idx.get("context") or {}
         what = idx['note'][:30] or ctx.get("note", "")[:30]
         marks = ", ".join(f"{m['label']}@{m['t_s']:.0f}s" for m in idx.get("markers", []))
-        print(f"{sid}  {idx['duration_s']:6.1f} s  {str(idx['mode'])[-18:]:>18}  {what!r:32}  nearest: {near}" + (f"  | marks: {marks}" if marks else "") + (f"  | manifest {idx['manifest']}" if idx.get("manifest") not in (None, "no manifest") else ""))
+        print(f"{sid}  {idx['duration_s']:6.1f} s  {str(idx['mode'])[-18:]:>18}  {what!r:32}  nearest: {near}" + (f"  | marks: {marks}" if marks else "") + (f"  | manifest {idx['manifest']}" if idx.get("manifest") not in (None, "no manifest") else "")
+              + ("  | HOLDOUT" if corpus.is_holdout(sid) else ""))
 
 
 def cmd_attack(sid: str, others: list[str]):
@@ -360,16 +362,25 @@ def cmd_ml(args: list[str]):
         raise SystemExit("python3 -m lab ml data|train|report")
 
 
+SCORING = ("attack", "envelope", "locate", "trackfill", "check", "cloak", "plot")
+
+
 def main(argv):
     if not argv or argv[0] in ("-h", "--help"):
         print(__doc__)
         return
     cmd, rest = argv[0], argv[1:]
+    # The holdout is scored only on purpose: --holdout, once a change is settled.
+    if "--holdout" in rest:
+        rest = [a for a in rest if a != "--holdout"]
+    elif cmd in SCORING and rest and corpus.is_holdout(rest[0]):
+        raise SystemExit(f"{rest[0]} is in the holdout (corpus.HOLDOUT): pass --holdout to score it, "
+                         "and only once the change being tested is settled")
     if cmd == "ingest":
         for b in rest:
             print("ingested", corpus.ingest(b))
     elif cmd == "backfill":
-        for sid in (corpus.all_ids() if rest[:1] == ["all"] else rest):
+        for sid in (corpus.all_ids(holdout=True) if rest[:1] == ["all"] else rest):
             print(sid, "+", corpus.backfill(sid), "positions")
     elif cmd == "label":
         idx = corpus.correct(rest[0], **dict(kv.split("=", 1) for kv in rest[1:]))

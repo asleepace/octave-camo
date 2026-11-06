@@ -339,6 +339,15 @@ narrow it:
 - **The search is tone-only.** On 6b838f the 767 that the loudness attacker scores z 5.5 isn't
   found (rank 924): a broadband jet needs the envelope term in the place search too.
 
+## The holdout
+
+From the review: every threshold here was chosen on the sessions it was then reported on. Two of
+the seven sessions whose original gives the place away (af39e1, f8b75a; `corpus.HOLDOUT`) are
+now held out: the lab's scoring commands refuse them without `--holdout`, and they're scored only
+once a change is settled, with the result reported as it comes. They were picked after one look at
+their place-search numbers above, which is the only contamination. The public 40-flight corpus
+joins the holdout when it's ingested.
+
 ## Track-driven removal: the leak closed
 
 `TrackFill` (Swift, CLI `scrub --expect passes.json`, lab `python3 -m lab trackfill`) takes each

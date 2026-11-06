@@ -145,6 +145,18 @@ class PlaceSearch(unittest.TestCase):
         self.assertGreater(locate.rank_bits(20, 1089), locate.rank_bits(26, 1089))
 
 
+class Holdout(unittest.TestCase):
+    def test_scoring_refuses_the_holdout_unless_asked(self):
+        from lab.__main__ import main
+        sid = "20990101T000000Z_" + corpus.HOLDOUT[0]
+        for cmd in ("locate", "attack", "trackfill", "cloak"):
+            with self.assertRaises(SystemExit) as e:
+                main([cmd, sid])
+            self.assertIn("holdout", str(e.exception))
+        self.assertTrue(corpus.is_holdout(sid))
+        self.assertFalse(corpus.is_holdout("20990101T000000Z_abcdef"))
+
+
 class ShapeTest(unittest.TestCase):
     """The flyby fit, on curves made independently of it (lab.synth's own propagation)."""
 

@@ -367,5 +367,18 @@ def curve(sid: str, hexid: str):
     return z["grid"], z[hexid][0], z[hexid][1]
 
 
-def all_ids() -> list[str]:
-    return sorted(p.name for p in sessions_dir().iterdir() if (p / "index.json").exists())
+# Held out (by id suffix): never used to choose a threshold, a parameter or a stopping rule, only
+# scored once a change is settled (docs/EXPERIMENTS.md, "The holdout"). Two of the seven sessions
+# whose original gives the place away, chosen 2026-11-06 after one look at their place-search
+# results (that look is the only contamination). The public corpus joins when it's ingested.
+HOLDOUT = ("af39e1", "f8b75a")
+
+
+def is_holdout(sid: str) -> bool:
+    return sid.endswith(HOLDOUT)
+
+
+def all_ids(holdout: bool = False) -> list[str]:
+    """Every session's id; the holdout only when asked for."""
+    ids = sorted(p.name for p in sessions_dir().iterdir() if (p / "index.json").exists())
+    return ids if holdout else [s for s in ids if not is_holdout(s)]
