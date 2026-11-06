@@ -1,8 +1,13 @@
 name: CI
 
+# The full suite (about 25 minutes) runs on pull requests and when started by hand. A push to
+# main has already passed it on its pull request, so it only builds and checks what ships (the
+# wasm, the web app and its tests) and deploys; a push that changes only docs or the lab
+# deploys nothing and runs nothing.
 on:
   push:
     branches: [main]
+    paths-ignore: ["docs/**", "**/*.md", "lab/**", "LICENSE"]
   pull_request:
   workflow_dispatch:
 
@@ -18,6 +23,7 @@ permissions:
 jobs:
   swift-macos:
     name: Swift (macOS)
+    if: github.event_name != 'push'
     runs-on: macos-15
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -29,6 +35,7 @@ jobs:
 
   swift-linux:
     name: Swift (Linux)
+    if: github.event_name != 'push'
     runs-on: ubuntu-latest
     container: swift:6.0
     steps:
@@ -123,6 +130,7 @@ jobs:
 
   e2e:
     name: Web end-to-end (Chromium, real wasm)
+    if: github.event_name != 'push'
     needs: wasm
     runs-on: ubuntu-latest
     defaults:
@@ -150,6 +158,7 @@ jobs:
 
   bench:
     name: Benchmark gate (both attackers, 6 clips, harness and Swift)
+    if: github.event_name != 'push'
     needs: swift-linux
     runs-on: ubuntu-latest
     defaults:
@@ -184,8 +193,9 @@ jobs:
 
   deploy:
     name: Deploy to GitHub Pages
-    # Only a build that passed everything ships.
-    needs: [swift-macos, swift-linux, wasm, web, e2e, harness, bench, lab]
+    # What ships passed everything on its pull request; here, the wasm and web app built from
+    # this exact commit and passed the web tests.
+    needs: [wasm, web]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
@@ -215,6 +225,7 @@ jobs:
 
   lab:
     name: Lab (Python) and docs
+    if: github.event_name != 'push'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -230,6 +241,7 @@ jobs:
 
   harness:
     name: Harness (Bun)
+    if: github.event_name != 'push'
     runs-on: ubuntu-latest
     defaults:
       run:

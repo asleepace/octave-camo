@@ -25,8 +25,10 @@ python3 -m unittest discover -s lab/tests -t .    # lab invariants
 python3 scripts/check-links.py                    # docs links
 ```
 
-CI builds everything on every push, including the WebAssembly scrubber, and tests the web app
-against it. Keep TypeScript strict, validate external data with Zod, and add a test that fails
+CI runs the full suite (Swift on macOS and Linux, the WebAssembly scrubber, the web app against
+it, the browser tests, the benchmark gate, the lab) on every pull request, about 25 minutes; open
+one for any change to code. A push to main only rebuilds and deploys what ships, and a push that
+touches only docs or the lab runs nothing. Keep TypeScript strict, validate external data with Zod, and add a test that fails
 without your change.
 
 By contributing you agree that your contributions are licensed under the MIT license.
