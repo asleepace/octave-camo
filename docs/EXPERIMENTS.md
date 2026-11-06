@@ -525,6 +525,13 @@ best on the eight is 0.8, the check finds no flyby, the learned detector no pass
 the archive (32 curves) fills nothing: the TV's tones fitted no curve this time. The recorder's
 broadband check called three of the seven heard again.
 
+**The same room, with a helicopter** (175 s; an Embraer 170 at 4.0 km heard 16 s in and a
+Eurocopter EC135 at 4.1 km heard 31 s in): nothing found. The attacker scores −0.5 and −0.6 on
+them, the check and the learned detector find nothing, and below 120 Hz the only lines are a
+steady pair near 55–65 Hz present all clip long (not the rotor: no Doppler, and an EC135's main
+rotor would sit near 26 Hz, which the cloak's low band replaces anyway). Removal from the archive
+filled one tone at 1.9 kHz along one of 22 curves: a false fill in the TV's sound, the second.
+
 **Verdict:** worth pursuing, not yet worth porting (step 3 was "only if it clearly wins"). It wins
 on sensitivity and loses on real-world false alarms. Next: harder negatives in training (vehicles
 slowing down, reversing beepers, more real outdoor backgrounds: the construction session is where
