@@ -464,6 +464,18 @@ the clip. A clean negative, and the first one in wind. On the recorder side it c
 per-second analyses (the ultrasonic scan and the new low-band level behind its aircraft check)
 wrote no rows again, while the mains track, which takes audio in any block size, did.
 
+**Indoors, window open, fan, TV and appliances** (190 s; a Boeing 737 MAX's closest approach,
+2.8 km, heard 15 s in; four more aircraft within 8 km): no plane in the audio. The known-path
+attacker scores 0.6 on the 737 and at most 2.3 on the others, under its bar; the learned detector
+finds no pass. The check calls two short falling tones flybys (2–3 s, around the TV's music); they
+don't follow the nearest aircraft's predicted curve (a 1.6 % fall where its curve falls 4 %), so
+two false alarms, which cost only a harmless extra removal. The recorder's fixed analyses now
+write their rows, and show two things. Its aircraft check marks all nine nearby aircraft "heard":
+a 6 dB rise in broadband level anywhere within 20 s is easy to get with appliances, doors and wind
+(the loudest rise near the 737 is a two-second thump). And its ultrasonic scan finds a steady tone
+from something in the room for three quarters of the clip, which Full passes through unchanged:
+a room fingerprint above the band anything in the cloak looks at.
+
 **Verdict:** worth pursuing, not yet worth porting (step 3 was "only if it clearly wins"). It wins
 on sensitivity and loses on real-world false alarms. Next: harder negatives in training (vehicles
 slowing down, reversing beepers, more real outdoor backgrounds: the construction session is where

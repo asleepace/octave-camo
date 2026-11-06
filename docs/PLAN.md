@@ -81,6 +81,11 @@ on real audio are near the check's.
   forward pass would cut it). Its z isn't the lab's (real rooms score far above white noise, so the
   duration rule and the shape test do the work), and a decelerating vehicle can still fit a flyby.
 
+- **Above the audible band.** Steady tones above 16 kHz (electronics, ultrasonic beacons) pass
+  through every preset untouched and fingerprint a room. A gentle low-pass near 16 kHz in every
+  preset is the cheap fix (most of it is lost to platform encoders anyway, but not reliably);
+  the alternative is extending the line search up there. To decide.
+
 ## Later: paths, families and risk classes (slice 3, [ACOUSTICS.md](ACOUSTICS.md) §4.4–6)
 
 1. **Paths:** a Viterbi path search through the whitened spectrogram, limiting how fast frequency
