@@ -393,26 +393,47 @@ timing combinations along a fixed curve scored z 4.4 with nothing there.
 
 The short bedroom clip heard a receding 737-800 as broadband roar with no tone, which the tone
 attackers can't see. `lab envelope` asks whether a recording's slow level follows a flight's
-predicted level: each band's quiet level (20th percentile within each second, 2.5 s trimmed from
-each end) correlated with −20 log r minus air absorption at the band's centre, heard with the
-travel time, best over four bands (40–150, 150–500, 500–1,500 Hz and all of it) and ±6 s, z
-against the same at 34 wrong times.
+predicted level. Each band's quiet level (20th percentile within each second, 2.5 s trimmed from
+each end; 40–150, 150–500, 500–1,500 Hz and all of it) is fitted as a steady background plus the
+flight at its predicted level, added as power: −20 log r minus air absorption at the band's
+centre, heard with the travel time. The plane's level and the background's are free, the shape and
+its size in dB are not. The score is R², best over bands and ±6 s, z against the same at 34 wrong
+times.
 
-**It works when the swell is there:** noise whose level follows a synthetic flyby scores z > 3
-(r > 0.9); the same noise at a steady level doesn't. **On the corpus it finds nothing:** 59
-aircraft scored across 21 sessions, best z 1.6 (a Bell 206 at 6 km), 1.4 and 1.2 on the two
-loudest tone passes, 0.8 on the short clip's 737-800. That clip's fade does follow the 737
-(r 0.84), but just as well the same prediction at other times (wrong-time mean 0.45, spread 0.51)
-and another aircraft receding 14 km away (r 0.85): a fading roar says something flew away during
-the clip, not which flight or from where. In rooms with a TV, a fan, speech or wind, the level
-moves far more than a jet's 1/r² does at 3 km or more.
+**A first version used a correlation, and a review found it couldn't see much.** A flyby's level
+changes slowly, so the same prediction 20 s off still correlates well with it: a perfect synthetic
+match scored only z 3.4 (r 1.00), and the corpus topped out at 1.6, which said more about the
+statistic than the audio. A correlation also accepts any size of change (a 1 dB drift matched a
+predicted 10 dB fade). Holding the size to the physics, the same synthetic pass scores z 7–13, and
+the room alone, a drifting room, a pass at the wrong time or the wrong way round, taps, and a gain
+on the audio all leave it where it should be (invariant tests in `lab/tests`).
 
-Two traps on the way, both in the statistic, not the audio: a far aircraft's prediction barely
-changes, and its wrong-time copies are near-identical (spread 0.00: z 3.1 from r = 0) or few (z 9.7
-on an aircraft 14 km away). Predictions now must swing 1.5 dB, at least 20 wrong times must
-count, and their spread is floored at 0.1 (about what a correlation over a few dozen effectively
-independent seconds varies by on its own). Untested: a quiet outdoor recording right under a loud
-jet, where the swell could dominate; the one outdoor pass we have (the deck) scores 0.1.
+**On the corpus (111 aircraft scored across 21 sessions, 8 too flat to judge):**
+
+| Pass | Original | Full | Experimental | Full + tracks (archive) |
+| --- | ---: | ---: | ---: | ---: |
+| 767 freighter, 3.1 km, window open, TV and fan (40–150 Hz) | **5.5** | **5.2** | 0.3 | **5.2** |
+| 737 MAX, 3.1 km, bathroom (500–1,500 Hz) | **4.1** | **2.9** | **2.6** | 2.3 |
+
+The 767's is plain to see: the room's 40–150 Hz quiet level rises about 4 dB to a peak within 2 s
+of the predicted closest approach and falls back, and the fit follows it (R² 0.30). That clip had
+no tone for any attacker (best 0.0) and the recorder's own check called it not heard. **Full keeps
+the swell:** its low band is regenerated noise that follows the original's loudness, so the slow
+rise and fall come through (5.2). Track removal fills tones, not loudness (5.2). **Experimental's
+flatten removes it** (0.3). The 737 MAX's swell is in the mid band, above anything that's
+regenerated: every preset lowers it (tones removed) but none takes it below the bar for certain.
+
+Elsewhere: a 777 10 km away scores 3.4 and a Phenom 300 at 6.7 km 2.8, against 1.7 and 0.8 for
+the window-open pass and the short clip's 737-800 (whose fade fits it, R² 0.71, but fits wrong
+times about as well). With 111 scored, a 3.4 on a far aircraft is probably the tail of the null, as
+with the tone attacker: the bar for this statistic wants calibrating before it's trusted alone.
+
+**What it reveals:** the moment of closest approach, within a couple of seconds, and from the
+swell's width and size a rough distance; with the flight logs that's a time-and-distance match,
+like the video's two-event method but from loudness. Guards that matter: predictions must swing
+1.5 dB over the clip, at least 20 wrong times must count, their spread is floored at 0.05 (a far
+aircraft's predictions at different times can be near copies: z 3 from nothing), heard times that
+would run backwards (position glitches) are dropped, and bands past Nyquist are left out.
 
 ## The known-path attacker's null
 

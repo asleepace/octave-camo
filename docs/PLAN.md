@@ -57,7 +57,9 @@ attacker's own test first and removes until it fails.
   `PassPrediction` makes four curves per aircraft from its stale positions. On the three real
   passes: the attacker with the exact tracks ends at −1.6, 0.1, −0.2 after removal with the exact
   tracks, and −1.6, −0.5, −0.2 after removal with only the archive (docs/EXPERIMENTS.md).
-- **Next:** more real passes to test it on (three is thin); a false fill on busy indoor audio (a
+- **Next:** a jet's slow swell in loudness survives Full (the envelope attacker: z 5.2 on a 767 at
+  3 km, through the regenerated low band; Experimental's flatten takes it to 0.3), so decide whether
+  Full flattens too, at Experimental's cost in bass; then more real passes to test on (three is thin); a false fill on busy indoor audio (a
   TV's tones fitted one curve at z 8); fill level unbiased along the curve (±0.3 dB); engine-tone
   families searched together; the attacker's z on pure noise has a heavy tail (about one white-
   noise draw in three scores 4 along some fixed curve), so its threshold needs a calibrated null;
