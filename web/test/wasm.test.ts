@@ -4,7 +4,7 @@
  */
 import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
-import { Camo, type Clip, type Profiles } from "../src/engine/camo.ts";
+import { Camo, FLATTEN, type Clip, type Profiles } from "../src/engine/camo.ts";
 import { analyzeInParts, plan, scrubInParts } from "../src/engine/chunks.ts";
 import { spectrogram } from "../src/spectrum.ts";
 import { seededRandom } from "../src/random.ts";
@@ -330,18 +330,24 @@ function swellCorrelation(x: Float32Array, sr: number, levelDb: (t: number) => n
 }
 
 describe.skipIf(!existsSync(BUILDS[0][1]))("the envelope attack (release build)", () => {
-  test("Full passes a plane's slow swell through the low band; Experimental (flattened) does not", async () => {
+  test("a plane's slow swell: passes with flattening off, gone at gentle (Full, the default) and strong (Experimental)", async () => {
     const sr = 16_000, { clip, levelDb } = rumbleSwell(120, sr), camo = await Camo.load(readFileSync(BUILDS[0][1]));
     const steps = ["mono", "hum", "subtract", "scurve", "lowband"] as const;
     const original = swellCorrelation(clip.channels[0]!, sr, levelDb);
-    const full = camo.scrub(clip, { steps, seed: 3 });
-    const flat = camo.scrub(clip, { steps, seed: 3, flattenSeconds: 5 });
-    const rFull = swellCorrelation(full.output, sr, levelDb), rFlat = swellCorrelation(flat.output, sr, levelDb);
-    console.log(`envelope: swell correlation original ${original.toFixed(2)}, Full ${rFull.toFixed(2)}, Experimental ${rFlat.toFixed(2)}`);
+    const off = camo.scrub(clip, { steps, seed: 3, flattenSeconds: FLATTEN.off });
+    const byDefault = camo.scrub(clip, { steps, seed: 3 });
+    const gentle = camo.scrub(clip, { steps, seed: 3, flattenSeconds: FLATTEN.gentle });
+    const strong = camo.scrub(clip, { steps, seed: 3, flattenSeconds: FLATTEN.strong });
+    const r = (o: { output: Float32Array }) => swellCorrelation(o.output, sr, levelDb);
+    console.log(`envelope: swell correlation original ${original.toFixed(2)}, off ${r(off).toFixed(2)}, gentle ${r(gentle).toFixed(2)}, strong ${r(strong).toFixed(2)}`);
     expect(original).toBeGreaterThan(0.9);
-    expect(rFull).toBeGreaterThan(0.6);              // the leak, pinned: if this fails, Full changed
-    expect(rFlat).toBeLessThan(0.3);
-    expect(flat.log.some((l) => l.includes("flattened swells slower than 5 s"))).toBe(true);
-    expect(full.log.some((l) => l.includes("flattened"))).toBe(false);
+    expect(r(off)).toBeGreaterThan(0.6);                 // the leak, pinned: regeneration alone follows the loudness
+    expect(r(gentle)).toBeLessThan(0.3);
+    expect(r(strong)).toBeLessThan(0.3);
+    // The engine's default is gentle, the same as asking for it; 0 really is off.
+    expect(byDefault.output).toEqual(gentle.output);
+    expect(gentle.log.some((l) => l.includes("flattened swells slower than 10 s"))).toBe(true);
+    expect(strong.log.some((l) => l.includes("flattened swells slower than 5 s"))).toBe(true);
+    expect(off.log.some((l) => l.includes("flattened"))).toBe(false);
   }, 600_000);
 });

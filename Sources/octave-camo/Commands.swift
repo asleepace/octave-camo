@@ -28,7 +28,8 @@ USAGE
   octave-camo analyze <in.wav>  [--threshold 10] [--json]
   octave-camo scrub   <in.wav> <out.wav> [--steps mono,hum,subtract,scurve,lowband[,wobble][,lines]]
                         [--mains 50,60] [--passes 3] [--cutoff 300] [--lowband-mode regenerate|highpass]
-                        [--flatten 5] (experimental: flatten low-band swells slower than N s)
+                        [--flatten off|gentle|strong|N] (low-band swells slower than 10 s
+                        (gentle, the default), 5 s (strong) or N s flattened)
                         [--no-keep-voice] [--depth 0.015] [--wobble-top 600] [--seed N]
                         [--expect passes.json] (remove what these predicted Doppler curves carry,
                         until a known-path attacker's test fails: [{"times": [s…], "factors":
@@ -110,7 +111,11 @@ func scrub(_ args: Arguments) throws {
         pipeline.lowband.mode = mode
     }
     pipeline.lowband.keepVoice = !args.flag("no-keep-voice")
-    pipeline.lowband.flattenSeconds = try args.value("flatten", default: pipeline.lowband.flattenSeconds)
+    if let raw = args.string("flatten") {
+        if let named = LowBandRegeneration.Flatten(rawValue: raw) { pipeline.lowband.flattenSeconds = named.seconds }
+        else if let seconds = Double(raw) { pipeline.lowband.flattenSeconds = seconds }
+        else { throw UsageError("--flatten takes \(LowBandRegeneration.Flatten.allCases.map(\.rawValue).joined(separator: ", ")) or seconds") }
+    }
     pipeline.wobble.depth = try args.value("depth", default: pipeline.wobble.depth)
     pipeline.wobble.top = try args.value("wobble-top", default: pipeline.wobble.top)
     pipeline.wobble.seed = try args.value("seed", default: pipeline.wobble.seed)

@@ -372,3 +372,15 @@ describe("size badges", () => {
     expect(wasmBadges(bytes)).toEqual(b);
   });
 });
+
+describe("presets", () => {
+  test("every preset names a flattening strength, and the strengths match the engine's", async () => {
+    const { PRESETS } = await import("../src/presets.ts");
+    const { FLATTEN } = await import("../src/engine/camo.ts");
+    for (const p of Object.values(PRESETS)) expect(Object.keys(FLATTEN)).toContain(p.flatten);
+    expect(PRESETS.full.flatten).toBe("gentle");
+    expect(PRESETS.experimental.flatten).toBe("strong");
+    // LowBandRegeneration.Flatten: off 0, gentle 20, strong 5 (Swift tests pin the other side).
+    expect(FLATTEN).toEqual({ off: 0, gentle: 10, strong: 5 });
+  });
+});

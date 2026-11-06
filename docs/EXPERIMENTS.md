@@ -428,6 +428,22 @@ the window-open pass and the short clip's 737-800 (whose fade fits it, R² 0.71,
 times about as well). With 111 scored, a 3.4 on a far aircraft is probably the tail of the null, as
 with the tone attacker: the bar for this statistic wants calibrating before it's trusted alone.
 
+**Flattening, gentle and strong.** The low band's slow loudness, flattened over a window: on the
+767 (envelope z, unflattened 5.2) every window from 5 to 30 s gives 0.2–0.7; the 60–250 Hz level
+it costs against none is 0.5/0.4/0.3 dB (5/10/20 s) on that session and 3.7/2.6/1.4 dB on the
+bathroom's. A plane closer in swells quicker, and synthetic passes show where a long window stops
+working (correlation of what's left with the swell; 0.98 unflattened):
+
+| Pass | 20 s | 15 s | 10 s | 5 s |
+| --- | ---: | ---: | ---: | ---: |
+| 3 km, 120 m/s | 0.34 | 0.17 | 0.04 | −0.06 |
+| 2 km, 120 m/s | 0.42 | 0.27 | 0.11 | −0.02 |
+| 1 km, 90 m/s | 0.50 | 0.38 | 0.22 | 0.05 |
+| 0.5 km, 120 m/s | 0.69 | 0.61 | 0.50 | 0.30 |
+
+So Full is gentle at 10 s (a plane at a few km, bass movement quicker than that kept) and
+Experimental strong at 5 s; both named, swappable per preset.
+
 **What it reveals:** the moment of closest approach, within a couple of seconds, and from the
 swell's width and size a rough distance; with the flight logs that's a time-and-distance match,
 like the video's two-event method but from loudness. Guards that matter: predictions must swing

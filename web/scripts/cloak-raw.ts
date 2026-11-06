@@ -4,21 +4,17 @@
  * For the lab (python3 -m lab cloak …): no browser, the same engine and presets as the page.
  */
 import { readFileSync, writeFileSync } from "node:fs";
-import { Camo, type Samples, type Step } from "../src/engine/camo.ts";
+import { Camo, FLATTEN, type Samples } from "../src/engine/camo.ts";
 import { scrubInParts } from "../src/engine/chunks.ts";
-
-const PRESETS: Record<string, { steps: Step[]; flattenSeconds: number }> = {
-  full: { steps: ["mono", "hum", "subtract", "scurve", "lowband"], flattenSeconds: 0 },
-  experimental: { steps: ["mono", "hum", "subtract", "scurve", "lowband", "lines"], flattenSeconds: 5 },
-  light: { steps: ["mono", "hum", "lowband"], flattenSeconds: 0 },
-};
+import { PRESETS } from "../src/presets.ts";
 
 const [input, output, rate, preset = "full", seed = "7", wasm = new URL("../public/octave-camo.wasm", import.meta.url).pathname] = process.argv.slice(2);
-if (!input || !output || !rate || !PRESETS[preset]) throw new Error("usage: cloak-raw.ts <in.f32> <out.f32> <sampleRate> <full|experimental|light> [seed] [wasm]");
+if (!input || !output || !rate || !(preset in PRESETS) || preset === "hum") throw new Error("usage: cloak-raw.ts <in.f32> <out.f32> <sampleRate> <full|experimental|light> [seed] [wasm]");
 const bytes = readFileSync(input);
 const x = new Float32Array(bytes.buffer, bytes.byteOffset, bytes.byteLength / 4).slice() as Samples;
 const camo = await Camo.load(readFileSync(wasm));
-const { steps, flattenSeconds } = PRESETS[preset]!;
+const chosen = PRESETS[preset as keyof typeof PRESETS];
+const steps = ["mono" as const, ...chosen.steps], flattenSeconds = FLATTEN[chosen.flatten];
 const t = performance.now();
 const { output: y, log } = scrubInParts({ sampleRate: Number(rate), channels: [x] }, Number(seed),
   (part, s) => camo.scrub(part, { steps, seed: s, cutoff: 300, keepVoice: true, flattenSeconds }));

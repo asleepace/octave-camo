@@ -37,6 +37,12 @@ are grouped by milestone, newest first, with the commits that made them.
   and docs or lab pushes run nothing); Swift tests run in parallel, one process per test; the
   detection baseline (a third of the suite, 283 s) is four parallel parts, and the monotonicity
   test it duplicated is folded into it; every job has a time limit.
+- **Full flattens the low band's slow loudness too** (gently: swells slower than 10 s;
+  Experimental keeps 5 s). The strengths are named (`off`, `gentle`, `strong`) and swappable per
+  preset: `FLATTEN` and `web/src/presets.ts` on the page (now shared with the lab's runner),
+  `LowBandRegeneration.Flatten` and `--flatten off|gentle|strong|N` in the engine and CLI, whose
+  default is now gentle. On a 767 at 3 km that no tone attacker sees, the envelope attacker's
+  z goes 5.5 → 0.2, for 0.4–2.6 dB of 60–250 Hz level.
 - **Lab: the envelope attacker** (`lab envelope`): does a recording's slow level follow a flight's
   predicted level (a jet's broadband roar, invisible to the tone attackers)? A fit holding the
   swell to its physical size, after a correlation proved too weak to see one. It finds a 767 at

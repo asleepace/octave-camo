@@ -6,7 +6,7 @@
 // Calling convention (all sizes in elements, all audio Float32):
 //   ptr = camo_alloc(channels * frames)      write planar input samples at ptr
 //   n   = camo_scrub(ptr, channels, frames, sampleRate, stepsMask, seedLo, seedHi, cutoffHz, keepVoice,
-//                    flattenSeconds, tracksFrom) flattenSeconds 0 = off (LowBandRegeneration.flattenSeconds);
+//                    flattenSeconds, tracksFrom) flattenSeconds 0 = off, < 0 = the default, gentle (LowBandRegeneration.Flatten);
 //                                             tracksFrom >= 0: remove the aircraft camo_archive predicted,
 //                                             this audio starting tracksFrom s into the recording (< 0: off)
 //   out = camo_output()                       n mono output samples (valid until the next scrub)
@@ -140,7 +140,8 @@ func camoScrub(_ input: UnsafePointer<Float>, _ channelCount: Int32, _ frames: I
     }
     if cutoffHz > 0 { pipeline.lowband.cutoff = cutoffHz }
     pipeline.lowband.keepVoice = keepVoice != 0
-    if flattenSeconds.isFinite && flattenSeconds > 0 { pipeline.lowband.flattenSeconds = min(flattenSeconds, 120) }
+    // Exactly as asked (0 = off); negative or not a number keeps the engine's default (gentle).
+    if flattenSeconds.isFinite && flattenSeconds >= 0 { pipeline.lowband.flattenSeconds = min(flattenSeconds, 120) }
     let seed = UInt64(seedHi) << 32 | UInt64(seedLo)
     if seed != 0 {
         pipeline.lowband.seed = seed

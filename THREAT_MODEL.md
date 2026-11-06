@@ -54,7 +54,7 @@ Lowering a tone's level is not enough while its curve survives.
 | Extra audio tracks (iPhone spatial audio, APAC, 4 channels) | Direction of arrival | – | Only the main track is read; the rest are dropped | Covered |
 | Data inside the video packets (H.264/HEVC SEI: encoder settings, camcorder date and GPS, drone telemetry) | Device, time, place | – | SEI removed from copied packets and from the HEVC configuration | Covered for H.264/HEVC; AV1 metadata units are copied |
 | The source's own timestamps (a TS stream starting hours in, a recorder's clock) | Time | – | Timestamps rebased to zero | Covered |
-| Loudness envelope of a pass | Closest-approach time and d/v | Any of the tracks above | `lowband` smoothing and jitter (partial) | **Open:** no envelope attacker yet |
+| Loudness envelope of a pass | Closest-approach time and d/v | Any of the tracks above | `lowband` flattening: swells slower than 10 s (Full) or 5 s (Experimental) | **Covered below 300 Hz at a few km** (lab envelope attacker: a 767 at 3 km, z 5.5 → 0.2); a close pass's quicker swell partly survives Full; above 300 Hz open (a 737 MAX: 4.1 → 2.3–2.9) |
 | Time between events (two passes, a pass and a bell) | One time offset locks every event together, multiplying the evidence | Any of the tracks above | Removing each event's signature; `wobble` warps time by a little | **Open:** measured by `lab locate`; cuts would break it |
 | Silence: no pass where one was due | Rules out places under busy routes; a clean clip still says "nothing audible from t₁ to t₂" | ADS-B | – | **Open:** inherent to removal; decoys would blur it |
 | Scheduled sounds (bells, horns, foghorns) | Time, plus rough distance from level and echo | Timetables | None | **Open** |
@@ -178,10 +178,10 @@ In order of how much we think they matter:
 1. **No real ground truth yet.** Every number above is synthetic. Real clips with saved tracks
    are being collected. Two real outdoor clips have been checked by eye against the check's lines
    (ACOUSTICS.md §1), without flight tracks to score against.
-2. **Loudness envelope attack.** A pass swells and fades over tens of seconds, and `lowband`'s
-   0.75 s smoothing with ±1.5 dB jitter is probably not enough against a whole-envelope match.
-   The matched attacker here doesn't use envelopes, so this is untested. Next step: add an
-   envelope term, then measure.
+2. **Loudness envelope attack.** Measured now (`lab envelope`, docs/EXPERIMENTS.md): a 767's
+   low-band swell at 3 km passed through regeneration alone (z 5.2) and is gone with flattening
+   (0.2), which Full now does over 10 s and Experimental over 5 s. Still open: a close pass's
+   quicker swell under Full, and swells above the low band, which nothing flattens.
 3. **Scheduled sounds** are clocks. Removing them is a sound-event problem, not a DSP one, so a
    classifier is the likely route (detect and duck).
 4. **Video-side ENF: quasi-static bands.** At 30 fps under 60 Hz lights, the 120 Hz bands barely

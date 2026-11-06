@@ -1,6 +1,7 @@
 import "./style.css";
 import { ALL_FORMATS, BlobSource, Input } from "mediabunny";
-import type { Step, Trace } from "./engine/camo.ts";
+import { FLATTEN, type Step, type Trace } from "./engine/camo.ts";
+import { PRESETS } from "./presets.ts";
 import { type Request, type Stage, WorkerMessage } from "./engine/protocol.ts";
 import workerUrl from "./engine/worker.ts?worker&url";
 import { load, type Loaded, MediaError, outputName, prepareAudioEncoder, save } from "./media.ts";
@@ -28,13 +29,6 @@ const CUTOFF = 300;
 /** Shortest clip the picture's flicker scan can judge. */
 const MIN_PICTURE_SECONDS = 5;
 
-const PRESETS = {
-  full: { label: "Full", steps: ["hum", "subtract", "scurve", "lowband"], note: "planes, trains and ships", flattenSeconds: 0 },
-  experimental: { label: "Experimental", steps: ["hum", "subtract", "scurve", "lowband", "lines"], flattenSeconds: 5,
-                  note: "full, plus every tone the check finds filled in and slow low-band swells flattened (being tested)" },
-  light: { label: "Light", steps: ["hum", "lowband"], note: "faster, but partial: misses trains and close passes", flattenSeconds: 0 },
-  hum: { label: "Hum only", steps: ["hum"], note: "partial: removes the recording-time clock only", flattenSeconds: 0 },
-} as const satisfies Record<string, { label: string; steps: readonly Step[]; note: string; flattenSeconds: number }>;
 /** Presets that cloak everything Full does (so the result isn't "partly" cloaked). */
 const COMPLETE: readonly Preset[] = ["full", "experimental"];
 type Preset = keyof typeof PRESETS;
@@ -375,7 +369,7 @@ function cloak() {
     send({
       type: "scrub", token: fileToken, sampleRate: loaded.clip.sampleRate, channels: loaded.clip.channels,
       steps: ["mono", ...PRESETS[state.preset].steps], seed: randomSeed(), cutoff: CUTOFF, keepVoice: true,
-      flattenSeconds: PRESETS[state.preset].flattenSeconds, tracks: tracksKey() !== "",
+      flattenSeconds: FLATTEN[PRESETS[state.preset].flatten], tracks: tracksKey() !== "",
     });
   } catch (error) {
     return fail(`couldn't start the cloak (${(error as Error).message})`);
@@ -730,9 +724,9 @@ function renderBands() {
 
 function renderSteps() {
   const on = new Set<Step>(PRESETS[state.preset].steps);
-  const flatten = PRESETS[state.preset].flattenSeconds;
+  const flatten = FLATTEN[PRESETS[state.preset].flatten];
   const extra: Partial<Record<Step, string>> = flatten > 0
-    ? { lowband: ` ${PRESETS[state.preset].label}: its loudness also loses every swell slower than ${flatten} s, so a plane's rise and fall can't be lined up with flight tracks; thumps and doors stay.` } : {};
+    ? { lowband: ` ${PRESETS[state.preset].label}: its loudness also loses every swell slower than ${flatten} s, so a plane's rise and fall can't be lined up with flight tracks; ${flatten >= 10 ? "speech, music and anything quicker keep their movement" : "thumps and doors stay"}.` } : {};
   $("steps-explained").innerHTML = (Object.entries(STEP_TEXT) as [Step, [string, string]][]).map(([step, [title, body0]], i) => [step, [title, body0 + (extra[step] ?? "")], i] as const).map(([step, [title, body], i]) =>
     `<li class="${on.has(step) ? "" : "text-neutral-500"}"><span class="${on.has(step) ? "text-neutral-200" : "text-neutral-400"}">${i + 1}. ${title}.</span> ${body}${on.has(step) ? "" : ` <span class="text-neutral-500">(off in ${PRESETS[state.preset].label})</span>`}</li>`,
   ).join("") + `<li class="${tracksKey() ? "" : "text-neutral-500"}"><span class="${tracksKey() ? "text-neutral-200" : "text-neutral-400"}">${Object.keys(STEP_TEXT).length + 1}. Remove what flight tracks predict (optional).</span> With adsb.lol's archive for the half hour and where the clip was recorded, each aircraft that passed within 15 km gets four predicted Doppler curves (its logged positions are a few seconds stale, so their shapes differ). Along each, the cloak runs the test an attacker holding the logs would: every rest frequency and a few seconds of timing slack, against the same curve at wrong times. Whatever stands out is filled with noise and tested again, until nothing does.</li>` + `<li class="${state.loaded && !state.loaded.video ? "text-neutral-500" : ""}"><span class="${state.loaded && !state.loaded.video ? "text-neutral-400" : "text-neutral-200"}">${Object.keys(STEP_TEXT).length + 2}. Remove light flicker (picture).</span> When the scan finds bands from flickering lights, each row is divided by its estimated band, which takes the grid clock out of the picture. On when bands are found (untick it to keep the picture untouched), since it re-encodes the video.</li>`;

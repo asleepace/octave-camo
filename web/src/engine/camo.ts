@@ -60,12 +60,19 @@ export type ScrubOptions = {
   cutoff?: number;
   /** Keep tracked voice harmonics below the cutoff (default true). */
   keepVoice?: boolean;
-  /** Flatten loudness swells below the cutoff slower than this, s (omitted or 0 = off). */
+  /** Flatten loudness swells below the cutoff slower than this, s: 0 = off; omitted = the engine's
+   *  default (gentle). See FLATTEN. */
   flattenSeconds?: number;
   /** Remove the aircraft `archive()` predicted, this audio starting this many seconds into the
    *  recording (omitted: no flight-track removal). */
   tracksFrom?: number;
 };
+
+/** How much of the low band's slow loudness the cloak takes out (LowBandRegeneration.Flatten): swells
+ *  slower than this many seconds go: gentle (10 s) takes a plane's at a few km and keeps quicker
+ *  movement in the bass; strong (5 s) also takes most of a close pass's. */
+export const FLATTEN = { off: 0, gentle: 10, strong: 5 } as const;
+export type Flatten = keyof typeof FLATTEN;
 
 /** Where and when a recording was made, for predicting the aircraft it heard (never sent anywhere). */
 export type Place = {
@@ -156,7 +163,7 @@ export class Camo {
     const seed = options.seed ?? 0;
     return this.withInput(clip, (pointer, frames) => {
       const n = this.x.camo_scrub(pointer, clip.channels.length, frames, clip.sampleRate, mask,
-        seed >>> 0, Math.floor(seed / 2 ** 32) >>> 0, options.cutoff ?? 0, options.keepVoice === false ? 0 : 1, options.flattenSeconds ?? 0,
+        seed >>> 0, Math.floor(seed / 2 ** 32) >>> 0, options.cutoff ?? 0, options.keepVoice === false ? 0 : 1, options.flattenSeconds ?? -1,
         options.tracksFrom ?? -1);
       if (n !== frames) throw new Error("the scrubber rejected this audio");
       const output = new Float32Array(this.x.memory.buffer, this.x.camo_output(), n).slice();

@@ -254,10 +254,61 @@ final class LowBandTests: XCTestCase {
         XCTAssertTrue(step.allSatisfy(\.isFinite))
     }
 
-    /// Off by default: the default pipeline (and so every behaviour snapshot) is untouched.
-    func testFlatteningIsOffByDefault() {
-        XCTAssertEqual(LowBandRegeneration().flattenSeconds, 0)
-        XCTAssertEqual(ScrubPipeline().lowband.flattenSeconds, 0)
+    /// Gentle by default (Full), so the default pipeline doesn't pass a plane's swell on.
+    func testFlatteningIsGentleByDefault() {
+        XCTAssertEqual(LowBandRegeneration().flattenSeconds, LowBandRegeneration.Flatten.gentle.seconds)
+        XCTAssertEqual(ScrubPipeline().lowband.flattenSeconds, 10)
+        XCTAssertEqual(LowBandRegeneration.Flatten.allCases.map(\.seconds), [0, 10, 5])
+    }
+
+    /// A Gaussian swell in the low band, `sigma` s wide, `depth` dB at its peak, mid-clip.
+    private func swell(seconds: Double, sigma: Double, depth: Double = 12) -> [Double] {
+        let x = noise(Int(seconds * Double(sr)), rms: 0.01, seed: 21)
+        return x.indices.map { i in
+            let t = Double(i) / Double(sr) - seconds / 2
+            return x[i] * pow(10, depth * exp(-t * t / (2 * sigma * sigma)) / 20)
+        }
+    }
+
+    /// The plane-sized swell (σ 15 s, as from a jet a few km off): gentle takes it out as well as
+    /// strong does. A quicker one (σ 2 s, a crescendo or someone walking past): gentle keeps most
+    /// of it, strong less. At every width the stronger setting leaves no more than the weaker.
+    func testGentleTakesAPlaneSwellAndKeepsQuickerOnes() {
+        let swing = { (y: [Double]) -> Double in let l = self.blockLevels(y, 30, 220, seconds: 2); return l.max()! - l.min()! }
+        let plane = swell(seconds: 120, sigma: 15)
+        XCTAssertGreaterThan(swing(regenerate(plane, flatten: 0)), 8)
+        XCTAssertLessThan(swing(regenerate(plane, flatten: LowBandRegeneration.Flatten.gentle.seconds)), 3.5)
+        XCTAssertLessThan(swing(regenerate(plane, flatten: LowBandRegeneration.Flatten.strong.seconds)), 3.5)
+        let quick = swell(seconds: 60, sigma: 2)
+        let off = swing(regenerate(quick, flatten: 0))
+        let gentle = swing(regenerate(quick, flatten: LowBandRegeneration.Flatten.gentle.seconds))
+        let strong = swing(regenerate(quick, flatten: LowBandRegeneration.Flatten.strong.seconds))
+        XCTAssertGreaterThan(gentle, 0.6 * off, "gentle should keep most of a 2 s swell (off \(off), gentle \(gentle))")
+        XCTAssertLessThan(strong, gentle, "strong should flatten a 2 s swell more than gentle")
+        for sigma in [1.0, 4, 8, 15, 30] {
+            let x = swell(seconds: 150, sigma: sigma)
+            let levels = [0.0, 10, 5].map { swing(regenerate(x, flatten: $0)) }
+            XCTAssertGreaterThanOrEqual(levels[0] + 1, levels[1], "σ \(sigma) s: off \(levels[0]) vs gentle \(levels[1])")
+            XCTAssertGreaterThanOrEqual(levels[1] + 1, levels[2], "σ \(sigma) s: gentle \(levels[1]) vs strong \(levels[2])")
+        }
+    }
+
+    /// Both strengths keep short thumps.
+    func testEveryStrengthKeepsShortThumps() {
+        var x = noise(sr * 30, rms: 0.01, seed: 9)
+        let thump = noise(Int(0.15 * Double(sr)), rms: 0.08, seed: 10)
+        for start in stride(from: sr, to: x.count - thump.count, by: 2 * sr) {
+            for i in thump.indices { x[start + i] += thump[i] * sin(Double.pi * Double(i) / Double(thump.count)) }
+        }
+        let contrast = { (y: [Double]) -> Double in
+            let l = self.blockLevels(y, 30, 220, seconds: 0.5)
+            let on = l.indices.filter { $0 % 4 == 2 }.map { l[$0] }, off = l.indices.filter { $0 % 4 == 0 }.map { l[$0] }
+            return on.reduce(0, +) / Double(on.count) - off.reduce(0, +) / Double(off.count)
+        }
+        let plain = contrast(regenerate(x, flatten: 0))
+        for f in LowBandRegeneration.Flatten.allCases where f != .off {
+            XCTAssertEqual(contrast(regenerate(x, flatten: f.seconds)), plain, accuracy: 1.5, "\(f)")
+        }
     }
 
     func testDefaultPipelineIncludesLowband() {

@@ -36,8 +36,36 @@ public struct LowBandRegeneration: ScrubStage {
     /// (see `flatten`): it keeps the band's median level and anything quicker (a thump, a door,
     /// footsteps), but not the rise and fall
     /// of a passing plane over tens of seconds, which the smoothing above lets through and an
-    /// attacker can line up with flight tracks (docs/ACOUSTICS.md, the envelope attack).
-    public var flattenSeconds = 0.0
+    /// attacker can line up with flight tracks (docs/ACOUSTICS.md, the envelope attack). Gentle by
+    /// default (see `Flatten`).
+    public var flattenSeconds = Flatten.gentle.seconds
+
+    /// Named strengths for `flattenSeconds`, so presets can swap them.
+    ///
+    /// The window decides which swells go. On synthetic low-band swells from a pass (15 dB at
+    /// closest; correlation of what's left with the swell, from 0.98 unflattened): at 3 km and
+    /// 120 m/s, 20 s leaves 0.34, 10 s 0.04, 5 s −0.06; at 1 km and 90 m/s, 0.50, 0.22, 0.05; at
+    /// 0.5 km, 0.69, 0.50, 0.30. On a real 767 at 3.1 km (envelope attacker z 5.5, unflattened
+    /// 5.2), 10 s and 5 s both give 0.2. The cost, in 60–250 Hz level against no flattening on two
+    /// sessions: 10 s 0.4 and 2.6 dB, 5 s 0.5 and 3.7 dB. So gentle is 10 s: a plane's swell at a
+    /// few km, keeping movement in the bass quicker than that (speech, music, footsteps); strong is
+    /// 5 s, which also takes most of a close pass's quicker swell.
+    public enum Flatten: String, CaseIterable, Sendable {
+        /// Regenerated loudness follows the original's (the envelope attack's clue passes).
+        case off
+        /// Swells slower than about 10 s: a plane's at a few km, not much else.
+        case gentle
+        /// Swells slower than about 5 s: most of a close pass's too, at more of the bass's movement.
+        case strong
+
+        public var seconds: Double {
+            switch self {
+            case .off: 0
+            case .gentle: 10
+            case .strong: 5
+            }
+        }
+    }
     public var fftSize = 8_192
     /// Width, in ERBs, over which the noise's spectral shape is smoothed. Anything narrower (a
     /// notch left by `hum`, a steady motor tone) would otherwise be copied into the new noise.

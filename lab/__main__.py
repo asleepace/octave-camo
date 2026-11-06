@@ -283,8 +283,8 @@ def expected_passes(sid: str, max_km: float = 15.0) -> list[dict]:
 
 
 PRESET_ARGS = {
-    "full": ["--steps", "mono,hum,subtract,scurve,lowband"],
-    "experimental": ["--steps", "mono,hum,subtract,scurve,lowband,lines", "--flatten", "5"],
+    "full": ["--steps", "mono,hum,subtract,scurve,lowband", "--flatten", "gentle"],
+    "experimental": ["--steps", "mono,hum,subtract,scurve,lowband,lines", "--flatten", "strong"],
 }
 
 
