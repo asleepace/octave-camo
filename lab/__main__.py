@@ -13,6 +13,7 @@
                                         audio of it, e.g. cloaked copies, aligned automatically)
   check <session> [audio …]             the page's check (the real wasm build) on the session and
                                         on other audio of it: counts and flyby passes
+  zenodo [--limit N]                    the public 40-flight corpus as a tone-removal holdout (once)
   locate <session> [audio …] [--envelope]   the place-searching attacker: rank of the true position
                                         (--envelope: the loudness swell too, alone and combined)
                                         among a grid of candidates (distances and areas only)
@@ -347,6 +348,26 @@ def cmd_trackfill(sid: str, presets: list[str]):
             print(dst)
 
 
+def cmd_zenodo(args: list[str]):
+    """The public 40-flight corpus as a tone-removal holdout (lab/zenodo.py). Scored once."""
+    from concurrent.futures import ProcessPoolExecutor
+    from . import zenodo
+    ps = [p for p in zenodo.passes() if zenodo.usable(p)]
+    if "--limit" in args:
+        ps = ps[: int(args[args.index("--limit") + 1])]
+    t = time.time()
+    with ProcessPoolExecutor(2) as pool:
+        rows = list(pool.map(zenodo.run_pass, ps, [PRESET_ARGS] * len(ps)))
+    print(f"{zenodo.CITATION}\n{len(rows)} passes ({time.time() - t:.0f} s)\n")
+    print("| case | category | closest | z original | Full | Experimental | Full + perfect curve | blind check: original / Full |")
+    print("| --- | --- | ---: | ---: | ---: | ---: | ---: | --- |")
+    for r in rows:
+        g = lambda k: r.get(k, {}).get("z", float("nan"))
+        b = lambda k: (r.get(k, {}).get("blind") or {}).get("doppler")
+        print(f"| {r['case']} | {r['category']} | {r['closest_m']:.0f} m | {g('original')} | {g('full')} | {g('experimental')} | {g('full+tracks')} | {b('original')} / {b('full')} |")
+    save_result("zenodo", rows)
+
+
 def cmd_bench(args: list[str]):
     from . import bench
     per = int(args[args.index("--per") + 1]) if "--per" in args else 16
@@ -411,6 +432,8 @@ def main(argv):
         cmd_envelope(rest[0], rest[1:])
     elif cmd == "ml":
         cmd_ml(rest)
+    elif cmd == "zenodo":
+        cmd_zenodo(rest)
     elif cmd == "bench":
         cmd_bench(rest)
     elif cmd == "trackfill":

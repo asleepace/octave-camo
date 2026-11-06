@@ -9,7 +9,7 @@ import unittest
 import numpy as np
 from scipy.signal import firwin, lfilter
 
-from lab import common, corpus, detect, locate
+from lab import common, corpus, detect, locate, zenodo
 
 SR = 16_000
 
@@ -203,6 +203,33 @@ class NullBits(unittest.TestCase):
         Z = np.full((50, 2), np.nan); Z[10:, 0] = np.linspace(-2, 2, 40)
         nb = locate.null_bits(Z, 0)
         self.assertTrue(np.allclose(nb, nb[0]))
+
+
+class PublicCorpus(unittest.TestCase):
+    """lab/zenodo.py's pure parts, on a made-up traced curve (no data needed)."""
+
+    def traced(self):
+        t = np.arange(0, 50, 0.1707)
+        rng = np.random.default_rng(1)
+        return {"t": t, "f": 300 * factor(t + 5) + rng.normal(0, 2, len(t))}   # falls around t = 25 s
+
+    def test_shape_finds_the_fall_and_normalises(self):
+        t, fac, tc = zenodo.shape(self.traced())
+        self.assertAlmostEqual(np.median(fac), 1.0, delta=0.01)
+        self.assertAlmostEqual(tc, 25.0, delta=2.0)
+
+    def test_expected_pass_is_what_the_engine_accepts(self):
+        e = zenodo.expected_pass(self.traced(), zenodo.OFFSET_S, 60.0)
+        t, f = np.array(e["times"]), np.array(e["factors"])
+        self.assertTrue(np.all(np.diff(t) > 0))
+        self.assertTrue(np.all((f > 0.5) & (f < 2)))
+        self.assertLess(t[0], 0)                                   # covers the audio and beyond
+        self.assertGreater(t[-1], 60)
+        self.assertAlmostEqual(e["closest"], 25.0 + zenodo.OFFSET_S, delta=2.0)
+        # Flat beyond the trace: the first and last factors are the trace's end values.
+        _, fac, _ = zenodo.shape(self.traced())
+        self.assertAlmostEqual(f[0], fac[0], places=5)
+        self.assertAlmostEqual(f[-1], fac[-1], places=5)
 
 
 class Holdout(unittest.TestCase):
