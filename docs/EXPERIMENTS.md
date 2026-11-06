@@ -448,6 +448,15 @@ known-path attacker scores 0.8 (a residual the attacker's curve misses, or a fal
 into); on the deck clip, Full's output shows two more falling tones (2.7–3.1 kHz and 0.57–0.66 kHz)
 than the original did.
 
+**A walk outdoors** (133 s, walking 133 m along streets: cars, voices; nearest aircraft a helicopter
+3.7 km and an A321neo 7.3 km away): the check and E2 report nothing; the known-path attacker finds
+nothing (z ≤ 1.8). The learned detector reports one pass, 395 → 343 Hz at 75–87 s, while the
+A321neo was closest (81 s); but that plane's predicted curve through those frequencies falls more
+steeply (408 → 322 Hz) and the attacker, searching 300–450 Hz along it, scores 0.5. Most likely a
+car: one more false pass in traffic. (The corpus places the listener where the recording started;
+133 m is under 4 % of these distances, but a walking recording near a close source would need the
+location track.) The recorder's mains estimate now reports no grid outdoors, as it should.
+
 **Verdict:** worth pursuing, not yet worth porting (step 3 was "only if it clearly wins"). It wins
 on sensitivity and loses on real-world false alarms. Next: harder negatives in training (vehicles
 slowing down, reversing beepers, more real outdoor backgrounds: the construction session is where
