@@ -13,7 +13,8 @@
                                         audio of it, e.g. cloaked copies, aligned automatically)
   check <session> [audio …]             the page's check (the real wasm build) on the session and
                                         on other audio of it: counts and flyby passes
-  locate <session> [audio …]            the place-searching attacker: rank of the true position
+  locate <session> [audio …] [--envelope]   the place-searching attacker: rank of the true position
+                                        (--envelope: the loudness swell too, alone and combined)
                                         among a grid of candidates (distances and areas only)
   trackfill <session> [preset …] [--archive] [--stop Z] [--seed N]
                                         cloak with flight-track removal (the CLI's --expect, curves
@@ -244,17 +245,24 @@ def cmd_check(sid: str, others: list[str]):
 def cmd_locate(sid: str, others: list[str]):
     """The place-searching attacker (lab/locate.py) on the session and on copies of it."""
     from . import locate
-    audios, sr = with_copies(sid, others)
+    audios, sr = with_copies(sid, [o for o in others if o != "--envelope"])
     t = time.time()
-    rows = locate.locate(sid, audios, sr)
-    print("| audio | aircraft | true point's rank (of grid) | rank bits (no-information mean, p) | best guess off by | fine best off by | area within 3 / 6 of best | truth z by aircraft |")
-    print("| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |")
+    rows = locate.locate(sid, audios, sr, envelope="--envelope" in others)
+    print("| audio | aircraft | true point's rank (of grid) | rank bits (no-information mean, p) | p from the bottom (a hole) | best guess off by | fine best off by | area within 3 / 6 of best | truth z by aircraft |")
+    print("| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |")
     for r in rows:
         z = ", ".join(f"{v}" for v in r["truth_z_by_aircraft"].values() if v is not None)
-        print(f"| {r['name']} | {r['aircraft']} | {r['truth_rank']} of {r['points']} ({r['truth_percentile']} %) | {r['rank_bits']} ({r['null_bits_mean']}, p {r['p']}) | "
+        print(f"| {r['name']} | {r['aircraft']} | {r['truth_rank']} of {r['points']} ({r['truth_percentile']} %) | {r['rank_bits']} ({r['null_bits_mean']}, p {r['p']}) | {r['p_low']} | "
               f"{r['best_error_m']} m | {r['fine_best_error_m']} m | {r['area_within_3_km2']} / {r['area_within_6_km2']} km² | {z} |")
+    if any("envelope" in r for r in rows):
+        print("\n| audio | loudness: rank, p, p from the bottom | tones + loudness: rank, p, p from the bottom | loudness z by aircraft |")
+        print("| --- | ---: | ---: | --- |")
+        for r in rows:
+            e, b = r["envelope"], r["combined"]
+            print(f"| {r['name']} | {e['rank']}, p {e['p']}, {e['p_low']} | {b['rank']}, p {b['p']}, {b['p_low']} | "
+                  f"{', '.join(str(v) for v in r['envelope_z_by_aircraft'].values())} |")
     print(f"\n{time.time() - t:.0f} s")
-    save_result(f"locate-{sid}", rows)
+    save_result(f"locate-{sid}" + ("-envelope" if "--envelope" in others else ""), rows)
 
 
 def clean_curve(heard: np.ndarray, fac: np.ndarray, closest: float) -> dict:

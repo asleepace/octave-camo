@@ -93,6 +93,28 @@ class Geometry(unittest.TestCase):
         self.assertAlmostEqual(tc1 - tc0, 10.0, delta=0.5)       # 1.4 km along the track at 140 m/s
         self.assertAlmostEqual(r1, r0, delta=20)
 
+    def test_envelope_scores_the_swell_where_it_was_heard(self):
+        """Broadband noise swelling as a pass 1.5 km away predicts: the loudness score at the
+        truth beats the same pass at wrong times, and beats a point far from the track (a nearby
+        one can fit nearly as well: the swell's width pins distance only coarsely)."""
+        speed, distance = 120.0, 1_500.0
+        te = np.arange(-200, 200, 0.1)
+        q = np.stack([speed * te, np.full_like(te, distance), np.full_like(te, 300.0)], 1)
+        geo = {"speed_of_sound": 343.0, "duration_s": 120.0,
+               "tracks": {"abc123": (te + 60, q, np.tile([speed, 0.0, 0.0], (len(te), 1)))}}
+        heard, r = locate.ranges(geo, np.zeros(2))["abc123"]
+        rng = np.random.default_rng(2)
+        sr = 8_000
+        t = np.arange(int(sr * 120)) / sr
+        gain = 10 ** (np.interp(t, heard, -20 * np.log10(r)) / 20)
+        x = rng.normal(0, 1, len(t)) * (0.05 + 300 * gain)        # a steady floor plus the swell
+        scene = locate.EnvelopeScene(x, sr)
+        s0, m, sd = scene.scores(heard, r, 0.0)
+        self.assertGreater((s0 - m) / sd, 3)
+        far_heard, far_r = locate.ranges(geo, np.array([0.0, -6_000.0]))["abc123"]
+        s1, _, _ = scene.scores(far_heard, far_r, 0.0)
+        self.assertTrue(np.isnan(s1) or s0 > s1, s1)
+
     def test_grid_has_the_truth_and_combine_ignores_silence(self):
         g = locate.grid(1_000, 500)
         self.assertTrue(np.any(np.all(g == 0, axis=1)))
@@ -159,6 +181,23 @@ class NullBits(unittest.TestCase):
         self.assertGreater(bits, 2.5)               # the raw rank flatters it...
         self.assertGreater((nb >= bits).mean(), 0.05)   # ...but no-information audio gets that often
         self.assertGreater(nb.mean(), 0.5)          # and the baseline itself is above 0
+
+    def test_a_hole_shows_from_the_bottom(self):
+        rng = np.random.default_rng(4)
+        Z = rng.normal(0, 1, (1000, 3))
+        Z[0] = [-2.5, -2.5, -2.5]                   # removal left the truth below every wrong place
+        total = locate.combine(Z)
+        others = np.sort(np.delete(total, 0))
+        low = locate.rank_bits(locate._rank(total[0], others, low=True), len(total))
+        self.assertLess((locate.null_bits(Z, 0, low=True) >= low).mean(), 0.01)
+        high = locate.rank_bits(locate._rank(total[0], others), len(total))
+        self.assertGreater((locate.null_bits(Z, 0) >= high).mean(), 0.9)   # the top-down score misses it
+
+    def test_ranks_count_ties_in_the_middle(self):
+        others = np.array([0.0, 0.0, 0.0, 1.0])
+        self.assertEqual(locate._rank(0.0, others), 1 + 2)       # one above; four tied (with itself) → middle
+        self.assertEqual(locate._rank(0.0, others, low=True), 2)
+        self.assertEqual(locate._rank(2.0, others), 1)
 
     def test_nothing_heard_at_the_truth_means_its_rank_is_fixed(self):
         Z = np.full((50, 2), np.nan); Z[10:, 0] = np.linspace(-2, 2, 40)

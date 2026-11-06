@@ -107,6 +107,49 @@ class Scene:
         return float(self.A[K[inside], j[None, :]].mean(1).max())
 
 
+class EnvelopeScene:
+    """One audio's band levels (the loudness attacker's, lab/envelope.py), for scoring each
+    point's predicted swell: a jet's roar has no tone for the curves above, but its level still
+    rises and falls with distance. Same timing, window and wrong times as the tone score."""
+
+    def __init__(self, x: np.ndarray, sr: int):
+        from .envelope import band_levels
+        self.t, self.levels = band_levels(x, sr)
+
+    def scores(self, heard: np.ndarray, r: np.ndarray, t_close: float) -> tuple[float, float, float]:
+        """(score, null mean, null spread): the best R² over bands of the predicted level (spreading
+        and absorption at each band's centre) over the whole clip, and the same at the envelope
+        attacker's 34 wrong times (20–60 s: a swell is slow, so nearer ones fit nearly as well). A
+        prediction that barely swings fits any drift, so curves swinging under 1.5 dB don't count.
+        `t_close` is unused (the swell is scored everywhere it's predicted)."""
+        from .envelope import fit_r2_many
+        from .passes import absorption_db_per_km
+        j = np.arange(0, len(self.t), 2)              # every second (levels are 1 s windows, 0.5 s apart)
+        if len(j) < 20:
+            return np.nan, np.nan, np.nan
+        shifts = (0.0,) + tuple(detect.NULL_SHIFTS)
+        best = np.full(len(shifts), np.nan)
+        rr = np.maximum(r, 1.0)
+        for (lo, hi), lv in self.levels.items():
+            fc = np.sqrt(lo * hi)
+            pred = -20 * np.log10(rr) - absorption_db_per_km(fc) * rr / 1_000
+            P = np.array([np.interp(self.t[j] - d, heard, pred, left=np.nan, right=np.nan) for d in shifts])
+            ok = np.isfinite(P).all(0)
+            if ok.sum() < 20:
+                continue
+            P, L = P[:, ok], lv[j][ok]
+            swing = np.ptp(P, axis=1) >= 1.5
+            if not swing[0]:
+                continue
+            r2 = np.full(len(shifts), np.nan)
+            r2[swing] = fit_r2_many(L, P[swing], step=1.5, nb=12)
+            best = np.fmax(best, r2)
+        nulls = best[1:][np.isfinite(best[1:])]
+        if not np.isfinite(best[0]) or len(nulls) < 20:
+            return np.nan, np.nan, np.nan
+        return float(best[0]), float(nulls.mean()), float(nulls.std())
+
+
 def curves(geo: dict, p: np.ndarray):
     """For a candidate point p (metres east, north; same height), each aircraft's heard time,
     Doppler factor and predicted closest-approach time in the audio, and its closest distance."""
@@ -119,6 +162,16 @@ def curves(geo: dict, p: np.ndarray):
         heard = te + r / c
         i = int(np.argmin(r))
         out[h] = (heard, 1 / (1 + vr / c), float(heard[i]), float(r[i]))
+    return out
+
+
+def ranges(geo: dict, p: np.ndarray) -> dict:
+    """For a candidate point, each aircraft's heard time and slant range (for the level it predicts)."""
+    c = geo["speed_of_sound"]
+    out = {}
+    for h, (te, q, v) in geo["tracks"].items():
+        r = np.linalg.norm(q - np.array([p[0], p[1], 0.0]), axis=1)
+        out[h] = (te + r / c, r)
     return out
 
 
@@ -173,26 +226,67 @@ def rank_bits(rank: float, points: int) -> float:
     return float(np.log2((points + 1) / 2 / rank))
 
 
-def null_bits(Z: np.ndarray, truth: int, draws: int = 4000, seed: int = 0) -> np.ndarray:
+def _rank(value, others: np.ndarray, low: bool = False):
+    """Rank of `value` (scalar or array) among the sorted `others` plus itself, ties in the middle:
+    from the top, or with `low` from the bottom."""
+    gt = len(others) - np.searchsorted(others, value, side="right")
+    lt = np.searchsorted(others, value, side="left")
+    tied = len(others) - gt - lt
+    return (lt if low else gt) + (tied + 2) // 2
+
+
+def null_bits(Z: np.ndarray, truth: int, exclude: np.ndarray | None = None, low: bool = False,
+              draws: int = 4000, seed: int = 0) -> np.ndarray:
     """Rank bits the truth would get from audio with no information about it, in this scene: each
     aircraft it hears gets a z drawn from that aircraft's z at the other points that hear it (what
     a wrong place scores), the other points keep theirs. Needed because the truth always hears the
     aircraft passing it while many grid points hear none and score exactly 0, so any positive
     noise at the truth beats all of those: one aircraft at z 1.2 ranked a truth 40th of 1,089
-    (3.8 bits) with nothing there."""
+    (3.8 bits) with nothing there. `exclude` marks points left out of the draws (those near the
+    truth share its evidence, so they aren't wrong places). With `low`, ranks from the bottom: an
+    attacker looking for a hole (removal that leaves the truth scoring below wrong places)."""
     total = combine(Z)
     others = np.sort(np.delete(total, truth))
+    keep = np.ones(len(Z), bool)
+    keep[truth] = False
+    if exclude is not None:
+        keep &= ~exclude
     rng = np.random.default_rng(seed)
     t = np.zeros(draws)
     for k in np.flatnonzero(np.isfinite(Z[truth])):
-        pool = np.delete(Z[:, k], truth)
+        pool = Z[keep, k]
         pool = pool[np.isfinite(pool)]
         if len(pool):
             t += rng.choice(pool, draws)
-    above = len(others) - np.searchsorted(others, t, side="right")
-    tied = np.searchsorted(others, t, side="right") - np.searchsorted(others, t, side="left")
-    rank = above + (tied + 2) // 2                  # the truth itself included, ties in the middle
-    return np.log2((len(total) + 1) / 2 / rank)
+    return np.log2((len(total) + 1) / 2 / _rank(t, others, low))
+
+
+def search_envelope(scene: EnvelopeScene, geo: dict, hexes: list[str], points: np.ndarray) -> np.ndarray:
+    """As `search`, for the loudness swell: points × aircraft × (score, null mean, null spread)."""
+    dur = geo["duration_s"]
+    S = np.full((len(points), len(hexes), 3), np.nan)
+    for i, p in enumerate(points):
+        rg = ranges(geo, p)
+        for k, h in enumerate(hexes):
+            heard, r = rg[h]
+            m = int(np.argmin(r))
+            tc = float(heard[m])
+            if -HALF_WINDOW_S < tc < dur + HALF_WINDOW_S and r[m] <= MAX_RANGE_KM * 1000:
+                S[i, k] = scene.scores(heard, r, tc)
+    return S
+
+
+def place(Z: np.ndarray, truth: int, near: np.ndarray) -> dict:
+    """The truth's place in one score map (points × aircraft z): rank from the top and from the
+    bottom, rank bits, and p against the scene's no-information baseline for each."""
+    total = combine(Z)
+    others = np.sort(np.delete(total, truth))
+    rank, rank_low = int(_rank(total[truth], others)), int(_rank(total[truth], others, low=True))
+    bits, bits_low = rank_bits(rank, len(total)), rank_bits(rank_low, len(total))
+    nb, nb_low = null_bits(Z, truth, near), null_bits(Z, truth, near, low=True)
+    return {"rank": rank, "bits": round(bits, 2), "p": round(float((nb >= bits - 1e-9).mean()), 3),
+            "null_bits_mean": round(float(nb.mean()), 2),
+            "rank_low": rank_low, "p_low": round(float((nb_low >= bits_low - 1e-9).mean()), 3)}
 
 
 def grid(extent_m: float, step_m: float, center=(0.0, 0.0)) -> np.ndarray:
@@ -202,9 +296,11 @@ def grid(extent_m: float, step_m: float, center=(0.0, 0.0)) -> np.ndarray:
 
 
 def locate(sid: str, audios: list[tuple[str, np.ndarray]], sr: int, extent_m: float = 8_000,
-           coarse_m: float = 500, fine_m: float = 100, fine_extent_m: float = 1_000) -> list[dict]:
+           coarse_m: float = 500, fine_m: float = 100, fine_extent_m: float = 1_000, envelope: bool = False) -> list[dict]:
     """Search a coarse grid around the true position, then a fine one around the coarse best and
-    around the truth (so the truth is always scored on the fine grid's terms). Summaries only."""
+    around the truth (so the truth is always scored on the fine grid's terms). Summaries only.
+    With `envelope`, also the loudness swell on the coarse grid, alone and combined with the tones
+    (each aircraft's better z of the two at each point)."""
     geo = corpus.geometry(sid)
     hexes = audible(geo, extent_m)
     coarse = grid(extent_m, coarse_m)
@@ -223,9 +319,13 @@ def locate(sid: str, audios: list[tuple[str, np.ndarray]], sr: int, extent_m: fl
         ft = int(np.argmin(np.hypot(*fine.T)))
         # Ties share the middle rank: points no aircraft reaches all score 0, and the truth among
         # them is no better placed than any.
-        rank = int((total > total[truth_i]).sum() + ((total == total[truth_i]).sum() + 1) // 2)
+        others = np.sort(np.delete(total, truth_i))
+        rank = int(_rank(total[truth_i], others))
+        rank_low = int(_rank(total[truth_i], others, low=True))
         within = lambda d: float((total >= total[best_i] - d).sum() * (coarse_m / 1000) ** 2)
-        bits, nb = rank_bits(rank, len(coarse)), null_bits(Zc, truth_i)
+        near = np.hypot(*coarse.T) < 2_000            # shares the truth's evidence: not a wrong place
+        bits, nb = rank_bits(rank, len(coarse)), null_bits(Zc, truth_i, near)
+        bits_low, nb_low = rank_bits(rank_low, len(coarse)), null_bits(Zc, truth_i, near, low=True)
         per_aircraft = {h: round(float(Zc[truth_i, k]), 1) for k, h in enumerate(hexes) if np.isfinite(Zc[truth_i, k])}
         results.append({
             "name": name, "aircraft": len(hexes), "points": len(coarse),
@@ -238,8 +338,16 @@ def locate(sid: str, audios: list[tuple[str, np.ndarray]], sr: int, extent_m: fl
             # reaches the observed bits (p), and the excess (observed minus mean).
             "null_bits_mean": round(float(nb.mean()), 2), "null_bits_p95": round(float(np.percentile(nb, 95)), 2),
             "p": round(float((nb >= bits - 1e-9).mean()), 3), "excess_bits": round(float(bits - nb.mean()), 2),
+            # The same from the bottom: does removal leave a hole at the truth?
+            "rank_low": rank_low, "rank_bits_low": round(bits_low, 2), "p_low": round(float((nb_low >= bits_low - 1e-9).mean()), 3),
+            "z_by_aircraft": np.round(Zc, 2).tolist(),
             "totals": np.round(total, 2).tolist(), "truth_index": truth_i,
             "area_within_3_km2": round(within(3.0), 2), "area_within_6_km2": round(within(6.0), 2),
             "truth_z_by_aircraft": per_aircraft,
         })
+        if envelope:
+            Ze, _ = zscores(search_envelope(EnvelopeScene(x, sr), geo, hexes, coarse))
+            results[-1]["envelope"] = place(Ze, truth_i, near)
+            results[-1]["envelope_z_by_aircraft"] = {h: round(float(Ze[truth_i, k]), 1) for k, h in enumerate(hexes) if np.isfinite(Ze[truth_i, k])}
+            results[-1]["combined"] = place(np.fmax(Zc, Ze), truth_i, near)
     return results

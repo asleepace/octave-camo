@@ -107,3 +107,20 @@ def envelope_z(times, levels: dict, track, c: float, offsets=np.arange(-6, 6.01,
     if not np.isfinite(r0) or len(nulls) < min_nulls:
         return float("nan"), float("nan"), band, off
     return float((r0 - nulls.mean()) / max(nulls.std(), min_sd)), r0, band, off
+
+
+def fit_r2_many(level: np.ndarray, preds: np.ndarray, step: float = 1.0, nb: int = 20) -> np.ndarray:
+    """fit_r2 for several predictions (rows) against one level, vectorized, on coarser grids (the
+    place search runs it for every point, aircraft, band and wrong time). Each row's own shape
+    and size in dB as in fit_r2; the plane's peak level and the background are searched."""
+    sse0 = float(((level - level.mean()) ** 2).sum())
+    if not sse0 > 0:
+        return np.full(len(preds), np.nan)
+    shape = preds - preds.max(1, keepdims=True)                         # peak at 0 dB
+    bs = np.linspace(level.min() - 30, level.max(), nb)
+    ks = np.arange(level.min() - 20, level.max() + 3 + step / 2, step)    # the peak's level
+    plane = 10 ** ((shape[:, None, :] + ks[None, :, None]) / 10)           # rows × k × frames
+    model = 10 * np.log10(10 ** (bs[None, :, None, None] / 10) + plane[:, None])   # rows × b × k × frames
+    sse = ((model - level) ** 2).sum(-1).reshape(len(preds), -1).min(1)
+    return np.maximum(0.0, 1 - sse / sse0)
+
