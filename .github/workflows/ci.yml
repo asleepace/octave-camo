@@ -30,8 +30,8 @@ jobs:
       - run: swift --version
       - name: Build
         run: swift build -c release
-      - name: Test
-        run: swift test -c release
+      - name: Test (one process per test class, as many as there are cores)
+        run: swift test -c release --parallel
 
   swift-linux:
     name: Swift (Linux)
@@ -43,8 +43,10 @@ jobs:
       - run: swift --version
       - name: Build
         run: swift build -c release
-      - name: Test
-        run: swift test -c release
+      - name: Test (one process per test class, as many as there are cores)
+        run: swift test -c release --parallel
+      - name: Per-stage timings, for the log (parallel runs keep passing tests' output to themselves)
+        run: swift test -c release --filter "InvariantTests/testPerStageTimingsScale|InvariantTests/testOneMinuteCloaksInReasonableTime"
       - name: Build the CLI with a static Swift runtime (for the benchmark gate)
         run: swift build -c release --static-swift-stdlib --product octave-camo
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
