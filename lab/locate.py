@@ -173,19 +173,6 @@ def rank_bits(rank: float, points: int) -> float:
     return float(np.log2((points + 1) / 2 / rank))
 
 
-def information_bits(Z: np.ndarray, truth: int) -> float:
-    """How much the audio favours the true point, in bits: log2 of the true point's posterior over
-    its prior (a uniform grid). Each aircraft's z is taken as the attacker's evidence with a
-    generalized likelihood ratio for an unknown positive amplitude in unit noise, ½·max(z, 0)²
-    nats, independent across aircraft. That model is the attacker's assumption, not a calibrated
-    one (the z's spread comes from six wrong times), so the rank is the model-free number and this
-    one is for comparing the same audio before and after cloaking. Negative: the audio points away
-    from the truth."""
-    ll = 0.5 * np.square(np.clip(np.nan_to_num(Z, nan=0.0), 0, None)).sum(1)
-    lp = ll - (ll.max() + np.log(np.exp(ll - ll.max()).sum()))
-    return float((lp[truth] + np.log(len(ll))) / np.log(2))
-
-
 def grid(extent_m: float, step_m: float, center=(0.0, 0.0)) -> np.ndarray:
     a = np.arange(-extent_m, extent_m + step_m / 2, step_m)
     X, Y = np.meshgrid(a + center[0], a + center[1])
@@ -224,7 +211,6 @@ def locate(sid: str, audios: list[tuple[str, np.ndarray]], sr: int, extent_m: fl
             "best_score": round(float(total[best_i]), 1), "truth_score": round(float(total[truth_i]), 1),
             "fine_truth_score": round(float(Zf[ft]), 1), "fine_best_score": round(float(Zf[fb]), 1),
             "rank_bits": round(rank_bits(rank, len(coarse)), 2),
-            "model_bits": round(information_bits(Zc, truth_i), 2),
             "area_within_3_km2": round(within(3.0), 2), "area_within_6_km2": round(within(6.0), 2),
             "truth_z_by_aircraft": per_aircraft,
         })

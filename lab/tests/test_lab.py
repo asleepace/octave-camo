@@ -144,19 +144,6 @@ class PlaceSearch(unittest.TestCase):
         self.assertLess(locate.rank_bits(1089, 1089), 0)                    # truth last
         self.assertGreater(locate.rank_bits(20, 1089), locate.rank_bits(26, 1089))
 
-    def test_bits(self):
-        flat = np.zeros((100, 3))
-        self.assertAlmostEqual(locate.information_bits(flat, 7), 0.0)   # nothing heard: no information
-        z = np.zeros((100, 2)); z[7] = [4.0, 3.0]
-        b = locate.information_bits(z, 7)
-        self.assertGreater(b, 0)
-        self.assertLessEqual(b, np.log2(100) + 1e-9)                    # at most all of the prior
-        self.assertLess(locate.information_bits(z, 8), 0)               # the audio points elsewhere
-        neg = np.zeros((100, 2)); neg[7] = [-5.0, -5.0]                  # below the null is no evidence
-        self.assertAlmostEqual(locate.information_bits(neg, 7), 0.0)
-        nan = np.full((100, 2), np.nan); nan[7] = [4.0, np.nan]          # out of earshot counts 0
-        self.assertAlmostEqual(locate.information_bits(nan, 7), locate.information_bits(np.where(np.isnan(nan), 0, nan), 7))
-
 
 class ShapeTest(unittest.TestCase):
     """The flyby fit, on curves made independently of it (lab.synth's own propagation)."""

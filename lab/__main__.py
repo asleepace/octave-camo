@@ -245,11 +245,11 @@ def cmd_locate(sid: str, others: list[str]):
     audios, sr = with_copies(sid, others)
     t = time.time()
     rows = locate.locate(sid, audios, sr)
-    print("| audio | aircraft | true point's rank (of grid) | bits (rank / model) | best guess off by | fine best off by | area within 3 / 6 of best | truth z by aircraft |")
+    print("| audio | aircraft | true point's rank (of grid) | rank bits | best guess off by | fine best off by | area within 3 / 6 of best | truth z by aircraft |")
     print("| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |")
     for r in rows:
         z = ", ".join(f"{v}" for v in r["truth_z_by_aircraft"].values() if v is not None)
-        print(f"| {r['name']} | {r['aircraft']} | {r['truth_rank']} of {r['points']} ({r['truth_percentile']} %) | {r['rank_bits']} / {r['model_bits']} | "
+        print(f"| {r['name']} | {r['aircraft']} | {r['truth_rank']} of {r['points']} ({r['truth_percentile']} %) | {r['rank_bits']} | "
               f"{r['best_error_m']} m | {r['fine_best_error_m']} m | {r['area_within_3_km2']} / {r['area_within_6_km2']} km² | {z} |")
     print(f"\n{time.time() - t:.0f} s")
     save_result(f"locate-{sid}", rows)
