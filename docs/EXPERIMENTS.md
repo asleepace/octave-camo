@@ -329,10 +329,18 @@ narrow it:
   everything around it: the excess along the true curve falls (1.05 → 0.74 above the wrong-time
   mean) but the wrong-time spread more than halves (0.14 → 0.06), so the truth goes from 18th to
   first. The review predicted this from the 534 Hz case; here it is in the place, not just in z.
-- **a2f229, Experimental:** a feature at a ~352 Hz rest along the true curve that the original
-  doesn't have (3.60 against a 3.53 median of rest frequencies; Full 4.07, Experimental 4.47) puts
-  the truth 4th. That aircraft's track has velocity glitches (predicted factors up to 1.5) and the
-  curve crosses the 300 Hz edge of the regenerated band near the end of the clip; not yet explained.
+- **a2f229, Experimental: seed luck, not a leak.** The truth's 4th place came from a feature at a
+  ~352 Hz rest (curves through 300–400 Hz) that the original doesn't have. Stage by stage (CLI,
+  same seed), its excess along the true curve is 0.07 in the original, 0.35 after `hum`, 0.51
+  after `lowband` (any flattening) and 0.88 after `lines`; but it's there at wrong times too.
+  Over eight seeds the true point's z for that aircraft is −0.5, 0.3, −0.5, −0.3, 0.7, 1.4, 4.0
+  (the copy scored above) and −0.4: the original's was 1.2. The cloak puts a steady excess just
+  above the regenerated band's 300 Hz edge that every curve dipping there picks up, and on one
+  draw it lined up with the truth. Harmless on average, but it means **a cloaked copy's place
+  score is one draw: score several seeds** (the page draws a fresh one each run).
+- **37a954 is systematic.** Over four seeds Full gives z 12.0–12.2 (original 7.5), and it comes
+  from `subtract`: it cancels the room's steady tones, which the wrong-time curves were crossing,
+  and only trims the faint moving 699 Hz tone (excess 1.79 → 1.38), so the truth stands out.
 - **Where archive removal did nothing** (94d99a, a2f229) every aircraft's z was below TrackFill's
   stopping statistic (2.5), so nothing was filled, but faint evidence summed over the grid still
   ranks the truth in the top 4–10 %. Stopping on per-flight z doesn't bound the place.
