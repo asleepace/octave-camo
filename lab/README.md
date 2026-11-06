@@ -16,6 +16,8 @@ python3 -m lab attack <session> full.wav experimental.wav        # the known-pat
 python3 -m lab locate <session> full.wav experimental.wav         # the place-searching attacker (slow: ~5 min each)
 python3 -m lab trackfill <session> full experimental             # flight-track removal (the CLI's --expect)
 python3 -m lab plot <session>                                    # spectrogram + ADS-B Doppler curves
+python3 -m lab bench                                             # the curve benchmark (~45 min on 2 cores)
+python3 -m lab ml data && python3 -m lab ml train && python3 -m lab ml report   # the learned detector (needs jax, optax)
 python3 -m unittest discover -s lab/tests -t .                   # invariants (synthetic, no sessions; CI runs them)
 ```
 
@@ -45,6 +47,13 @@ python3 -m unittest discover -s lab/tests -t .                   # invariants (s
   scored against the audio with the rest frequency free and against the same curve at wrong
   times; the aircraft are summed on one timeline. It reports the true point's rank, how far the
   best guess is, and the area scoring near the best: distances only, never positions.
+- **The curve benchmark** (`lab/passes.py`, `lab/bench.py`): synthetic passes with what makes real
+  ones messy, in real and synthetic backgrounds; every detector scored by strength and false
+  alarms per hour. Per-clip results are cached in `$LAB_DATA/results/bench*.jsonl`, so a rerun only
+  computes new clips.
+- **The learned detector** (`lab/ml.py`): log-frequency features, a small dilated CNN in JAX, the
+  path search and flyby fit on its output. Training backgrounds and test backgrounds are split by
+  session; the real passes are test only. Its data and weights live in `$LAB_DATA/ml`.
 - **Pieces** (`lab/detect.py`): `whiten` (clip-median or running-median reference, optional
   broadband-aware statistic), `search` (smooth falling or any-direction paths), `shape_test`
   (straight-flyby fit), `known_path` (the attacker with the track, searching the unknown rest

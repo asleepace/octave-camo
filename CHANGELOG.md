@@ -9,6 +9,19 @@ are grouped by milestone, newest first, with the commits that made them.
 
 ## [Unreleased]
 
+### The curve benchmark and a first learned detector (lab)
+
+- **`python3 -m lab bench`:** realistic synthetic passes (engine tone families, air absorption,
+  directivity, ground reflection, engine-speed wander, scintillation, window filtering) mixed into
+  real plane-free recordings and synthetic scenes; detection by strength and false alarms per hour
+  for the page's check, the lab's blind search and the known-path attacker.
+- **`python3 -m lab ml`:** a 14 k-parameter convolutional curve detector (JAX, CPU), trained on
+  synthetic passes in training backgrounds only, feeding the same path search and flyby fit. On
+  held-out backgrounds it detects more passes than the check from 9 to 18 dB/Hz and it finds the
+  faint real pass the check misses; on real construction audio it raises far more false passes
+  (~38/h). Not ported: the lab is where it improves next. Weights stay in `$LAB_DATA` (trained on
+  private backgrounds).
+
 ### Track removal closes the known-path leak (engine and lab)
 
 - **`TrackFill` runs the known-path attacker's own test and removes until it fails:** the best

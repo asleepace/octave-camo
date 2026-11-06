@@ -57,6 +57,16 @@ attacker's own test first and removes until it fails.
 - **Then:** fill level unbiased along the curve (±0.3 dB today); engine-tone families searched
   together; a decoy-aware attacker before any decoys.
 
+## Now, alongside: the curve benchmark and a learned detector
+
+A synthetic benchmark measures every detector (`python3 -m lab bench`), and a 14 k-parameter
+learned detector (`python3 -m lab ml`) beats the check by roughly 3 dB at 9–18 dB/Hz on held-out
+backgrounds and finds the faint real pass the check misses, but on real construction audio it
+raises ~38 false passes an hour (docs/EXPERIMENTS.md). Next: harder negatives in training (vehicles
+slowing down, beepers, more real outdoor backgrounds), a pass-level score over the whole curve,
+more clips per strength; port it to Swift as a proposer for the check only once its false alarms
+on real audio are near the check's.
+
 ## Next
 
 - **Experimental → Full?** On real clips: does the envelope attack fail on Experimental output,

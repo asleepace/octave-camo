@@ -4,3 +4,4 @@ numpy>=2.0,<3
 scipy>=1.13
 soundfile>=0.12
 matplotlib>=3.8
+# The learned detector only (python3 -m lab ml): jax[cpu]==0.4.38, optax

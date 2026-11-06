@@ -376,6 +376,84 @@ The recorder build was the same as the tenth session's, so its mains-hum estimat
 50 Hz grid (median 50.26 Hz, ±0.28 Hz) beside a clean 60 Hz line, and the ultrasonic band is
 still empty.
 
+## The curve benchmark, and a first learned detector
+
+**The benchmark** (`python3 -m lab bench`, lab/passes.py, lab/bench.py): synthetic passes mixed into
+a minute of background at a set strength, 16 per strength. A pass is an engine, not a tone: a
+fundamental with up to four harmonics and often a second family; spherical spreading, air
+absorption, a directivity lobe, the ground reflection sweeping through the tones (Lloyd's mirror),
+the engine's speed wandering and turbulence scintillating the level, and half of them heard
+through a window. Strength is the strongest tone at closest approach over the background's noise
+at that frequency, in dB/Hz. Backgrounds: the nine plane-free recorder sessions (local only) and
+six synthetic scenes; each background alone is a negative. A detection counts when it follows one
+of the pass's tones; anything else is a false alarm.
+
+| strength (dB/Hz) | check (the page) | blind E2 | known path (z ≥ 5) |
+| ---: | ---: | ---: | ---: |
+| 6 | 19 % | 6 % | 19 % |
+| 9 | 44 % | 25 % | 44 % |
+| 12 | 44 % | 19 % | 56 % |
+| 15 | 75 % | 38 % | 62 % |
+| 18 | 62 % | 56 % | 75 % |
+| 21 | 100 % | 81 % | 88 % |
+
+False alarms: the check 2 in 13 min of real plane-free audio (9/h) and 6/h beside passes; E2 none.
+The known-path "ceiling" sits below the check at some strengths: a slow or distant pass's curve is
+nearly flat, and a flat curve moved in time still matches it, so its z stays low. It's the right
+metric for an attacker who has the track, not a bound on blind detection.
+
+**A learned detector** (`python3 -m lab ml data|train|report`, lab/ml.py). Input: the check's kind
+of picture (each frequency over its running median, each frame over its own median), on a log
+frequency axis (a Doppler curve's shape is then the same at any engine frequency, only shifted)
+at 64 ms frames. Model: six 3×3 convolutions dilated along time (receptive field ~8 s), residual,
+14 k parameters, trained in JAX on CPU (1,500 steps, 35 min) to mark every pixel on a passing tone,
+from 2,400 synthetic examples in training backgrounds only: five of the plane-free sessions and the
+synthetic scenes with other seeds. The other four sessions and the three real passes are never
+trained on. Passes come out the way the check makes them: the best smooth falling path through
+the model's log-odds in each 10 s window, its frequency placed between log bins from the model's
+own probabilities and smoothed (2 % bins alone fail the flyby fit's 0.5 %), kept when the fit
+accepts it, and joined into passes of at least two windows. Threshold: about one false pass an
+hour on 60 min of pass-free training backgrounds (mean probability 0.74).
+
+Held-out backgrounds only:
+
+| strength (dB/Hz) | clips | check | blind E2 | **learned** | known path |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 6 | 11 | 18 % | 0 % | **18 %** | 9 % |
+| 9 | 12 | 33 % | 17 % | **58 %** | 33 % |
+| 12 | 11 | 45 % | 18 % | **64 %** | 55 % |
+| 15 | 12 | 75 % | 42 % | **67 %** | 58 % |
+| 18 | 12 | 58 % | 42 % | **83 %** | 75 % |
+| 21 | 11 | 100 % | 91 % | **91 %** | 91 % |
+
+False alarms on the same clips: the check 1 (4/h) and the learned detector 2 (9/h) in 14 min of
+backgrounds alone; 3.5/h and 4.3/h beside passes. With 11–12 clips per row each is ±15 %, so the
+honest reading is "better from about 9 to 18 dB/Hz, by roughly 3 dB", not a precise curve.
+
+On the real recordings (never trained on):
+
+| recording | check | learned |
+| --- | --- | --- |
+| bathroom pass (1.77 → 0.98 kHz) | found | found (55–85 s, 0.96–1.76 kHz) |
+| window-open climb-out (z 7 for the attacker) | **missed** | **found** (55–75 s, 0.51–0.75 kHz) |
+| deck climb-out | a 5 s piece | found (55–80 s, 0.60–0.87 kHz) |
+| four plane-free test sessions (9.6 min) | – | **6 false passes** (5 in the outdoor construction session) |
+
+So it finds the faint pass the check can't, and the right one each time, but on real
+construction audio it calls falling engine and beeper sounds passes far more often than the
+synthetic negatives promised (about 38/h on those 9.6 minutes, against ~1/h calibrated). After
+cloaking it is mixed: nothing left on the bathroom pass after Experimental or track removal; on
+the window-open pass a falling piece at 650–760 Hz remains after track removal, where the
+known-path attacker scores 0.8 (a residual the attacker's curve misses, or a false pass: to look
+into); on the deck clip, Full's output shows two more falling tones (2.7–3.1 kHz and 0.57–0.66 kHz)
+than the original did.
+
+**Verdict:** worth pursuing, not yet worth porting (step 3 was "only if it clearly wins"). It wins
+on sensitivity and loses on real-world false alarms. Next: harder negatives in training (vehicles
+slowing down, reversing beepers, more real outdoor backgrounds: the construction session is where
+it fails), a pass-level score that uses the whole curve, more clips per strength, and the real
+passes that only more recordings can supply.
+
 ## Tooling review (lab detectors and tests)
 
 - **The lab's flyby fit left out the sound's travel time.** `detect.flyby` used receive time as

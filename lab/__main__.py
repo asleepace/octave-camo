@@ -19,6 +19,9 @@
                                         $LAB_DATA/cloaked/<session>-<preset>-tracks.wav
   bench [--synth-only] [--per N]       the curve benchmark (N clips per strength, default 16): synthetic passes in real and synthetic
                                         backgrounds; detection by strength, false alarms per hour
+  ml data|train|report                  the learned curve detector: make the training set (synthetic
+                                        passes in training backgrounds), train, and report it against
+                                        the other detectors on the benchmark and the real recordings
   plot <session>                        spectrogram with ADS-B Doppler curves and detected paths
 
 Data stays in $LAB_DATA (default ~/.octave-camo-lab), never in the repo. Results are saved as JSON
@@ -305,6 +308,23 @@ def cmd_bench(args: list[str]):
     print(f"\n{len(clips)} clips ({time.time() - t:.0f} s); per-clip results in $LAB_DATA/results/bench.jsonl")
 
 
+def cmd_ml(args: list[str]):
+    from pathlib import Path
+    from . import ml
+    d = corpus.DATA / "ml"
+    d.mkdir(parents=True, exist_ok=True)
+    model = d / "model-v1.npz"
+    if args[:1] == ["data"]:
+        ml.make_dataset(d / "train.npz", ml.TRAIN_SESSIONS, 2_400, 1, workers=1)
+    elif args[:1] == ["train"]:
+        ml.train(d / "train.npz", model, steps=1_500, crop=96, lr=3e-3)
+    elif args[:1] == ["report"]:
+        ml.prepare_report(Path(model))
+        print(ml.report(Path(model)))
+    else:
+        raise SystemExit("python3 -m lab ml data|train|report")
+
+
 def main(argv):
     if not argv or argv[0] in ("-h", "--help"):
         print(__doc__)
@@ -329,6 +349,8 @@ def main(argv):
         cmd_cloak(rest[0], rest[1:])
     elif cmd == "attack":
         cmd_attack(rest[0], rest[1:])
+    elif cmd == "ml":
+        cmd_ml(rest)
     elif cmd == "bench":
         cmd_bench(rest)
     elif cmd == "trackfill":

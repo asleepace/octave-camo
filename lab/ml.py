@@ -370,6 +370,35 @@ def _detect_from_features(params: dict, F: np.ndarray, threshold: float, win_s: 
     return out
 
 
+def prepare_report(model: Path) -> None:
+    """Compute (once) what `report` reads: windows on 60 min of pass-free training backgrounds,
+    on the real recordings (the passes, original and cloaked, and the plane-free test sessions),
+    and on the benchmark clips."""
+    from . import bench
+    tag = model.stem.split("-")[-1]
+    out = corpus.DATA / "ml"
+    params = load(model)
+    cal = out / f"calib-{tag}.json"
+    if not cal.exists():
+        pool = background_pool(TRAIN_SESSIONS)
+        json.dump([windows(params, example(pool, 900_000 + k, p_pass=0.0, return_audio=True), SR) for k in range(120)], open(cal, "w"))
+    real = out / f"real-{tag}.json"
+    if not real.exists():
+        import soundfile as sf
+        from .common import align
+        res = {}
+        for sid in list(REAL_PASSES) + TEST_SESSIONS:
+            _, x, sr = corpus.load(sid)
+            res[f"{sid}:original"] = windows(params, x, sr)
+            for name in ("full", "experimental", "full-tracks"):
+                f = corpus.DATA / "cloaked" / f"{sid}-{name}.wav"
+                if sid in REAL_PASSES and f.exists():
+                    y, _ = sf.read(f)
+                    res[f"{sid}:{name}"] = windows(params, align(x, y, sr), sr)
+        json.dump(res, open(real, "w"))
+    bench.ml_windows(bench.plan(), model)
+
+
 def report(model: Path) -> str:
     """The experiment's numbers, from saved windows (calibration, benchmark, real sessions):
     the threshold for about one false pass an hour on training backgrounds, then every detector
