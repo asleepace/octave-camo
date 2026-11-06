@@ -295,6 +295,50 @@ pass under 1 kHz that no blind detector finds survives both presets, because rem
 by what the blind check sees. The attacker with the tracks will always see more than a blind
 check, which argues for removal that uses the same tracks (see PLAN.md).
 
+## The place search on every session (the location re-run)
+
+The independent review's first point: per-flight z says whether one curve fits better at the
+right time than at wrong ones; the attacker's question is where the clip was recorded. So the
+place search ran on all 21 sessions, then on fresh copies (today's engine: Full with gentle
+flattening, Experimental with strong, and Full with removal from the flight archive, the page's
+path) of the seven where the original gives the place away. Scoring now runs on a log-frequency
+axis (4× faster, unbiased against the direct search). The number is the true point's rank on the
+1,089-point grid and **rank bits**, log2((N + 1) / 2 / rank): 0 is a blind guess, 9.1 the truth
+ranked first. On the sessions that hear no usable aircraft the truth ranks 42–72 % (one 5 %), so
+about ±1 bit is noise. A likelihood-model posterior was tried and dropped: one point's large z
+dominates it (values to −28,000 bits).
+
+**Originals:** 14 of 21 give the tone place search nothing (rank near or below a blind guess). Seven
+narrow it:
+
+| session | original | Full | Experimental | Full + archive tracks |
+| --- | ---: | ---: | ---: | ---: |
+| bathroom (efb8f8) | 4.8 (rank 20) | 4.5 (25) | −0.6 | −0.7 |
+| 37a954 | 4.9 (18) | **9.1 (1st, 0 m off)** | **9.1 (1st)** | −0.9 |
+| 94d99a | 5.0 (17) | 3.8 (40) | 0.3 | 3.8 (nothing filled) |
+| af39e1 | 2.3 | 0.4 | 0.9 | −0.7 |
+| a2f229 | 2.1 | 2.4 | **7.1 (4th)** | 2.4 (nothing filled) |
+| e9a1c3 | 2.1 | 0.0 | 0.0 | 0.0 |
+| f8b75a | 1.7 | 1.5 | 1.3 | 0.0 |
+| **mean** | **3.3** | **3.1** | **2.5** | **0.6** |
+
+- **Full alone barely moves the place** (3.3 → 3.1 bits). The z work on the blind presets isn't
+  moving the number that matters; removal from the flight archive is (0.6, at or below noise on
+  five of seven).
+- **The presets can make it worse.** On 37a954 a faint 699 Hz pass survives Full, and Full cleans
+  everything around it: the excess along the true curve falls (1.05 → 0.74 above the wrong-time
+  mean) but the wrong-time spread more than halves (0.14 → 0.06), so the truth goes from 18th to
+  first. The review predicted this from the 534 Hz case; here it is in the place, not just in z.
+- **a2f229, Experimental:** a feature at a ~352 Hz rest along the true curve that the original
+  doesn't have (3.60 against a 3.53 median of rest frequencies; Full 4.07, Experimental 4.47) puts
+  the truth 4th. That aircraft's track has velocity glitches (predicted factors up to 1.5) and the
+  curve crosses the 300 Hz edge of the regenerated band near the end of the clip; not yet explained.
+- **Where archive removal did nothing** (94d99a, a2f229) every aircraft's z was below TrackFill's
+  stopping statistic (2.5), so nothing was filled, but faint evidence summed over the grid still
+  ranks the truth in the top 4–10 %. Stopping on per-flight z doesn't bound the place.
+- **The search is tone-only.** On 6b838f the 767 that the loudness attacker scores z 5.5 isn't
+  found (rank 924): a broadband jet needs the envelope term in the place search too.
+
 ## Track-driven removal: the leak closed
 
 `TrackFill` (Swift, CLI `scrub --expect passes.json`, lab `python3 -m lab trackfill`) takes each
@@ -646,6 +690,10 @@ logs the real tracks with every session.
 
 ## Next experiments
 
+0. **The place as the metric** (from the location re-run): add the envelope term to the place
+   search; stop track removal on the place (rank bits at noise), not on per-flight z; find why
+   the presets sharpen a faint survivor (37a954) and what Experimental adds near 352 Hz (a2f229);
+   a held-out set (some sessions plus a public corpus) never used for tuning.
 1. **E2, continued:** real music, singing, traffic, wind and outdoor clips against the check's
    path search (now in Swift, with joined passes); level against pitch to tell a slowing vehicle
    from a flyby; the band up to 8 kHz; a faster search (one forward pass shared by the spans).
