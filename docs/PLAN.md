@@ -7,6 +7,10 @@ unordered ideas are in [IDEAS.md](IDEAS.md); what shipped is in [CHANGELOG.md](.
 boundary. It comes first and must be at least as strong as a real attacker. The cloak is then
 judged by it. Removing what the check can't see would only make the page look better.
 
+**The focus, for now: aircraft.** Getting aircraft signatures out reliably comes before anything
+else. Room, light and other non-aircraft clues keep what already ships, and their work is parked
+(below) until aircraft removal is solid.
+
 ---
 
 ## Done
@@ -69,10 +73,6 @@ on real audio are near the check's.
 
 ## Next
 
-- **Experimental → Full?** On real clips: does the envelope attack fail on Experimental output,
-  does the place search, and does it sound the same? Plus the music policy (`lines` removes held
-  notes today), and the flattened low band's level: on one session it came out 17 dB quieter than
-  Full's (60–250 Hz), possibly lost bass.
 - **Decoys (to discuss).** Silence is evidence, and so is the time between events. Synthetic passes
   consistent with real logged aircraft heard from a *different* place would point a place search
   elsewhere; random fake curves only fool blind checks. Open questions: where to "put" the
@@ -80,11 +80,6 @@ on real audio are near the check's.
 - **A faster path search:** about 45 % more check time today (spans overlap 4×, so a shared
   forward pass would cut it). Its z isn't the lab's (real rooms score far above white noise, so the
   duration rule and the shape test do the work), and a decelerating vehicle can still fit a flyby.
-
-- **Above the audible band.** Steady tones above 16 kHz (electronics, ultrasonic beacons) pass
-  through every preset untouched and fingerprint a room. A gentle low-pass near 16 kHz in every
-  preset is the cheap fix (most of it is lost to platform encoders anyway, but not reliably);
-  the alternative is extending the line search up there. To decide.
 
 ## Later: paths, families and risk classes (slice 3, [ACOUSTICS.md](ACOUSTICS.md) §4.4–6)
 
@@ -112,6 +107,20 @@ classed as such, and the noise scenes still give no lines.
 - **Erase brush** on the spectrogram for manual removal.
 - **"Outside this tool's reach" note** on the page: broadcasts, bells, sirens, wildlife, the room
   (ACOUSTICS.md §7).
+
+## Parked: not aircraft
+
+Kept as they are today; picked up once aircraft removal is solid.
+
+- **Experimental → Full?** On real clips: does the envelope attack fail on Experimental output,
+  does the place search, and does it sound the same? Plus the music policy (`lines` removes held
+  notes today), and the flattened low band's level: on one session it came out 17 dB quieter than
+  Full's (60–250 Hz), possibly lost bass.
+- **Above the audible band.** Steady tones above 16 kHz (electronics, ultrasonic beacons) pass
+  through every preset untouched and fingerprint a room. A gentle low-pass near 16 kHz in every
+  preset is the cheap fix (most of it is lost to platform encoders anyway, but not reliably);
+  the alternative is extending the line search up there. To decide.
+- **Room and grid clues beyond what ships:** grid-lock tests and risk classes (slice 3, items 2–3).
 
 ## Housekeeping
 
