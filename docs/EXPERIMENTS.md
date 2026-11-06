@@ -347,6 +347,48 @@ narrow it:
 - **The search is tone-only.** On 6b838f the 767 that the loudness attacker scores z 5.5 isn't
   found (rank 924): a broadband jet needs the envelope term in the place search too.
 
+## Review of the place-scored work, and the loudness term in the place search
+
+**Review.** Re-read the fast scoring, ranks, baseline, benchmark, cache lock, holdout guard and
+the z-1 stop. One flaw: the no-information draws took "wrong places" from every other point,
+including those within 2 km of the truth, which share its evidence; that made p conservative.
+They're now left out (p moved by about 0.01). One worry checked: after archive removal the truth
+often sat in the bottom 10–20 % of the grid, which would be a hole an attacker could look for.
+Scored from the bottom against the same baseline, p 0.05–0.96 over the seven sessions' archive
+copies (two seeds): none significant.
+
+**94d99a.** Archive curves against the exact-track curve: 1.0–2.3 % apart in factor around the
+closest approach, 0.7 % after the best timing and swing scale (37a954, where removal worked:
+0.3–2 %). A relative slack in the removal's search (best within 0.3–1 % of the frequency, on top
+of ±2 bins) lifted its z for that aircraft from −2.8…−1.2 to about 0, still below the stop; even
+the exact tracks give 0.3. What's left is a z ≈ 1 feature that only the place search's statistic
+sees (p 0.046 / 0.052). Not shipped: no benefit shown.
+
+**The loudness term** (`locate --envelope`): each point's predicted level swell fitted to the
+band levels over the whole clip against the envelope attacker's 34 wrong times; alone, and
+combined with the tones (each aircraft's better z of the two). p against the scene's baseline:
+
+| session | audio | tones | loudness (truth z) | combined |
+| --- | --- | ---: | ---: | ---: |
+| 6b838f (767, 3 km) | original | 0.82 | 0.10 (4.3) | 0.31 |
+| | Full / + archive | 0.99 / 0.98 | 0.10 / 0.10 | 0.47 / 0.46 |
+| efb8f8 (737 MAX) | original | 0.002 | 0.11 (2.8) | 0.002 |
+| | Full | 0.001 | **0.04** (4.1) | 0.001 |
+| | Full + archive | 0.78 | 0.08 (3.7) | **0.08** |
+| 37a954 | original | 0.01 | 0.10 (2.0) | 0.01 |
+| | Full + archive | 0.41 | 0.09 (3.5) | 0.12 |
+
+(94d99a, a2f229, e9a1c3: no loudness evidence at the truth.)
+
+- **One swell barely places a recording.** The 767's swell scores z 4.3 at the truth, yet the
+  place stays at p 0.1: a single pass's loudness fixes only the distance from its track, a band
+  many points share. It matters as an addition to other evidence.
+- **Archive removal leaves the mid-band swell, and Full sharpens it.** On efb8f8 the loudness z
+  rises 2.8 → 4.1 after Full (the same cleanup effect as 37a954's tone), and with the tones gone
+  the combined place goes from p 0.78 (tones only) to 0.08. Borderline, not a leak at 0.05, but
+  it's the next thing to close: flatten swells above the regenerated band too (PLAN's
+  "mid-band swells").
+
 ## The holdout
 
 From the review: every threshold here was chosen on the sessions it was then reported on. Two of
@@ -750,10 +792,9 @@ logs the real tracks with every session.
 
 ## Next experiments
 
-0. **The place as the metric** (from the location re-run): add the envelope term to the place
-   search; stop track removal on the place (rank bits at noise), not on per-flight z; find why
-   the presets sharpen a faint survivor (37a954) and what Experimental adds near 352 Hz (a2f229);
-   a held-out set (some sessions plus a public corpus) never used for tuning.
+0. **The place as the metric** (from the location re-run; envelope term, holdout and stopping
+   done): flatten mid-band swells and score the combined place; why cleanup sharpens a faint
+   survivor (37a954, tone and loudness); the public corpus as a real holdout.
 1. **E2, continued:** real music, singing, traffic, wind and outdoor clips against the check's
    path search (now in Swift, with joined passes); level against pitch to tell a slowing vehicle
    from a flyby; the band up to 8 kHz; a faster search (one forward pass shared by the spans).
