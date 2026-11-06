@@ -90,20 +90,8 @@ final class CheckInvariantTests: XCTestCase {
 
     // MARK: Strength and company
 
-    /// Detection is monotone in strength: a tone found at some level is found at every higher one.
-    func testAStrongerToneIsNeverHarderToFind() {
-        for rate in [16_000, 48_000] {
-            for seed: UInt64 in [1, 2, 3] {
-                let found = [6.0, 9, 12, 15, 20].map { snr in
-                    line(near: 1_200, in: check.analyze(DetectionScenes.steady(hz: 1_200, snr: snr, rate: rate, seed: seed))) != nil
-                }
-                if let first = found.firstIndex(of: true) {
-                    XCTAssertFalse(found[first...].contains(false), "\(rate) Hz seed \(seed): found at 6/9/12/15/20 dB = \(found)")
-                }
-                XCTAssertTrue(found.last!, "\(rate) Hz seed \(seed): a 20 dB tone")
-            }
-        }
-    }
+    // Detection is monotone in strength: checked on the baseline's own ladder
+    // (DetectionBaselineTests, every seed and frequency at both rates), which analyses those scenes anyway.
 
     /// An unrelated sound elsewhere (a loud tone at 3 kHz, a burst at 500 Hz) doesn't hide a line.
     func testAnotherSoundElsewhereDoesNotHideALine() {

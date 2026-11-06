@@ -20,9 +20,12 @@ concurrency:
 permissions:
   contents: read
 
+# Every job has a time limit: one stuck on a package mirror once sat for half an hour (the
+# default limit is six hours).
 jobs:
   swift-macos:
     name: Swift (macOS)
+    timeout-minutes: 45
     if: github.event_name != 'push'
     runs-on: macos-15
     steps:
@@ -35,6 +38,7 @@ jobs:
 
   swift-linux:
     name: Swift (Linux)
+    timeout-minutes: 45
     if: github.event_name != 'push'
     runs-on: ubuntu-latest
     container: swift:6.0
@@ -57,6 +61,7 @@ jobs:
 
   wasm:
     name: Swift (WebAssembly)
+    timeout-minutes: 30
     runs-on: ubuntu-latest
     container: swift:6.4.2
     steps:
@@ -96,6 +101,7 @@ jobs:
 
   web:
     name: Web app
+    timeout-minutes: 30
     needs: wasm
     runs-on: ubuntu-latest
     defaults:
@@ -132,6 +138,7 @@ jobs:
 
   e2e:
     name: Web end-to-end (Chromium, real wasm)
+    timeout-minutes: 40
     if: github.event_name != 'push'
     needs: wasm
     runs-on: ubuntu-latest
@@ -160,6 +167,7 @@ jobs:
 
   bench:
     name: Benchmark gate (both attackers, 6 clips, harness and Swift)
+    timeout-minutes: 30
     if: github.event_name != 'push'
     needs: swift-linux
     runs-on: ubuntu-latest
@@ -195,6 +203,7 @@ jobs:
 
   deploy:
     name: Deploy to GitHub Pages
+    timeout-minutes: 15
     # What ships passed everything on its pull request; here, the wasm and web app built from
     # this exact commit and passed the web tests.
     needs: [wasm, web]
@@ -227,6 +236,7 @@ jobs:
 
   lab:
     name: Lab (Python) and docs
+    timeout-minutes: 15
     if: github.event_name != 'push'
     runs-on: ubuntu-latest
     steps:
@@ -243,6 +253,7 @@ jobs:
 
   harness:
     name: Harness (Bun)
+    timeout-minutes: 20
     if: github.event_name != 'push'
     runs-on: ubuntu-latest
     defaults:
