@@ -14,9 +14,12 @@
                                         on other audio of it: counts and flyby passes
   locate <session> [audio …]            the place-searching attacker: rank of the true position
                                         among a grid of candidates (distances and areas only)
-  trackfill <session> [preset …]        cloak with flight-track removal (the CLI's --expect, curves
+  trackfill <session> [preset …] [--archive]
+                                        cloak with flight-track removal (the CLI's --expect, curves
                                         predicted at the true position), into
-                                        $LAB_DATA/cloaked/<session>-<preset>-tracks.wav
+                                        $LAB_DATA/cloaked/<session>-<preset>-tracks.wav; with
+                                        --archive, the page's path instead: the engine predicts the
+                                        curves from adsb.lol's half-hour archive (…-archive.wav)
   bench [--synth-only] [--per N]       the curve benchmark (N clips per strength, default 16): synthetic passes in real and synthetic
                                         backgrounds; detection by strength, false alarms per hour
   ml data|train|report                  the learned curve detector: make the training set (synthetic
@@ -280,20 +283,32 @@ def cmd_trackfill(sid: str, presets: list[str]):
         print("warning: the CLI is older than Sources/ (swift build -c release --product octave-camo)", file=sys.stderr)
     out_dir = corpus.DATA / "cloaked"
     out_dir.mkdir(parents=True, exist_ok=True)
-    passes = expected_passes(sid)
-    print(f"{len(passes)} expected pass(es)")
+    archive = "--archive" in presets
+    presets = [p for p in presets if p != "--archive"]
     with tempfile.TemporaryDirectory() as tmp:
         src, exp = Path(tmp) / "in.wav", Path(tmp) / "expect.json"
         sf.write(src, x, sr, subtype="FLOAT")
-        exp.write_text(json.dumps(passes))
+        if archive:
+            # The page's path: adsb.lol's half-hour archive only, curves predicted by the engine.
+            files, at, start = corpus.archive_files(sid)
+            track_args = ["--archive", ",".join(str(f) for f in files), "--at", at, "--start", str(start)]
+            temp = (corpus.geometry(sid)["meta"].get("weather", {}).get("current", {}) or {}).get("temperature_2m")
+            if temp is not None:
+                track_args += ["--temp", str(temp)]
+            print(f"archive: {len(files)} half-hour file(s)")
+        else:
+            passes = expected_passes(sid)
+            print(f"{len(passes)} expected pass(es)")
+            exp.write_text(json.dumps(passes))
+            track_args = ["--expect", str(exp)]
         for preset in presets or ["experimental"]:
-            dst = out_dir / f"{sid}-{preset}-tracks.wav"
-            r = subprocess.run([str(cli), "scrub", str(src), str(dst), *PRESET_ARGS[preset], "--seed", "7", "--expect", str(exp)],
+            dst = out_dir / f"{sid}-{preset}-{'archive' if archive else 'tracks'}.wav"
+            r = subprocess.run([str(cli), "scrub", str(src), str(dst), *PRESET_ARGS[preset], "--seed", "7", *track_args],
                                capture_output=True, text=True)
             if r.returncode != 0:
                 raise SystemExit(f"octave-camo scrub failed:\n{r.stderr.strip().splitlines()[0] if r.stderr.strip() else r.stdout[:500]}")
             for line in (r.stdout + r.stderr).splitlines():
-                if line.strip().startswith("tracks:") or "tracks:" in line:
+                if "tracks:" in line or line.startswith("archive:"):
                     print(" ", line.strip())
             print(dst)
 

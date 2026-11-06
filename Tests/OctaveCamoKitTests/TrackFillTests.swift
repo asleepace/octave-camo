@@ -92,7 +92,7 @@ final class TrackFillTests: XCTestCase {
         let stage = Self.stage([Self.expected()])
         let y = stage.process(x, sampleRate: Self.rate).output
         XCTAssertNotEqual(x, y)
-        let c = Self.expected().center, guardBand = stage.halfWindow + stage.maxOffset + 1
+        let c = Self.expected().center, guardBand = stage.fillHalfWindow + stage.maxOffset + 1
         for i in x.indices where abs(Double(i) / Double(Self.rate) - c) > guardBand {
             if x[i] != y[i] { return XCTFail("sample at \(Double(i) / Double(Self.rate)) s changed") }
         }
@@ -129,7 +129,7 @@ final class TrackFillTests: XCTestCase {
         let wrong = Self.stage([Self.expected(seconds: 120, shift: 45)]), right = Self.stage([Self.expected(seconds: 120)])
         let r = wrong.process(x, sampleRate: Self.rate)
         XCTAssertGreaterThan(Self.verdict(r.output, right)?.z ?? 0, right.stopZ + 2, r.summary)
-        let c = wrong.expected[0].center, guardBand = wrong.halfWindow + wrong.maxOffset + 1
+        let c = wrong.expected[0].center, guardBand = wrong.fillHalfWindow + wrong.maxOffset + 1
         XCTAssertFalse(x.indices.contains { abs(Double($0) / Double(Self.rate) - c) > guardBand && x[$0] != r.output[$0] })
     }
 

@@ -88,6 +88,9 @@ public struct TrackFill {
     public var band: ClosedRange<Double> = 80...4_000
     /// The fill strip's extra half-width, Hz: the predicted curve is only as good as the track.
     public var marginHz = 8.0
+    /// ...plus this fraction of its frequency: a predicted swing can be a percent or so off at its
+    /// ends (stale archive positions), and a strip that half-covers a tone leaves its edge.
+    public var relativeMargin = 0.01
     public var seed: UInt64 = .random(in: 1...UInt64.max)
 
     public init() {}
@@ -116,13 +119,16 @@ public struct TrackFill {
         var rng = SeededRNG(seed: seed)
         var fill = LineFill()
         fill.marginHz = marginHz
+        fill.relativeMargin = relativeMargin
         var filled: [Tone] = [], open = Set(usable.indices), count = [Int](repeating: 0, count: usable.count)
         var first = [Double?](repeating: nil, count: usable.count), last = first
         var previous: [Int: Tone] = [:]
         var round = 0
         while !open.isEmpty {
-            let verdicts = stage.test(y, sampleRate: sampleRate, passes: open)
-            for (pi, tone) in verdicts {
+            let prepared = stage.prepare(y, sampleRate: sampleRate)
+            let verdicts = stage.test(prepared, passes: open)
+            for pi in verdicts.keys.sorted() {
+                let tone = verdicts[pi] ?? nil
                 if first[pi] == nil { first[pi] = tone?.z }
                 last[pi] = tone?.z
                 guard let tone, tone.z >= stopZ, count[pi] < maxTones, round <= maxTones else { open.remove(pi); continue }
@@ -149,14 +155,20 @@ public struct TrackFill {
 
     static func one(_ z: Double) -> String { "\((z * 10).rounded() / 10)" }
 
+    /// Fills reach this far either side of the closest approach (as found), s.
+    var fillHalfWindow: Double { halfWindow + maxOffset }
+
     /// The predicted tone as a track around the closest approach (where it was tested).
     func track(_ tone: Tone, sampleRate: Int, count: Int) -> Track? {
         let pass = expected[tone.pass], end = Double(count) / Double(sampleRate), c = pass.center + tone.offset
         var times: [Double] = [], freqs: [Double] = []
         // Only where the tone was found: a strip filled where there is nothing to remove is pure
-        // risk, since any bias in its level traces the exact curve.
-        var t = max(0, (pass.times.first ?? 0) + tone.offset, c - halfWindow)
-        while t <= min(end, (pass.times.last ?? 0) + tone.offset, c + halfWindow) {
+        // risk, since any bias in its level traces the exact curve. That's the searched window,
+        // widened by the timing slack: an attacker whose track puts the closest approach a few
+        // seconds elsewhere (archive positions are stale) centres its window there.
+        let half = fillHalfWindow
+        var t = max(0, (pass.times.first ?? 0) + tone.offset, c - half)
+        while t <= min(end, (pass.times.last ?? 0) + tone.offset, c + half) {
             if let f = pass.factor(at: t - tone.offset) {
                 times.append(t)
                 freqs.append(tone.rest * f)
@@ -173,15 +185,25 @@ public struct TrackFill {
         return expected.indices.map { v[$0] ?? nil }
     }
 
-    /// The attacker's verdict on each pass in `passes` (nil: it can't be tested, e.g. its closest
-    /// approach is out of the audio).
-    func test(_ x: [Double], sampleRate: Int, passes: Set<Int>) -> [Int: Tone?] {
+    /// The whitened excess, ready for every pass's search.
+    struct Prepared {
+        let g: PathSearch.Grid
+        /// Centred excess, frames × bins; and the best of ±2 bins (the curve is only as good as the track).
+        let a: [Float]
+        let am: [Float]
+        /// Rest frequencies, `ratio` apart from `restRange.lowerBound`.
+        let rests: [Double]
+        /// Log-frequency index j (rest index + Doppler shift in `ratio` steps, from `jLo`) → bin, or −1.
+        let binOf: [Int32]
+        let jLo: Int
+    }
+
+    func prepare(_ x: [Double], sampleRate: Int) -> Prepared? {
         let ps = search
-        guard let g = ps.grid(count: x.count, sampleRate: sampleRate) else { return Dictionary(uniqueKeysWithValues: passes.map { ($0, nil) }) }
+        guard let g = ps.grid(count: x.count, sampleRate: sampleRate) else { return nil }
         var a = ps.excess(x, g)
         let mean = a.reduce(0, +) / Float(a.count)
         for i in a.indices { a[i] -= mean }
-        // Best of ±2 bins (the curve is only as good as the track).
         var am = a
         for m in 0..<g.frames {
             let row = m * g.bins
@@ -195,34 +217,83 @@ public struct TrackFill {
             }
         }
         let rests = Array(sequence(first: restRange.lowerBound) { $0 * ratio < restRange.upperBound ? $0 * ratio : nil })
-        return Dictionary(uniqueKeysWithValues: passes.map { ($0, verdict(expected[$0], $0, am, g, rests)) })
+        // Factors 0.5–2 shift a rest by at most ±log(2)/log(ratio) steps.
+        let span = Int((log(2.0) / log(ratio)).rounded(.up)) + 1
+        let jLo = -span, jHi = rests.count + span
+        let binOf = (jLo..<jHi).map { j -> Int32 in
+            let k = Int((restRange.lowerBound * pow(ratio, Double(j)) / g.binHz).rounded()) - g.kLo
+            return k >= 0 && k < g.bins ? Int32(k) : -1
+        }
+        return Prepared(g: g, a: a, am: am, rests: rests, binOf: binOf, jLo: jLo)
+    }
+
+    /// The attacker's verdict on each pass in `passes` (nil: it can't be tested, e.g. its closest
+    /// approach is out of the audio).
+    func test(_ x: [Double], sampleRate: Int, passes: Set<Int>) -> [Int: Tone?] {
+        test(prepare(x, sampleRate: sampleRate), passes: passes)
+    }
+
+    func test(_ p: Prepared?, passes: Set<Int>) -> [Int: Tone?] {
+        guard let p else { return Dictionary(uniqueKeysWithValues: passes.map { ($0, nil) }) }
+        return Dictionary(uniqueKeysWithValues: passes.map { ($0, verdict(expected[$0], $0, p)) })
     }
 
     /// The best tone along the pass's curve and its z against the curve at wrong times.
-    func verdict(_ pass: ExpectedPass, _ pi: Int, _ a: [Float], _ g: PathSearch.Grid, _ rests: [Double]) -> Tone? {
-        let c = pass.center
+    ///
+    /// On a log-frequency axis a rest frequency times a Doppler factor is a shift, so each frame's
+    /// excess is resampled once onto that axis and every rest frequency is scored at once: one
+    /// contiguous add per frame for each timing (offset plus null shift), instead of a lookup per
+    /// rest. Offsets and null shifts that add up to the same timing share it. Frames where a curve
+    /// would leave the band score far below anything real, so only curves inside the band for
+    /// every frame count, as the attacker counts them.
+    func verdict(_ pass: ExpectedPass, _ pi: Int, _ p: Prepared) -> Tone? {
+        let g = p.g, c = pass.center
         let frames = (0..<g.frames).filter { abs(g.time($0) - c) <= halfWindow && pass.factor(at: g.time($0)) != nil }
         guard frames.count >= 40 else { return nil }
-        var factors = [Double](repeating: .nan, count: frames.count)
+        let R = p.rests.count, J = p.binOf.count, outside: Float = -1e9
+        // Each frame's excess on the log axis.
+        var rows = [Float](repeating: outside, count: frames.count * J)
+        for (i, m) in frames.enumerated() {
+            let base = i * J, row = m * g.bins
+            for j in 0..<J where p.binOf[j] >= 0 { rows[base + j] = p.am[row + Int(p.binOf[j])] }
+        }
+        let lr = log(ratio)
+        var acc = [Float](repeating: 0, count: R)
+        var cache: [Int: (score: Double, rest: Double)] = [:]
+        let unit = offsetStep
+        /// The best mean excess with the curve moved by `tau` s.
+        func best(_ tau: Double) -> (score: Double, rest: Double) {
+            let key = Int((tau / unit).rounded())
+            if let hit = cache[key] { return hit }
+            for i in 0..<R { acc[i] = 0 }
+            var known = 0
+            acc.withUnsafeMutableBufferPointer { out in
+                rows.withUnsafeBufferPointer { src in
+                    for (i, m) in frames.enumerated() {
+                        guard let f = pass.factor(at: g.time(m) - tau) else { continue }
+                        known += 1
+                        let start = i * J + Int((log(f) / lr).rounded()) - p.jLo
+                        let row = src.baseAddress! + start
+                        for r in 0..<R { out[r] += row[r] }
+                    }
+                }
+            }
+            var top = (score: -Double.infinity, rest: 0.0)
+            if known >= 40 {
+                var bi = 0
+                for i in 1..<R where acc[i] > acc[bi] { bi = i }
+                let mean = Double(acc[bi]) / Double(known)
+                if mean > -1e6 { top = (mean, p.rests[bi]) }
+            }
+            cache[key] = top
+            return top
+        }
         let offsets = Array(stride(from: -maxOffset, through: maxOffset + 1e-9, by: offsetStep))
-        // The best mean excess over rest frequencies and offsets, with the curve moved by `shift`.
         func best(shift: Double) -> (score: Double, rest: Double, offset: Double) {
             var top = (score: -Double.infinity, rest: 0.0, offset: 0.0)
             for o in offsets {
-                for (i, m) in frames.enumerated() { factors[i] = pass.factor(at: g.time(m) - shift - o) ?? .nan }
-                let known = factors.reduce(0) { $1.isNaN ? $0 : $0 + 1 }
-                for r in rests {
-                    var sum = 0.0, n = 0
-                    for (i, m) in frames.enumerated() where !factors[i].isNaN {
-                        let k = Int((r * factors[i] / g.binHz).rounded()) - g.kLo
-                        guard k >= 0, k < g.bins else { continue }
-                        sum += Double(a[m * g.bins + k])
-                        n += 1
-                    }
-                    // Only curves inside the band for every frame, as the attacker counts them: a
-                    // curve half off the band's edge averages fewer, noisier frames.
-                    if n >= 40, n == known, sum / Double(n) > top.score { top = (sum / Double(n), r, o) }
-                }
+                let b = best(shift + o)
+                if b.score > top.score { top = (b.score, b.rest, o) }
             }
             return top
         }

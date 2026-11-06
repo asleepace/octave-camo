@@ -255,6 +255,26 @@ def _heatmap(day: str, half_hour: int) -> list[tuple]:
     return out
 
 
+def archive_files(sid: str, margin_s: float = 240) -> tuple[list[Path], str, float]:
+    """The half-hour archive files covering a session (fetched and cached), and the CLI's
+    --at (lat,lon,alt on the pressure scale) and --start for it. Never printed."""
+    import datetime
+    d = sessions_dir() / sid
+    meta = json.load(open(d / "meta.json"))
+    t0 = _audio_start(meta)
+    t1 = t0 + sf.info(str(d / meta["audio"]["file"])).duration
+    loc = meta["location_at_start"]
+    alt0, _ = vertical_reference(meta)
+    files = []
+    for t in sorted({t0 - margin_s, t0, t1, t1 + margin_s}):
+        day = datetime.datetime.fromtimestamp(t, datetime.timezone.utc)
+        hh = (day.hour * 60 + day.minute) // 30
+        f = DATA / "adsb" / "heatmap" / f"{day:%Y-%m-%d}-{hh:02d}.bin"
+        if _get(f"{ADSB}/globe_history/{day:%Y/%m/%d}/heatmap/{hh:02d}.bin.ttf", f) is not None and f not in files:
+            files.append(f)
+    return files, f"{loc['lat']},{loc['lon']},{alt0:.1f}", t0
+
+
 def backfill(sid: str, before_s: float = 240, after_s: float = 240, radius_km: float = 40) -> int:
     """Fetch positions from before the first poll (and after the last) for every aircraft the
     session's own polls saw within `radius_km`: today's full-resolution traces when the session is
