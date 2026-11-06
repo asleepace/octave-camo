@@ -100,6 +100,64 @@ class Geometry(unittest.TestCase):
         np.testing.assert_allclose(locate.combine(z), [1.0, 0.0, 1.0])
 
 
+class PlaceSearch(unittest.TestCase):
+    """The place search's scoring (lab/locate.py): the log-axis shortcut against the direct search,
+    and the bits and ranks it reports."""
+
+    def setUp(self):
+        import tempfile
+        from pathlib import Path
+        self.tmp, self.data = tempfile.TemporaryDirectory(), corpus.DATA
+        corpus.DATA = Path(self.tmp.name)           # the spectrogram cache, not the real data folder
+
+    def tearDown(self):
+        corpus.DATA = self.data
+        self.tmp.cleanup()
+
+    def test_log_axis_search_matches_the_direct_one(self):
+        x = passing_tone(f0=900.0, snr_db_hz=12.0)
+        scene = locate.Scene(x, SR, "test-place")
+        rng = np.random.default_rng(5)
+        got = []
+        for k in range(60):
+            mid, width, depth = rng.uniform(15, 45), rng.uniform(2, 8), rng.uniform(0.02, 0.3)
+            fac = 1 + depth / 2 - depth / (1 + np.exp(-(scene.t - mid) / width))
+            j = np.flatnonzero(np.abs(scene.t - mid) <= 25)
+            fac_j = fac[j].copy()
+            fac_j[: rng.integers(0, 40)] = np.nan                       # part of the curve unknown
+            got.append((scene._best(j, fac_j), scene._best_direct(j, fac_j)))
+        got = np.array(got)
+        self.assertTrue(np.isfinite(got).all())
+        err = got[:, 0] - got[:, 1]
+        self.assertLess(abs(err.mean()), 0.01)                          # no bias either way
+        # Rounding the factor to 0.2 % moves a curve by a fraction of a bin: small against how much
+        # curves' scores differ (here about 0.3 of the spread; on a real session 95 % within 0.05 of 0.37).
+        self.assertLess(np.percentile(abs(err), 95), 0.35 * got[:, 1].std())
+        # On the true curve too (where the score is far above noise).
+        j = np.flatnonzero(np.abs(scene.t - 30) <= 25)
+        true = scene._best(j, factor(scene.t[j]))
+        self.assertAlmostEqual(true, scene._best_direct(j, factor(scene.t[j])), delta=0.05 * true)
+
+    def test_rank_bits(self):
+        self.assertAlmostEqual(locate.rank_bits(545, 1089), 0.0)            # where a blind guess lands
+        self.assertAlmostEqual(locate.rank_bits(1, 1089), np.log2(545))     # truth first
+        self.assertLess(locate.rank_bits(1089, 1089), 0)                    # truth last
+        self.assertGreater(locate.rank_bits(20, 1089), locate.rank_bits(26, 1089))
+
+    def test_bits(self):
+        flat = np.zeros((100, 3))
+        self.assertAlmostEqual(locate.information_bits(flat, 7), 0.0)   # nothing heard: no information
+        z = np.zeros((100, 2)); z[7] = [4.0, 3.0]
+        b = locate.information_bits(z, 7)
+        self.assertGreater(b, 0)
+        self.assertLessEqual(b, np.log2(100) + 1e-9)                    # at most all of the prior
+        self.assertLess(locate.information_bits(z, 8), 0)               # the audio points elsewhere
+        neg = np.zeros((100, 2)); neg[7] = [-5.0, -5.0]                  # below the null is no evidence
+        self.assertAlmostEqual(locate.information_bits(neg, 7), 0.0)
+        nan = np.full((100, 2), np.nan); nan[7] = [4.0, np.nan]          # out of earshot counts 0
+        self.assertAlmostEqual(locate.information_bits(nan, 7), locate.information_bits(np.where(np.isnan(nan), 0, nan), 7))
+
+
 class ShapeTest(unittest.TestCase):
     """The flyby fit, on curves made independently of it (lab.synth's own propagation)."""
 

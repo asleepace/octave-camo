@@ -26,9 +26,11 @@ from .common import whitened
 
 P = detect.Params(band=(80.0, 4000.0), broadband_aware=True)
 # Rest frequencies searched: 100 Hz–3.5 kHz in 0.2 % steps (fine enough for a Doppler factor).
-F0S = np.exp(np.arange(np.log(100.0), np.log(3500.0), 0.002))
+STEP = 0.002
+F0S = np.exp(np.arange(np.log(100.0), np.log(3500.0), STEP))
+FAC_ROWS = int(np.ceil(np.log(2.0) / STEP))   # log-axis rows for Doppler factors 0.5–2 either side
 HALF_WINDOW_S = 25.0          # scored around each aircraft's predicted closest approach
-FRAME_STRIDE = 2              # every other spectrogram frame
+MIN_FRAMES = 80                # frames a curve must cover near its closest approach (~1.7 s)
 TOL_BINS = 2                  # best of ±2 bins (published positions are coarse)
 NULL_SHIFTS_S = (-40.0, -32.0, -24.0, 24.0, 32.0, 40.0)   # the same curve at wrong times
 MAX_RANGE_KM = 10.0           # a point farther than this from an aircraft doesn't hear it
@@ -46,6 +48,17 @@ class Scene:
             Am[o:] = np.maximum(Am[o:], A[:-o])
         self.A = Am.astype(np.float32)
         self.df = self.f[1] - self.f[0]
+        # The same spectrogram on a log-frequency axis, in the rest-frequency grid's steps: a curve
+        # f0·fac is then one row shift per frame (log fac / STEP), the same for every f0, and a run
+        # of frames with the same shift is a difference of running sums. Rows outside the band are
+        # NaN, so a rest frequency whose curve leaves it scores NaN (as the direct search skips it).
+        rows = np.log(F0S[0]) + (np.arange(len(F0S) + 2 * FAC_ROWS) - FAC_ROWS) * STEP
+        b = np.rint((np.exp(rows) - self.f[0]) / self.df).astype(np.int64)
+        inside = (b >= 0) & (b < len(self.f))
+        G = np.full((len(rows), self.A.shape[1]), np.nan)
+        G[inside] = Am[b[inside]]
+        # Running sums over frames, frames × rows (a run's sum is two contiguous rows).
+        self.C = np.ascontiguousarray(np.concatenate([np.zeros((1, len(rows))), np.cumsum(G.T, axis=0)], axis=0))
 
     def scores(self, heard: np.ndarray, factor: np.ndarray, t_close: float) -> tuple[float, float, float]:
         """(score, null mean, null spread): the curve's score near its closest approach, and the
@@ -53,8 +66,8 @@ class Scene:
         curve, which matches a steady sound as well at any time, so only timing that fits stands
         out from its null."""
         t = self.t
-        j = np.flatnonzero((t >= t_close - HALF_WINDOW_S) & (t <= t_close + HALF_WINDOW_S))[::FRAME_STRIDE]
-        if len(j) < 40:
+        j = np.flatnonzero((t >= t_close - HALF_WINDOW_S) & (t <= t_close + HALF_WINDOW_S))
+        if len(j) < MIN_FRAMES:
             return np.nan, np.nan, np.nan
         s0 = self._best(j, np.interp(t[j], heard, factor, left=np.nan, right=np.nan))
         nulls = np.array([self._best(j, np.interp(t[j] - d, heard, factor, left=np.nan, right=np.nan)) for d in NULL_SHIFTS_S])
@@ -64,9 +77,27 @@ class Scene:
         return s0, float(nulls.mean()), float(nulls.std())
 
     def _best(self, j: np.ndarray, fac: np.ndarray) -> float:
-        """Best mean excess along f0·fac over all rest frequencies (frames where fac is known)."""
+        """Best mean excess along f0·fac over all rest frequencies (frames where fac is known), on
+        the log axis: the factor rounded to 0.2 %, a fraction of a bin below 5 kHz. `j` must be
+        consecutive frames (a gap just starts a new run)."""
+        ok = np.isfinite(fac) & (fac > 0.5) & (fac < 2)
+        if ok.sum() < MIN_FRAMES:
+            return np.nan
+        j = j[ok]
+        s = np.rint(np.log(fac[ok]) / STEP).astype(np.int64)
+        cut = np.flatnonzero((np.diff(s) != 0) | (np.diff(j) != 1)) + 1
+        a, e = np.r_[0, cut], np.r_[cut, len(j)]
+        runs = self.C[j[e - 1] + 1] - self.C[j[a]]                          # runs × rows
+        total = np.zeros(len(F0S))
+        for k, o in enumerate(FAC_ROWS + s[a]):                              # each run, shifted
+            total += runs[k, o:o + len(F0S)]
+        total /= len(j)
+        return float(np.nanmax(total)) if np.isfinite(total).any() else np.nan
+
+    def _best_direct(self, j: np.ndarray, fac: np.ndarray) -> float:
+        """The direct search _best replaces (kept to test it): every rest frequency's bins."""
         ok = np.isfinite(fac)
-        if ok.sum() < 40:
+        if ok.sum() < MIN_FRAMES:
             return np.nan
         j, fac = j[ok], fac[ok]
         K = np.rint((F0S[:, None] * fac[None, :] - self.f[0]) / self.df).astype(np.int32)
@@ -133,6 +164,28 @@ def combine(Z: np.ndarray) -> np.ndarray:
     return np.nan_to_num(Z, nan=0.0).sum(1)
 
 
+def rank_bits(rank: float, points: int) -> float:
+    """How far the audio narrows the search, model-free: log2 of the rank a blind guess would give
+    the truth on average ((N + 1) / 2) over the rank the attacker's scores give it. An attacker
+    checking candidates in score order needs `rank` tries instead of half the grid; 0 is no help,
+    log2((N + 1) / 2) (9.1 bits on 1,089 points) is the truth ranked first, negative the scores
+    point away from it."""
+    return float(np.log2((points + 1) / 2 / rank))
+
+
+def information_bits(Z: np.ndarray, truth: int) -> float:
+    """How much the audio favours the true point, in bits: log2 of the true point's posterior over
+    its prior (a uniform grid). Each aircraft's z is taken as the attacker's evidence with a
+    generalized likelihood ratio for an unknown positive amplitude in unit noise, ½·max(z, 0)²
+    nats, independent across aircraft. That model is the attacker's assumption, not a calibrated
+    one (the z's spread comes from six wrong times), so the rank is the model-free number and this
+    one is for comparing the same audio before and after cloaking. Negative: the audio points away
+    from the truth."""
+    ll = 0.5 * np.square(np.clip(np.nan_to_num(Z, nan=0.0), 0, None)).sum(1)
+    lp = ll - (ll.max() + np.log(np.exp(ll - ll.max()).sum()))
+    return float((lp[truth] + np.log(len(ll))) / np.log(2))
+
+
 def grid(extent_m: float, step_m: float, center=(0.0, 0.0)) -> np.ndarray:
     a = np.arange(-extent_m, extent_m + step_m / 2, step_m)
     X, Y = np.meshgrid(a + center[0], a + center[1])
@@ -159,7 +212,9 @@ def locate(sid: str, audios: list[tuple[str, np.ndarray]], sr: int, extent_m: fl
         Zf = combine(zscores(search(scene, geo, hexes, fine), floor)[0])
         fb = int(np.nanargmax(Zf))
         ft = int(np.argmin(np.hypot(*fine.T)))
-        rank = int((total > total[truth_i]).sum()) + 1
+        # Ties share the middle rank: points no aircraft reaches all score 0, and the truth among
+        # them is no better placed than any.
+        rank = int((total > total[truth_i]).sum() + ((total == total[truth_i]).sum() + 1) // 2)
         within = lambda d: float((total >= total[best_i] - d).sum() * (coarse_m / 1000) ** 2)
         per_aircraft = {h: round(float(Zc[truth_i, k]), 1) for k, h in enumerate(hexes) if np.isfinite(Zc[truth_i, k])}
         results.append({
@@ -168,6 +223,8 @@ def locate(sid: str, audios: list[tuple[str, np.ndarray]], sr: int, extent_m: fl
             "best_error_m": round(float(np.hypot(*coarse[best_i]))), "fine_best_error_m": round(float(np.hypot(*fine[fb]))),
             "best_score": round(float(total[best_i]), 1), "truth_score": round(float(total[truth_i]), 1),
             "fine_truth_score": round(float(Zf[ft]), 1), "fine_best_score": round(float(Zf[fb]), 1),
+            "rank_bits": round(rank_bits(rank, len(coarse)), 2),
+            "model_bits": round(information_bits(Zc, truth_i), 2),
             "area_within_3_km2": round(within(3.0), 2), "area_within_6_km2": round(within(6.0), 2),
             "truth_z_by_aircraft": per_aircraft,
         })
