@@ -86,21 +86,25 @@ truth counts as a leak. Low/high Δ are the mean absolute ERB-band level
 change below and above 300 Hz between the posted original and the posted cloak (both through the
 same AAC, so the codec's own loss doesn't count); a level difference, not a listening test.
 
-| Clip | Uncloaked | Cloaked (default chain) | Low Δ | High Δ |
+| Clip | Uncloaked | Cloaked (default chain); true location's rank on the grid | Low Δ | High Δ |
 | --- | --- | --- | --- | --- |
-| Aircraft, distant (5.8 km, −25 dB) | matched: leak, 0 m (z 20) | no detection | 3.0 dB | 0.2 dB |
-| Aircraft + speech | matched: leak, 0 m (z 18) | no detection; voice spectrum below 300 Hz correlates 0.68 with the original | 3.1 dB | 0.2 dB |
-| Aircraft, close (1.5 km) | both: leak (z 16) | no detection* | 10.3 dB | 1.1 dB |
-| Train, close (120 m) | matched: leak, 0 m (z 12) | no detection | 3.2 dB | 1.3 dB |
-| Train, distant (900 m, 600 Hz) | both: leak (z 77) | no detection | 3.0 dB | 0.8 dB |
-| Ship (400 m, 6 m/s) | matched: leak, 0 m (z 79) | no detection* | 3.2 dB | 1.0 dB |
+| Aircraft, distant (5.8 km, −25 dB) | matched: leak, 0 m (z 18) | no detection; top 70 % | 3.1 dB | 0.4 dB |
+| Aircraft + speech | matched: leak, 0 m (z 18) | no detection; top 49 %; voice spectrum below 300 Hz correlates 0.68 with the original | 3.2 dB | 0.3 dB |
+| Aircraft, close (1.5 km) | both: leak (z 15) | no detection, but top 1 %* | 10.3 dB | 1.3 dB |
+| Train, close (120 m) | matched: leak, 0 m (z 12) | no detection; top 43 % | 3.3 dB | 1.3 dB |
+| Train, distant (900 m, 600 Hz) | both: leak (z 73) | no detection; top 21 % | 3.1 dB | 0.8 dB |
+| Ship (400 m, 6 m/s) | matched: leak, 0 m (z 57) | near the truth at the noise floor (z 7)* | 3.2 dB | 1.0 dB |
 
-\* The matched attacker's best guess was still the true location, below its threshold. On the
-close pass that's the thinnest real margin. On the ship it means little: a 6 m/s source's Doppler
+The Swift pipeline the app runs gives the same results within a few tenths of a dB (the ranks
+differ between the two: separate implementations of each stage). A rank near 50 % is a blind guess; below the threshold is not
+the same as hidden.
+
+\* On the close pass the true location still ranks in the matched attacker's top 1 %, below its
+threshold: the thinnest real margin. On the ship it means little: a 6 m/s source's Doppler
 curve is nearly flat, so it matches steady residue anywhere, and on renders with no ship at all the
 attacker reached z ≈ 10 within 250 m of the truth. That's why leaks are judged against each
-scene's noise floor: measured z 4.7 and 4.8 for the aircraft scenes, 0 for the close pass, 3.2 and
-3.8 for the trains, and 9.3 for the ship.
+scene's noise floor: measured z 4.4 for both aircraft scenes, 0 for the close pass, 3.4 and 4.0
+for the trains, and 9.5 for the ship (at 160 kbps).
 
 The close pass costs more sound (10 dB low) because its tones are loud and get cancelled.
 

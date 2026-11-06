@@ -103,17 +103,20 @@ leak means the true location was recovered within 1 km, above the attacker's noi
 same scene with no source in it. CI checks both the harness's implementation of the default chain
 and the Swift pipeline the web app runs.
 
-| Clip | Uncloaked | Cloaked (default chain) | Mean ERB-band level change below / above 300 Hz |
+| Clip | Uncloaked | Cloaked (default chain): result, true location's rank on the attacker's grid | Mean ERB-band level change below / above 300 Hz |
 | --- | --- | --- | --- |
-| Distant jet (5.8 km, 25 dB below the noise) | matched attacker: found, 0 m off | not found | 3.0 / 0.2 dB |
-| Same jet under speech | matched: found, 0 m | not found (voice spectrum below 300 Hz: correlation 0.68 with the original) | 3.1 / 0.2 dB |
-| Close pass (1.5 km) | both attackers: found | not found* | 10.3 / 1.1 dB |
-| Train, close (120 m) | matched: found, 0 m | not found | 3.2 / 1.3 dB |
-| Train, distant (900 m) | both attackers: found | not found | 3.0 / 0.8 dB |
-| Ship (400 m, 6 m/s) | matched: found, 0 m | not found* | 3.2 / 1.0 dB |
+| Distant jet (5.8 km, 25 dB below the noise) | matched attacker: found, 0 m off | not found; top 70 % | 3.1 / 0.4 dB |
+| Same jet under speech | matched: found, 0 m | not found; top 49 % (voice spectrum below 300 Hz: correlation 0.68 with the original) | 3.2 / 0.3 dB |
+| Close pass (1.5 km) | both attackers: found | not found, but top 1 %* | 10.3 / 1.3 dB |
+| Train, close (120 m) | matched: found, 0 m | not found; top 43 % | 3.3 / 1.3 dB |
+| Train, distant (900 m) | both attackers: found | not found; top 21 % | 3.1 / 0.8 dB |
+| Ship (400 m, 6 m/s) | matched: found, 0 m | near the truth at the attacker's noise floor* | 3.2 / 1.0 dB |
 
-\* The thinnest margins: on these two, the matched attacker's best guess was still the true
-location, just below its detection threshold. On the ship, that attacker scores about as high on
+A rank near 50 % is what a blind guess gets; "not found" means below the detection threshold,
+which isn't the same as the location being hidden.
+
+\* The thinnest margins: on the close pass the true location still ranks in the attacker's top
+1 % (of its 10 km grid), just below its detection threshold. On the ship, that attacker scores about as high on
 the same scene with no ship in it (a slow source's curve is nearly flat and matches anything), so
 its result there says little either way. The close pass costs more sound because its tones are
 loud and get cancelled.
