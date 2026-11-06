@@ -70,9 +70,13 @@ public struct ExpectedPass: Codable, Equatable {
 /// stop at the tones it likes; it stops when the attacker's score is low.
 public struct TrackFill {
     public var expected: [ExpectedPass] = []
-    /// Remove until the attacker-equivalent z is below this. Below 3 for margin: the lab's attacker
-    /// whitens with an exact 15 s running median and scores about 10 % higher than this search.
-    public var stopZ = 2.5
+    /// Remove until the attacker-equivalent z is below this. Not a detection threshold: the place
+    /// search sums every aircraft's evidence over a grid, so tones at z 1–2.5 that no single test
+    /// would call a pass still rank the true place high (docs/EXPERIMENTS.md, "Stopping track
+    /// removal"). At 1 instead of 2.5 a borderline session went from p 0.12 and 0.06 to 0.35 and
+    /// 0.21 against the scene's no-information baseline, for 0.1–0.3 dB more change above 300 Hz;
+    /// 0 doubled the change for nothing more. On the holdout, 1 and 2.5 cleared both sessions alike.
+    public var stopZ = 1.0
     /// Tones filled per pass at most (an engine has several: fan, shaft orders, harmonics).
     public var maxTones = 8
     /// Timing slack, s (published positions lag and are coarse), as the attacker searches it.

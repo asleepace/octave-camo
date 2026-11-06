@@ -111,12 +111,18 @@ final class TrackFillTests: XCTestCase {
         XCTAssertEqual(r.output, x)
     }
 
-    /// Noise along a plausible curve: nothing stands out, nothing is filled (several seeds).
-    func testNoiseAloneFillsNothing() {
+    /// Noise along a plausible curve: nothing stands out, so little is filled, and what is filled
+    /// leaves the attacker's z below the stopping point without raising it (several seeds). With
+    /// the stop at z 1, noise alone sometimes crosses it; filling noise must not create evidence.
+    func testNoiseAloneStaysBelowTheStop() {
         let stage = Self.stage([Self.expected()])
         for seed in 1...4 {
             let x = DetectionScenes.white(Self.rate * 60, seed: UInt64(seed))
-            XCTAssertLessThan(Self.verdict(x, stage)?.z ?? 0, stage.stopZ, "seed \(seed)")
+            let before = Self.verdict(x, stage)?.z ?? 0
+            XCTAssertLessThan(before, 3, "seed \(seed): noise shouldn't look like a pass")
+            let r = stage.process(x, sampleRate: Self.rate)
+            let after = Self.verdict(r.output, stage)?.z ?? 0
+            XCTAssertLessThan(after, max(stage.stopZ, before) + 0.5, "seed \(seed): \(r.summary)")
         }
     }
 

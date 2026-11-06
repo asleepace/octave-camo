@@ -9,6 +9,20 @@ are grouped by milestone, newest first, with the commits that made them.
 
 ## [Unreleased]
 
+### Place-scored evaluation, and track removal stopping at z 1
+
+- **Track removal now stops at z 1** (was 2.5). Scored by where the clip was recorded instead of
+  per flight: tones at z 1–2.5 that no single test calls a pass still add up to rank the true
+  place high. A borderline session cleared, for 0.1–0.3 dB more change above 300 Hz; on the two
+  held-out sessions both settings cleared them. Benchmark and lab: `--track-stop` on the CLI.
+- **The lab's place search is the metric** (from an independent review): 4× faster, rank bits
+  against each scene's no-information baseline, a frozen holdout. Findings in EXPERIMENTS.md:
+  Full alone leaks the place on three sessions, removal from the flight archive on one (stale
+  positions); cleaning around a faint pass can make it easier to find.
+- **Review fixes:** the benchmark saves at the page's 160 kbps and measures sound change on what a
+  listener gets; metric names say what they measure; the evidence tables give the true location's
+  rank; PathSearch's cache is locked.
+
 ### Flight-track removal on the page
 
 - **The page can remove what flight logs predict.** It reads where and when the clip was recorded

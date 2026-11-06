@@ -356,6 +356,49 @@ once a change is settled, with the result reported as it comes. They were picked
 their place-search numbers above, which is the only contamination. The public 40-flight corpus
 joins the holdout when it's ingested.
 
+## Stopping track removal (calibrated place scores)
+
+**The rank bits needed a baseline first.** The truth always hears the aircraft passing it, while
+many grid points hear none and score exactly 0, so any positive noise at the truth beats all of
+those: on 94d99a one aircraft at z 1.2 ranked the truth 40th of 1,089 ("3.8 bits") with nothing
+there. `locate.null_bits` redraws the truth's z for each aircraft it hears from what wrong places
+score for that aircraft; each result now carries that baseline and **p**, how often audio with no
+information about the truth scores as well.
+
+Track removal (Full + the flight archive, the page's path) stopped once each pass's z was below
+2.5. Sweep on the five tuning sessions, two seeds each (p; lower is a leak):
+
+| session | original | Full | stop 2.5 | stop 1 | stop 0 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| efb8f8 | **0.004** | **0.003** | 0.81 / 0.85 | 0.80 / 0.85 | 0.80 / 0.56 |
+| 37a954 | **0.02** | **0.002** | 0.92 / 0.52 | 0.42 / 0.89 | 0.57 / 0.80 |
+| a2f229 | 0.08 | 0.12 / 0.06¹ | 0.12 / 0.06 | 0.35 / 0.21 | 0.31 / 0.46 |
+| 94d99a | **0.02** | **0.05** | 0.05 / 0.05 | 0.05 / 0.05 | 0.05 / 0.05 |
+| e9a1c3 | 0.11 | 0.37 | 0.37 / 0.89 | 0.94 / 0.89 | 0.36 / 0.61 |
+
+¹ Nothing filled at 2.5, so the same as Full.
+
+Mean third-octave level change above 300 Hz against the original (dB): Full 0.4–1.4; stop 2.5
+adds 0–1.3 (one session's large fills); stop 1 adds 0.1–0.3 more; stop 0 roughly doubles it.
+
+- **Calibrated, Full alone leaks on three sessions** (efb8f8, 37a954, 94d99a); with the archive,
+  on none but 94d99a at either stop.
+- **Stop 1 is settled** (TrackFill.stopZ, was 2.5): the borderline session clears, little cost; 0
+  costs twice the sound for nothing more. The evidence is one session, so it was checked on the
+  holdout once:
+
+| holdout | original | Full | stop 2.5 | stop 1 | change above 300 Hz, stop 2.5 / 1 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| af39e1 | 0.07 | 0.40 | 0.87 / 0.95 | 0.87 / 0.95 | 0.42 / 0.45 dB |
+| f8b75a | 0.06 | 0.10 | 0.38 / 0.27 | 0.21 / 0.26 | 0.42 / 0.43 dB |
+
+  Both holdout originals turn out borderline once calibrated, and both stops clear them: no gain
+  shown, no harm. Recorded as is.
+- **94d99a is a curve problem, not a stopping one.** With the archive's curves TrackFill scores
+  its aircraft z −1.2 to −3.4 (nothing to remove, at any stop); with the exact tracks the lab
+  attacker uses, 0.3 on the same audio, and the place search 0.8–1.2. Stale archive positions put
+  the predicted curve off the tone, while an attacker with exact tracks finds it.
+
 ## Track-driven removal: the leak closed
 
 `TrackFill` (Swift, CLI `scrub --expect passes.json`, lab `python3 -m lab trackfill`) takes each
