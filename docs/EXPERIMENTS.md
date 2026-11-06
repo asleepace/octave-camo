@@ -355,7 +355,11 @@ including those within 2 km of the truth, which share its evidence; that made p 
 They're now left out (p moved by about 0.01). One worry checked: after archive removal the truth
 often sat in the bottom 10–20 % of the grid, which would be a hole an attacker could look for.
 Scored from the bottom against the same baseline, p 0.05–0.96 over the seven sessions' archive
-copies (two seeds): none significant.
+copies (two seeds): none significant. **But 6b838f** (the 767, scored later with the loudness
+term) gives p 0.016 from the bottom after Full and 0.017 after archive removal (0.19 for the
+original): several aircraft each a little below their wrong-time null (sum −6.6). One such p among
+about twenty low-side tests is about what chance gives; it needs more seeds before it's called a
+hole.
 
 **94d99a.** Archive curves against the exact-track curve: 1.0–2.3 % apart in factor around the
 closest approach, 0.7 % after the best timing and swing scale (37a954, where removal worked:
