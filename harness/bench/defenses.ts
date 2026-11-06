@@ -35,6 +35,9 @@ const { values: opts } = parseArgs({
     chains: { type: "string", default: DEFAULT_CHAINS },
     clips: { type: "string", default: "distant,speech,close" },
     "no-aac": { type: "boolean", default: false },
+    /** The re-encode's bitrate. The page saves at 160 kbps (web/src/media.ts); a platform may
+     *  re-encode lower, which only removes more, so the saved file is the stricter case. */
+    "aac-kbps": { type: "string", default: "160" },
     /** CI gate: exit 1 if the default chain leaks on any clip (both the harness modules and the
      *  shipped Swift pipeline), or if "none" stops leaking (the attackers broke, which would make
      *  every defense look safe). */
@@ -104,12 +107,12 @@ async function aacRoundTrip(x: Float32Array, tag: string): Promise<Float32Array>
   if (opts["no-aac"]) return x;
   const a = join(dir, `${tag}.wav`), m = join(dir, `${tag}.m4a`);
   await writeMonoWav(a, x, SR);
-  await run(["ffmpeg", "-loglevel", "error", "-y", "-i", a, "-c:a", "aac", "-b:a", "128k", m]);
+  await run(["ffmpeg", "-loglevel", "error", "-y", "-i", a, "-c:a", "aac", "-b:a", `${opts["aac-kbps"]}k`, m]);
   return readMono(m, SR);
 }
 
 const pad = (s: string, n: number) => (s.length >= n ? s : s + " ".repeat(n - s.length));
-console.log(`AAC re-encode: ${opts["no-aac"] ? "off" : "128 kbps"}; attackers: blind tracker (6 dB) and matched (ADS-B, true + 2 decoy tracks)\n`);
+console.log(`AAC re-encode: ${opts["no-aac"] ? "off" : `${opts["aac-kbps"]} kbps`}; attackers: blind tracker (6 dB) and matched (ADS-B, true + 2 decoy tracks)\n`);
 
 for (const name of opts.clips!.split(",")) {
   const clip = await makeClip(name);
@@ -117,6 +120,9 @@ for (const name of opts.clips!.split(",")) {
   const tracks = [clip.plane, ...decoys];
   const original = await readMono(clip.wav, SR);
   const voice = clip.voice ? await readMono(clip.voice, SR) : undefined;
+  // Sound change is measured on what a listener gets: the posted file against the original posted
+  // the same way (so the codec's own loss doesn't count against the cloak).
+  const heard = await aacRoundTrip(original, `${name}-original`);
   // The attacker's noise floor on this scene: its peak z for the real track on renders with no
   // source at all (after the same AAC round trip). Slow sources have nearly flat curves that
   // match any steady residue, so a fixed z threshold alone gives false "leaks" there.
@@ -134,7 +140,7 @@ for (const name of opts.clips!.split(",")) {
   }
   const leakZ = Math.max(defaultMatchedConfig.detectionZ, nullZ + 3);
   console.log(`=== ${name} (${clip.durationS} s, true closest approach ${clip.truthD} m; attacker noise floor z ${nullZ.toFixed(1)}, leak above z ${leakZ.toFixed(1)})`);
-  console.log(`  ${pad("chain", 38)} ${pad("blind attack", 16)} ${pad("matched attack (ADS-B)", 34)} low Δ   high Δ${voice ? "  voice<300Hz" : ""}`);
+  console.log(`  ${pad("chain", 38)} ${pad("blind attack", 16)} ${pad("matched attack (ADS-B)", 34)} low Δ   high Δ${voice ? "  voice r<300Hz" : ""}`);
 
   for (const chain of parseChains(opts.chains!.replace(/(^|;)none(;|$)/, "$1hum(mains=0)$2"))) {
     const label = chain.label === "hum(mains=0)" ? "none" : chain.label;
@@ -164,13 +170,13 @@ for (const name of opts.clips!.split(",")) {
           ? `wrong place ${(m.errorM / 1000).toFixed(1)} km off`
           : `no detection (truth top ${(100 - real.truthPercentile).toFixed(0)}%)`;
 
-    const low300 = loudnessChange(original, processed, SR, 30, 300);
-    const high = loudnessChange(original, processed, SR, 300, 4000);
-    const v = voice ? voiceRetention(voice, processed, SR) : NaN;
+    const low300 = loudnessChange(heard, posted, SR, 30, 300);
+    const high = loudnessChange(heard, posted, SR, 300, 4000);
+    const v = voice ? voiceRetention(voice, posted, SR) : NaN;
     rows.push({ clip: name, chain: label, blind: blindText, matched: matchedText, leak: located || blindText.startsWith("LEAK"), nullZ,
       lowDb: low300, highDb: high, voice: voice ? v : undefined });
     console.log(`  ${pad(label, 38)} ${pad(blindText, 16)} ${pad(matchedText, 34)} ${low300.toFixed(1).padStart(4)} dB ${high.toFixed(1).padStart(4)} dB` +
-      `${voice ? `  ${(v * 100).toFixed(0).padStart(5)}%` : ""}  [${((performance.now() - t) / 1000).toFixed(0)}s]`);
+      `${voice ? `  ${v.toFixed(2).padStart(6)}` : ""}  [${((performance.now() - t) / 1000).toFixed(0)}s]`);
   }
   console.log("");
 }

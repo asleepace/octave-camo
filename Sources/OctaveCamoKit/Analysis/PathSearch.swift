@@ -181,13 +181,14 @@ public struct PathSearch {
     /// Mean excess and the best-path score's mean and spread on white noise, per sample rate and
     /// settings (computed once, then cached).
     struct Null { let mu: Double, mean: Double, sd: Double }
-    /// Unsynchronized: the engine runs single-threaded (one wasm instance per worker; the CLI and
-    /// tests call it from one thread at a time).
-    nonisolated(unsafe) private static var nulls: [String: Null] = [:]
+    /// Locked: the engine runs on one thread, but a library caller could search from several.
+    /// Computing is outside the lock (two threads may both compute a missing entry; they get the
+    /// same value, the noise being seeded).
+    private static let nulls = Locked<[String: Null]>([:])
 
     func null(sampleRate: Int) -> Null? {
         let key = "\(sampleRate)|\(band)|\(windowSeconds)|\(referenceSeconds)|\(blockSeconds)|\(clip)|\(spanSeconds)|\(stepSeconds)|\(slopes)|\(slopePenalty)|\(minFall)|\(edgeBins)"
-        if let n = Self.nulls[key] { return n }
+        if let n = Self.nulls.withLock({ $0[key] }) { return n }
         var rng = SeededRNG(seed: 0x9A75)
         let noise = rng.normals(sampleRate * 60)
         guard let g = grid(count: noise.count, sampleRate: sampleRate) else { return nil }
@@ -198,7 +199,7 @@ public struct PathSearch {
         guard scores.count > 2 else { return nil }
         let mean = DSP.mean(scores), sd = max(DSP.standardDeviation(scores), 1e-6)
         let n = Null(mu: mu, mean: mean, sd: sd)
-        Self.nulls[key] = n
+        Self.nulls.withLock { $0[key] = n }
         return n
     }
 

@@ -36,7 +36,7 @@ type Preset = keyof typeof PRESETS;
 const STEP_TEXT: Partial<Record<Step, [string, string]>> = {
   hum: ["Notch the mains hum", "Narrow filters at 50/60 Hz and their harmonics remove the grid's clock."],
   subtract: ["Cancel long tones", "Follows each clear tone below 1 kHz and subtracts a matched copy, pass after pass. Fainter tones, and any from 1 to 8 kHz, are counted and outlined on the spectrogram; Experimental fills them in (step 5)."],
-  scurve: ["Hunt for flyby curves", "Tries every physically possible pass (speed, distance, timing), the way an attacker would, and cancels the ones that fit."],
+  scurve: ["Hunt for flyby curves", "Tries a grid of straight passes (speed, distance, timing), the way an attacker would, and cancels up to eight that fit."],
   lowband: ["Regenerate the low end", `Below ${CUTOFF} Hz, where distant engines live, the sound is rebuilt as noise matching each hearing band's loudness. Voices are tracked and kept.`],
   lines: ["Fill in what the check still finds", "Every long tone the attacker model still finds, at any frequency up to 8 kHz (a jet's fan tone, a faint car tone, an electrical whine), is replaced along its path by a narrow strip of noise at the level beside it, then the check looks again. It removes held musical notes too."],
 };

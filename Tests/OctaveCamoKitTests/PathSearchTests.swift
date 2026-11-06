@@ -29,6 +29,20 @@ final class PathSearchTests: XCTestCase {
         }
     }
 
+    /// The white-noise null is cached across searches; searching from several threads at once
+    /// (a library caller could) must give each the same passes as searching alone.
+    func testSearchesFromSeveralThreadsAgree() {
+        let audio = LineFillTests.fanTone(rate: 16_000, snr: 20)
+        let alone = passes(audio).map(\.frequencies)
+        let results = Locked<[[[Double]]]>([])
+        DispatchQueue.concurrentPerform(iterations: 6) { _ in
+            let found = PathSearch().tracks(in: audio.mono, sampleRate: audio.sampleRate).map(\.frequencies)
+            results.withLock { $0.append(found) }
+        }
+        XCTAssertFalse(alone.isEmpty)
+        XCTAssertEqual(results.withLock { $0 }, Array(repeating: alone, count: 6))
+    }
+
     func testHarmlessScenesGiveNoPasses() {
         // The scenes are 10–15 s; a pass needs 12 s and a span 10 s, so each runs four times over
         // (else the search would barely get a chance to be wrong).

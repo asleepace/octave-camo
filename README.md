@@ -96,17 +96,17 @@ You shouldn't have to take a privacy tool's word for it.
 
 ## Evidence
 
-Synthetic clips, cloaked with the default chain, then re-encoded as 128 kbps AAC (as a platform
-would). Two attackers: a blind tracker that fits flyby curves with no outside data, and a matched
+Synthetic clips, cloaked with the default chain, then saved as 160 kbps AAC (the page's own save; a
+platform's re-encode at a lower rate only removes more). Two attackers: a blind tracker that fits flyby curves with no outside data, and a matched
 attacker that has the source's true track, the exact recording time, and a 10 km search grid. A
 leak means the true location was recovered within 1 km, above the attacker's noise floor on the
 same scene with no source in it. CI checks both the harness's implementation of the default chain
 and the Swift pipeline the web app runs.
 
-| Clip | Uncloaked | Cloaked (default chain) | Sound change below / above 300 Hz |
+| Clip | Uncloaked | Cloaked (default chain) | Mean ERB-band level change below / above 300 Hz |
 | --- | --- | --- | --- |
 | Distant jet (5.8 km, 25 dB below the noise) | matched attacker: found, 0 m off | not found | 3.0 / 0.2 dB |
-| Same jet under speech | matched: found, 0 m | not found (68 % of low voice detail kept) | 3.1 / 0.2 dB |
+| Same jet under speech | matched: found, 0 m | not found (voice spectrum below 300 Hz: correlation 0.68 with the original) | 3.1 / 0.2 dB |
 | Close pass (1.5 km) | both attackers: found | not found* | 10.3 / 1.1 dB |
 | Train, close (120 m) | matched: found, 0 m | not found | 3.2 / 1.3 dB |
 | Train, distant (900 m) | both attackers: found | not found | 3.0 / 0.8 dB |
@@ -132,9 +132,9 @@ web app and the research harness:
    let the hum through, both passes run in from the inside. That removes the grid clock without
    leaving a notch pattern that says which grid the recording came from.
 3. **subtract** follows each long tone, cancels a matched copy, re-tracks the residual, repeats.
-4. **scurve** runs the attacker's trick blind: it scores every physically possible straight pass
-   (speed, distance, timing) by integrating energy along its pitch curve, and cancels the curves
-   that fit. It catches faint tones above the low band, like train wheels.
+4. **scurve** runs the attacker's trick blind: it scores a grid of straight passes (speeds,
+   closest distances, timings, within set frequency limits) by integrating energy along each pitch
+   curve, and cancels up to eight that fit. A pass outside the grid, or a curved one, isn't searched. It catches faint tones above the low band, like train wheels.
 5. **lowband** rebuilds everything below 300 Hz, where distant engines live, as noise that matches
    each hearing band's loudness, smoothed and slowly re-gained. Tracked voice harmonics are kept.
    Nothing narrow survives for a matched filter to lock on to.

@@ -76,18 +76,20 @@ three real and a synthetic set, which is still a small sample.
 
 ## Evidence
 
-`cd harness && bun run bench:gate` (also run by CI on every push). Synthetic clips; the default
-chain, implemented in the harness and in the Swift pipeline the app ships; a 128 kbps AAC round
-trip; then both attackers: the blind tracker (6 dB threshold) and the matched attacker with the
+`cd harness && bun run bench:gate` (run by CI on pull requests). Synthetic clips; the default
+chain, implemented in the harness and in the Swift pipeline the app ships; a 160 kbps AAC round
+trip (the page's save); then both attackers: the blind tracker (6 dB threshold) and the matched attacker with the
 true track, two decoy tracks and the exact recording time. Before judging a clip, the matched
 attacker is calibrated: three renders of the same scene with no source give its noise floor, and
 only a detection clearly above that floor (z more than 3 above it, and above 7) within 1 km of the
-truth counts as a leak. Low/high Δ are ERB loudness changes below and above 300 Hz.
+truth counts as a leak. Low/high Δ are the mean absolute ERB-band level
+change below and above 300 Hz between the posted original and the posted cloak (both through the
+same AAC, so the codec's own loss doesn't count); a level difference, not a listening test.
 
 | Clip | Uncloaked | Cloaked (default chain) | Low Δ | High Δ |
 | --- | --- | --- | --- | --- |
 | Aircraft, distant (5.8 km, −25 dB) | matched: leak, 0 m (z 20) | no detection | 3.0 dB | 0.2 dB |
-| Aircraft + speech | matched: leak, 0 m (z 18) | no detection; 68 % of voice detail below 300 Hz kept | 3.1 dB | 0.2 dB |
+| Aircraft + speech | matched: leak, 0 m (z 18) | no detection; voice spectrum below 300 Hz correlates 0.68 with the original | 3.1 dB | 0.2 dB |
 | Aircraft, close (1.5 km) | both: leak (z 16) | no detection* | 10.3 dB | 1.1 dB |
 | Train, close (120 m) | matched: leak, 0 m (z 12) | no detection | 3.2 dB | 1.3 dB |
 | Train, distant (900 m, 600 Hz) | both: leak (z 77) | no detection | 3.0 dB | 0.8 dB |
