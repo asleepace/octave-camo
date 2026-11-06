@@ -74,14 +74,15 @@ final class TrackFillTests: XCTestCase {
         XCTAssertLessThan(Self.verdict(r.output, stage)?.z ?? 0, stage.stopZ, r.summary)
     }
 
-    /// A loud pass ends below the bar too, in a few fills, not one per shoulder.
+    /// A loud pass ends below the bar too, in a few fills, not one per shoulder (at the z-1 stop a
+    /// 30 dB pass takes four: 20.1 → 1.0).
     func testALoudPassEndsBelowTheBar() {
         for snr in [30.0, 40] {
             let x = LineFillTests.fanTone(rate: Self.rate, snr: snr).mono
             let stage = Self.stage([Self.expected()])
             let r = stage.process(x, sampleRate: Self.rate)
             XCTAssertLessThan(Self.verdict(r.output, stage)?.z ?? 0, stage.stopZ, "\(snr) dB: \(r.summary)")
-            XCTAssertTrue(["filled 1 ", "filled 2 ", "filled 3 "].contains { r.summary.contains($0) }, "\(snr) dB: \(r.summary)")
+            XCTAssertTrue(["filled 1 ", "filled 2 ", "filled 3 ", "filled 4 "].contains { r.summary.contains($0) }, "\(snr) dB: \(r.summary)")
         }
     }
 
