@@ -184,7 +184,7 @@ def _known_path_search(f, t, A, factor_of_t, f0s, win, taus, tol: int = 2):
         return {tau: (float("nan"), float("nan")) for tau in taus}
     lo, hi = float(np.min(f0s)), float(np.max(f0s))
     rests = lo * RATIO ** np.arange(int(np.log(hi / lo) / np.log(RATIO)) + 1)
-    span = int(np.ceil(np.log(2) / np.log(RATIO))) + 1          # factors 0.5–2
+    span = int(np.ceil(np.log(4) / np.log(RATIO))) + 1          # factors 0.25–4 (glitches beyond: dropped)
     lj = np.arange(-span, len(rests) + span)
     df = f[1] - f[0]
     k = np.round((lo * RATIO ** lj - f[0]) / df).astype(int)
@@ -196,7 +196,7 @@ def _known_path_search(f, t, A, factor_of_t, f0s, win, taus, tol: int = 2):
     cols = np.arange(R)
     for tau in taus:
         fac = factor_of_t(t[j] - tau)
-        ok = np.isfinite(fac) & (fac > 0)
+        ok = np.isfinite(fac) & (fac > 0.25) & (fac < 4)
         if ok.sum() < 10:
             out[tau] = (float("nan"), float("nan"))
             continue

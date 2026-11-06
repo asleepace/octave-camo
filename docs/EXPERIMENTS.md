@@ -519,6 +519,12 @@ a room fingerprint above the band anything in the cloak looks at.
 attacker scores 0.5 on its receding half, the check and the learned detector find nothing. Wind
 gusts fill the clip, and still raise no false pass.
 
+**Again with the window open, TV and fan** (190 s; a Boeing 767 freighter at 3.1 km heard 64 s in,
+seven more aircraft within 7 km including an Embraer 175): no plane in the audio. The attacker's
+best on the eight is 0.8, the check finds no flyby, the learned detector no pass, and removal from
+the archive (32 curves) fills nothing: the TV's tones fitted no curve this time. The recorder's
+broadband check called three of the seven heard again.
+
 **Verdict:** worth pursuing, not yet worth porting (step 3 was "only if it clearly wins"). It wins
 on sensitivity and loses on real-world false alarms. Next: harder negatives in training (vehicles
 slowing down, reversing beepers, more real outdoor backgrounds: the construction session is where
