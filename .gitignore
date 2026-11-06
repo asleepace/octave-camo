@@ -1,6 +1,6 @@
 # Swift
 .build/
-.build-wasm/
+.build-wasm*/
 .swiftpm/
 *.xcodeproj/
 DerivedData/

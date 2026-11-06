@@ -33,6 +33,10 @@ are grouped by milestone, newest first, with the commits that made them.
   (`.build-wasm`), so switching no longer relinks the native build or swaps out its CLI (a no-op
   native build: 67 s → 1 s), and reuses wasm-opt's output when its input hasn't changed (65 s →
   2 s).
+- **CI and tests:** the full suite runs on pull requests (a push to main only builds and deploys,
+  and docs or lab pushes run nothing); Swift tests run in parallel, one process per test; the
+  detection baseline (a third of the suite, 283 s) is four parallel parts, and the monotonicity
+  test it duplicated is folded into it; every job has a time limit.
 - **CLI:** `scrub --archive file[,file] --at lat,lon[,alt] --start unix [--temp C]` and
   `predict` (the curves, without positions). **Lab:** `trackfill <session> … --archive` runs the
   page's path.

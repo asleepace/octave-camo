@@ -15,6 +15,11 @@ flags=(-c "${CONFIG:-release}" --swift-sdk "$sdk" --product octave-camo-wasm --s
 # builds, which otherwise ends up in the wasm and differs between machines and directories).
 [ "${CONFIG:-release}" = release ] && flags+=(-Xlinker --strip-debug -Xswiftc -gnone
   -Xswiftc -Xfrontend -Xswiftc -disable-incremental-llvm-codegen)
+# SIMD=1 lets the compiler use WebAssembly SIMD (128-bit vectors). Off: measured on a 3-minute
+# 48 kHz clip it made flight-track removal 25 % faster (15.8 → 11.9 s), the cloak and the check no
+# faster, with bit-identical output; Safari before 16.4 can't load such a module, and a fallback
+# build isn't worth that yet. Use a separate WASM_SCRATCH to try it.
+[ "${SIMD:-0}" = 1 ] && flags+=(-Xswiftc -Xcc -Xswiftc -msimd128)
 # OPT=size compiles for size (-Osize) instead of speed (-O, the default).
 [ "${OPT:-speed}" = size ] && flags+=(-Xswiftc -Osize)
 # WASM_LINK_MAP=file writes the linker's map (which symbol sits at which address), for diagnosis.
@@ -34,7 +39,8 @@ if [ "${CONFIG:-release}" = release ] && [ -x "$opt" ]; then
   cached="${WASM_SCRATCH:-.build-wasm}/wasm-opt-$key.wasm"
   if [ ! -f "$cached" ]; then
     rm -f "${WASM_SCRATCH:-.build-wasm}"/wasm-opt-*.wasm
-    "$opt" -Oz --enable-bulk-memory --enable-sign-ext --enable-mutable-globals --enable-nontrapping-float-to-int \
+    simd=(); [ "${SIMD:-0}" = 1 ] && simd=(--enable-simd)
+    "$opt" -Oz --enable-bulk-memory --enable-sign-ext --enable-mutable-globals --enable-nontrapping-float-to-int "${simd[@]}" \
       "$bin/octave-camo-wasm.wasm" -o "$cached.tmp" && mv "$cached.tmp" "$cached"
   fi
   cp "$cached" "$out"
