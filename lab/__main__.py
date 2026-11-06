@@ -15,7 +15,7 @@
                                         on other audio of it: counts and flyby passes
   locate <session> [audio …]            the place-searching attacker: rank of the true position
                                         among a grid of candidates (distances and areas only)
-  trackfill <session> [preset …] [--archive]
+  trackfill <session> [preset …] [--archive] [--stop Z] [--seed N]
                                         cloak with flight-track removal (the CLI's --expect, curves
                                         predicted at the true position), into
                                         $LAB_DATA/cloaked/<session>-<preset>-tracks.wav; with
@@ -247,11 +247,11 @@ def cmd_locate(sid: str, others: list[str]):
     audios, sr = with_copies(sid, others)
     t = time.time()
     rows = locate.locate(sid, audios, sr)
-    print("| audio | aircraft | true point's rank (of grid) | rank bits | best guess off by | fine best off by | area within 3 / 6 of best | truth z by aircraft |")
+    print("| audio | aircraft | true point's rank (of grid) | rank bits (no-information mean, p) | best guess off by | fine best off by | area within 3 / 6 of best | truth z by aircraft |")
     print("| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |")
     for r in rows:
         z = ", ".join(f"{v}" for v in r["truth_z_by_aircraft"].values() if v is not None)
-        print(f"| {r['name']} | {r['aircraft']} | {r['truth_rank']} of {r['points']} ({r['truth_percentile']} %) | {r['rank_bits']} | "
+        print(f"| {r['name']} | {r['aircraft']} | {r['truth_rank']} of {r['points']} ({r['truth_percentile']} %) | {r['rank_bits']} ({r['null_bits_mean']}, p {r['p']}) | "
               f"{r['best_error_m']} m | {r['fine_best_error_m']} m | {r['area_within_3_km2']} / {r['area_within_6_km2']} km² | {z} |")
     print(f"\n{time.time() - t:.0f} s")
     save_result(f"locate-{sid}", rows)
@@ -306,7 +306,9 @@ def cmd_trackfill(sid: str, presets: list[str]):
     out_dir = corpus.DATA / "cloaked"
     out_dir.mkdir(parents=True, exist_ok=True)
     archive = "--archive" in presets
-    presets = [p for p in presets if p != "--archive"]
+    opt = lambda name: presets[presets.index(name) + 1] if name in presets else None
+    stop, seed = opt("--stop"), opt("--seed") or "7"
+    presets = [p for i, p in enumerate(presets) if p != "--archive" and not p.startswith("--") and (i == 0 or presets[i - 1] not in ("--stop", "--seed"))]
     with tempfile.TemporaryDirectory() as tmp:
         src, exp = Path(tmp) / "in.wav", Path(tmp) / "expect.json"
         sf.write(src, x, sr, subtype="FLOAT")
@@ -324,8 +326,10 @@ def cmd_trackfill(sid: str, presets: list[str]):
             exp.write_text(json.dumps(passes))
             track_args = ["--expect", str(exp)]
         for preset in presets or ["experimental"]:
-            dst = out_dir / f"{sid}-{preset}-{'archive' if archive else 'tracks'}.wav"
-            r = subprocess.run([str(cli), "scrub", str(src), str(dst), *PRESET_ARGS[preset], "--seed", "7", *track_args],
+            tag = (f"-stop{stop}" if stop else "") + (f"-s{seed}" if seed != "7" else "")
+            dst = out_dir / f"{sid}-{preset}-{'archive' if archive else 'tracks'}{tag}.wav"
+            extra = ["--track-stop", stop] if stop else []
+            r = subprocess.run([str(cli), "scrub", str(src), str(dst), *PRESET_ARGS[preset], "--seed", seed, *track_args, *extra],
                                capture_output=True, text=True)
             if r.returncode != 0:
                 raise SystemExit(f"octave-camo scrub failed:\n{r.stderr.strip().splitlines()[0] if r.stderr.strip() else r.stdout[:500]}")

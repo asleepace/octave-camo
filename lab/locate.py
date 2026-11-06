@@ -173,6 +173,28 @@ def rank_bits(rank: float, points: int) -> float:
     return float(np.log2((points + 1) / 2 / rank))
 
 
+def null_bits(Z: np.ndarray, truth: int, draws: int = 4000, seed: int = 0) -> np.ndarray:
+    """Rank bits the truth would get from audio with no information about it, in this scene: each
+    aircraft it hears gets a z drawn from that aircraft's z at the other points that hear it (what
+    a wrong place scores), the other points keep theirs. Needed because the truth always hears the
+    aircraft passing it while many grid points hear none and score exactly 0, so any positive
+    noise at the truth beats all of those: one aircraft at z 1.2 ranked a truth 40th of 1,089
+    (3.8 bits) with nothing there."""
+    total = combine(Z)
+    others = np.sort(np.delete(total, truth))
+    rng = np.random.default_rng(seed)
+    t = np.zeros(draws)
+    for k in np.flatnonzero(np.isfinite(Z[truth])):
+        pool = np.delete(Z[:, k], truth)
+        pool = pool[np.isfinite(pool)]
+        if len(pool):
+            t += rng.choice(pool, draws)
+    above = len(others) - np.searchsorted(others, t, side="right")
+    tied = np.searchsorted(others, t, side="right") - np.searchsorted(others, t, side="left")
+    rank = above + (tied + 2) // 2                  # the truth itself included, ties in the middle
+    return np.log2((len(total) + 1) / 2 / rank)
+
+
 def grid(extent_m: float, step_m: float, center=(0.0, 0.0)) -> np.ndarray:
     a = np.arange(-extent_m, extent_m + step_m / 2, step_m)
     X, Y = np.meshgrid(a + center[0], a + center[1])
@@ -203,6 +225,7 @@ def locate(sid: str, audios: list[tuple[str, np.ndarray]], sr: int, extent_m: fl
         # them is no better placed than any.
         rank = int((total > total[truth_i]).sum() + ((total == total[truth_i]).sum() + 1) // 2)
         within = lambda d: float((total >= total[best_i] - d).sum() * (coarse_m / 1000) ** 2)
+        bits, nb = rank_bits(rank, len(coarse)), null_bits(Zc, truth_i)
         per_aircraft = {h: round(float(Zc[truth_i, k]), 1) for k, h in enumerate(hexes) if np.isfinite(Zc[truth_i, k])}
         results.append({
             "name": name, "aircraft": len(hexes), "points": len(coarse),
@@ -210,7 +233,12 @@ def locate(sid: str, audios: list[tuple[str, np.ndarray]], sr: int, extent_m: fl
             "best_error_m": round(float(np.hypot(*coarse[best_i]))), "fine_best_error_m": round(float(np.hypot(*fine[fb]))),
             "best_score": round(float(total[best_i]), 1), "truth_score": round(float(total[truth_i]), 1),
             "fine_truth_score": round(float(Zf[ft]), 1), "fine_best_score": round(float(Zf[fb]), 1),
-            "rank_bits": round(rank_bits(rank, len(coarse)), 2),
+            "rank_bits": round(bits, 2),
+            # Against the same scene with no information at the truth: the mean, how often it
+            # reaches the observed bits (p), and the excess (observed minus mean).
+            "null_bits_mean": round(float(nb.mean()), 2), "null_bits_p95": round(float(np.percentile(nb, 95)), 2),
+            "p": round(float((nb >= bits - 1e-9).mean()), 3), "excess_bits": round(float(bits - nb.mean()), 2),
+            "totals": np.round(total, 2).tolist(), "truth_index": truth_i,
             "area_within_3_km2": round(within(3.0), 2), "area_within_6_km2": round(within(6.0), 2),
             "truth_z_by_aircraft": per_aircraft,
         })

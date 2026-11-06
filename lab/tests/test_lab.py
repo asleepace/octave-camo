@@ -145,6 +145,27 @@ class PlaceSearch(unittest.TestCase):
         self.assertGreater(locate.rank_bits(20, 1089), locate.rank_bits(26, 1089))
 
 
+class NullBits(unittest.TestCase):
+    def test_the_truth_always_hearing_the_aircraft_is_not_information(self):
+        rng = np.random.default_rng(3)
+        Z = np.full((1000, 1), np.nan)
+        Z[:300, 0] = rng.normal(0, 1, 300)          # a third of the grid hears the aircraft
+        truth = 0
+        Z[truth, 0] = 1.2                           # a noise-sized z at the truth
+        total = locate.combine(Z)
+        rank = int((total > total[truth]).sum() + ((total == total[truth]).sum() + 1) // 2)
+        bits = locate.rank_bits(rank, len(total))
+        nb = locate.null_bits(Z, truth)
+        self.assertGreater(bits, 2.5)               # the raw rank flatters it...
+        self.assertGreater((nb >= bits).mean(), 0.05)   # ...but no-information audio gets that often
+        self.assertGreater(nb.mean(), 0.5)          # and the baseline itself is above 0
+
+    def test_nothing_heard_at_the_truth_means_its_rank_is_fixed(self):
+        Z = np.full((50, 2), np.nan); Z[10:, 0] = np.linspace(-2, 2, 40)
+        nb = locate.null_bits(Z, 0)
+        self.assertTrue(np.allclose(nb, nb[0]))
+
+
 class Holdout(unittest.TestCase):
     def test_scoring_refuses_the_holdout_unless_asked(self):
         from lab.__main__ import main
