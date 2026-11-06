@@ -37,6 +37,9 @@ are grouped by milestone, newest first, with the commits that made them.
   and docs or lab pushes run nothing); Swift tests run in parallel, one process per test; the
   detection baseline (a third of the suite, 283 s) is four parallel parts, and the monotonicity
   test it duplicated is folded into it; every job has a time limit.
+- **Lab: the envelope attacker** (`lab envelope`): does a recording's slow level follow a flight's
+  predicted level (a jet's broadband roar, invisible to the tone attackers)? It scores a synthetic
+  swell; on 59 aircraft across 21 real sessions its best is z 1.6.
 - **CLI:** `scrub --archive file[,file] --at lat,lon[,alt] --start unix [--temp C]` and
   `predict` (the curves, without positions). **Lab:** `trackfill <session> … --archive` runs the
   page's path.

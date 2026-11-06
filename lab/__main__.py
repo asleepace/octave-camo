@@ -148,6 +148,26 @@ def cmd_attack(sid: str, others: list[str]):
     save_result(f"attack-{sid}", rows)
 
 
+def cmd_envelope(sid: str, others: list[str]):
+    """The loudness-envelope attacker on the session's original and any cloaked copies."""
+    from . import envelope
+    idx = json.load(open(corpus.sessions_dir() / sid / "index.json"))
+    g = corpus.geometry(sid)
+    audios, sr = with_copies(sid, others)
+    levels = {name: envelope.band_levels(a, sr) for name, a in audios}
+    print("| aircraft | closest | heard | " + " | ".join(f"z, r ({n})" for n, _ in audios) + " |\n| --- | ---: | ---: |" + " ---: |" * len(audios))
+    rows = []
+    for q in idx["passes"][:6]:
+        track = g["tracks"].get(q["hex"])
+        if track is None:
+            continue
+        res = {name: envelope.envelope_z(*levels[name], track, g["speed_of_sound"]) for name, _ in audios}
+        rows.append({"hex": q["hex"], "results": {n: list(v[:2]) + [list(v[2]) if v[2] else None, v[3]] for n, v in res.items()}})
+        print(f"| {q['type'] or '?'} {q['hex']} | {q['closest_in_audio_km']} km | {q['heard_s']} s | "
+              + " | ".join(f"{z:.1f}, {r:+.2f} ({int(b[0]) if b else '?'}–{int(b[1]) if b else '?'} Hz, {o:+.1f} s)" for z, r, b, o in res.values()) + " |")
+    save_result(f"envelope-{sid}", rows)
+
+
 def cmd_cloak(sid: str, presets: list[str]) -> list[str]:
     """Run web/scripts/cloak-raw.ts (the real wasm, as the page would) on the session's audio."""
     import subprocess, tempfile
@@ -364,6 +384,8 @@ def main(argv):
         cmd_cloak(rest[0], rest[1:])
     elif cmd == "attack":
         cmd_attack(rest[0], rest[1:])
+    elif cmd == "envelope":
+        cmd_envelope(rest[0], rest[1:])
     elif cmd == "ml":
         cmd_ml(rest)
     elif cmd == "bench":

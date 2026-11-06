@@ -389,6 +389,31 @@ the cloak, but a sign that the null curves don't capture non-stationary audio. A
 for the attacker's own threshold: on one of three white-noise draws the best of ~45,000 rest and
 timing combinations along a fixed curve scored z 4.4 with nothing there.
 
+## The envelope attacker (a jet's roar, not its tones)
+
+The short bedroom clip heard a receding 737-800 as broadband roar with no tone, which the tone
+attackers can't see. `lab envelope` asks whether a recording's slow level follows a flight's
+predicted level: each band's quiet level (20th percentile within each second, 2.5 s trimmed from
+each end) correlated with −20 log r minus air absorption at the band's centre, heard with the
+travel time, best over four bands (40–150, 150–500, 500–1,500 Hz and all of it) and ±6 s, z
+against the same at 34 wrong times.
+
+**It works when the swell is there:** noise whose level follows a synthetic flyby scores z > 3
+(r > 0.9); the same noise at a steady level doesn't. **On the corpus it finds nothing:** 59
+aircraft scored across 21 sessions, best z 1.6 (a Bell 206 at 6 km), 1.4 and 1.2 on the two
+loudest tone passes, 0.8 on the short clip's 737-800. That clip's fade does follow the 737
+(r 0.84), but just as well the same prediction at other times (wrong-time mean 0.45, spread 0.51)
+and another aircraft receding 14 km away (r 0.85): a fading roar says something flew away during
+the clip, not which flight or from where. In rooms with a TV, a fan, speech or wind, the level
+moves far more than a jet's 1/r² does at 3 km or more.
+
+Two traps on the way, both in the statistic, not the audio: a far aircraft's prediction barely
+changes, and its wrong-time copies are near-identical (spread 0.00: z 3.1 from r = 0) or few (z 9.7
+on an aircraft 14 km away). Predictions now must swing 1.5 dB, at least 20 wrong times must
+count, and their spread is floored at 0.1 (about what a correlation over a few dozen effectively
+independent seconds varies by on its own). Untested: a quiet outdoor recording right under a loud
+jet, where the swell could dominate; the one outdoor pass we have (the deck) scores 0.1.
+
 ## The known-path attacker's null
 
 The lab's known-path attacker (`python3 -m lab attack`) scored each aircraft as a z against the

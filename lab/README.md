@@ -13,6 +13,7 @@ python3 -m lab e2 real --wide                                    # the same up t
 python3 -m lab cloak <session> full experimental                 # cloak with the real wasm build
 python3 -m lab check <session> full.wav experimental.wav          # the page's check (real wasm), before/after
 python3 -m lab attack <session> full.wav experimental.wav        # the known-path attacker, before/after (z and dB)
+python3 -m lab envelope <session> [wav …]                        # the loudness-envelope attacker (a jet's roar)
 python3 -m lab locate <session> full.wav experimental.wav         # the place-searching attacker (slow: ~5 min each)
 python3 -m lab trackfill <session> full experimental             # flight-track removal (the CLI's --expect)
 python3 -m lab trackfill <session> full --archive                 # the page's path: curves from adsb.lol's archive

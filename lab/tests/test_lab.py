@@ -163,6 +163,32 @@ class KnownPath(unittest.TestCase):
             self.assertLess(fast[0] - max(slow), 0.5)
 
 
+class EnvelopeAttacker(unittest.TestCase):
+    """The loudness-envelope attacker: noise whose level follows a flyby's predicted level scores;
+    the same noise at a steady level doesn't."""
+
+    @staticmethod
+    def flyby():
+        te = np.arange(-200, 300, 0.1)
+        q = np.stack([150 * (te - 40), np.full_like(te, 1_500.0), np.full_like(te, 1_200.0)], 1)
+        return te, q, np.gradient(q, te, axis=0)
+
+    def test_a_swell_that_follows_the_track_scores_and_steady_noise_doesnt(self):
+        from lab import envelope
+        rng = np.random.default_rng(4)
+        sr, secs, c = 8_000, 120, 343.0
+        tr = self.flyby()
+        heard, pred = envelope.predicted_level(tr[0], tr[1], c, (40.0, 1500.0))
+        t = np.arange(sr * secs) / sr
+        gain = 10 ** ((np.interp(t, heard, pred) - pred.max()) / 20)
+        noise = rng.normal(0, 1, len(t))
+        z, r, _, _ = envelope.envelope_z(*envelope.band_levels(noise * gain, sr), tr, c)
+        self.assertGreater(z, 3)
+        self.assertGreater(r, 0.9)
+        z0, _, _, _ = envelope.envelope_z(*envelope.band_levels(noise, sr), tr, c)
+        self.assertLess(z0, 2.5)
+
+
 class Plumbing(unittest.TestCase):
     def test_cache_key_follows_the_audio(self):
         x = np.zeros(100)
