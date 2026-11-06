@@ -164,29 +164,124 @@ class KnownPath(unittest.TestCase):
 
 
 class EnvelopeAttacker(unittest.TestCase):
-    """The loudness-envelope attacker: noise whose level follows a flyby's predicted level scores;
-    the same noise at a steady level doesn't."""
+    """The loudness-envelope attacker (lab/envelope.py): a room whose level follows a flyby's
+    predicted level scores; what doesn't follow it, or can't be told from a drift, doesn't."""
+
+    SR, SECS, C = 8_000, 120, 343.0
+    # A smaller search than the lab's (one band, ±2 s, 16 wrong times) keeps these fast; the
+    # statistic and its guards are the same.
+    FAST = dict(offsets=np.arange(-2, 2.01, 1.0), shifts=tuple(s * d for d in np.arange(20.0, 60.1, 5.5) for s in (-1, 1)), min_nulls=12)
+    BAND = ((40.0, 1500.0),)
 
     @staticmethod
-    def flyby():
+    def flyby(side=1_500.0, up=1_200.0, speed=150.0, closest=40.0):
         te = np.arange(-200, 300, 0.1)
-        q = np.stack([150 * (te - 40), np.full_like(te, 1_500.0), np.full_like(te, 1_200.0)], 1)
+        q = np.stack([speed * (te - closest), np.full_like(te, side), np.full_like(te, up)], 1)
         return te, q, np.gradient(q, te, axis=0)
 
-    def test_a_swell_that_follows_the_track_scores_and_steady_noise_doesnt(self):
+    @classmethod
+    def room(cls, seed=4):
+        return np.random.default_rng(seed).normal(0, 1, cls.SR * cls.SECS)
+
+    @classmethod
+    def with_plane(cls, room, track, over_db=6.0, seed=5, shift=0.0, invert=False):
+        """The room plus broadband noise at the track's predicted level, `over_db` above the room
+        at its loudest (moved `shift` s; louder when farther if `invert`)."""
         from lab import envelope
-        rng = np.random.default_rng(4)
-        sr, secs, c = 8_000, 120, 343.0
+        heard, pred = envelope.predicted_level(track[0], track[1], cls.C, cls.BAND[0])
+        t = np.arange(len(room)) / cls.SR
+        lv = np.interp(t - shift, heard, pred) - pred.max()
+        if invert:
+            lv = -lv + lv.min()
+        return room + np.random.default_rng(seed).normal(0, 1, len(room)) * 10 ** ((lv + over_db) / 20)
+
+    @classmethod
+    def score(cls, x, track, **kw):
+        from lab import envelope
+        return envelope.envelope_z(*envelope.band_levels(x, cls.SR, bands=cls.BAND), track, cls.C, **{**cls.FAST, **kw})
+
+    def test_a_plane_in_the_room_scores_and_the_room_alone_doesnt(self):
         tr = self.flyby()
-        heard, pred = envelope.predicted_level(tr[0], tr[1], c, (40.0, 1500.0))
-        t = np.arange(sr * secs) / sr
-        gain = 10 ** ((np.interp(t, heard, pred) - pred.max()) / 20)
-        noise = rng.normal(0, 1, len(t))
-        z, r, _, _ = envelope.envelope_z(*envelope.band_levels(noise * gain, sr), tr, c)
-        self.assertGreater(z, 3)
-        self.assertGreater(r, 0.9)
-        z0, _, _, _ = envelope.envelope_z(*envelope.band_levels(noise, sr), tr, c)
-        self.assertLess(z0, 2.5)
+        for seed in (1, 2, 3):
+            room = self.room(seed)
+            z, r2, _, _ = self.score(self.with_plane(room, tr, seed=seed + 10), tr)
+            self.assertGreater(z, 5, f"seed {seed}")
+            self.assertGreater(r2, 0.8, f"seed {seed}")
+            self.assertLess(self.score(room, tr)[0], 2.5, f"seed {seed}")
+
+    def test_a_gain_changes_nothing(self):
+        tr = self.flyby()
+        x = self.with_plane(self.room(), tr)
+        a, b = self.score(x, tr), self.score(100 * x, tr)
+        self.assertAlmostEqual(a[0], b[0], places=6)
+        self.assertAlmostEqual(a[1], b[1], places=6)
+
+    def test_taps_and_clicks_dont_count(self):
+        """The quiet percentile within each second ignores short loud things."""
+        tr = self.flyby()
+        room = self.room()
+        tapped = room.copy()
+        rng = np.random.default_rng(9)
+        for at in rng.uniform(5, self.SECS - 5, 30):
+            i = int(at * self.SR)
+            tapped[i:i + 80] += 200 * rng.normal(0, 1, 80)         # 10 ms, 46 dB above the room
+        self.assertLess(self.score(tapped, tr)[0], 2.5)
+        x = self.with_plane(room, tr)
+        self.assertAlmostEqual(self.score(x, tr)[0], self.score(x + (tapped - room), tr)[0], delta=1.0)
+
+    def test_the_wrong_time_or_the_wrong_way_round_doesnt_score(self):
+        tr = self.flyby()
+        room = self.room()
+        self.assertLess(self.score(self.with_plane(room, tr, shift=45), tr)[0], 2.5)
+        self.assertLess(self.score(self.with_plane(room, tr, invert=True), tr)[0], 2.5)
+
+    def test_a_drifting_room_is_not_a_plane(self):
+        """A room getting steadily louder (+9.5 dB over the clip) against a near and a far
+        aircraft: every wrong time fits a drift as well as the right one does."""
+        drifting = self.room() * np.linspace(1, 3, self.SR * self.SECS)
+        for tr in (self.flyby(), self.flyby(side=30_000.0)):
+            z = self.score(drifting, tr)[0]
+            self.assertTrue(np.isnan(z) or z < 2.5, z)
+
+    def test_a_prediction_that_barely_moves_gives_no_verdict(self):
+        """A prediction that changes by under 1.5 dB over the clip (an aircraft hovering 3 km away):
+        no score at all, not a guess."""
+        from lab import envelope
+        flat = self.flyby(side=3_000.0, speed=2.0)
+        heard, pred = envelope.predicted_level(flat[0], flat[1], self.C, self.BAND[0])
+        inside = (heard > 2.5) & (heard < self.SECS - 2.5)
+        self.assertLess(np.ptp(pred[inside]), 1.5)
+        z, r2, band, _ = self.score(self.room() * np.linspace(1, 3, self.SR * self.SECS), flat)
+        self.assertTrue(np.isnan(z) and np.isnan(r2) and band is None)
+
+    def test_predicted_level_survives_glitches(self):
+        from lab import envelope
+        te, q, _ = self.flyby()
+        q = q.copy()
+        q[1_000] = [0.0, 0.0, 0.0]                  # a position at the listener: r floored, not −∞
+        q[2_000:2_005] += 400_000.0                  # a jump that would send heard time backwards
+        heard, lv = envelope.predicted_level(te, q, self.C, self.BAND[0])
+        self.assertTrue(np.all(np.diff(heard) > 0))
+        self.assertTrue(np.all(np.isfinite(lv)))
+
+    def test_bands_past_nyquist_are_left_out(self):
+        from lab import envelope
+        _, lv = envelope.band_levels(self.room()[: 4_000 * 30], 4_000, bands=((40.0, 1500.0), (1500.0, 4000.0)))
+        self.assertEqual(list(lv), [(40.0, 1500.0)])
+
+    def test_the_fit_holds_the_size_of_the_change(self):
+        """A 1 dB drift shaped like a predicted 10 dB fade fits worse than the fade itself, unlike
+        a correlation (the first version), which scores both 1.0."""
+        from lab import envelope
+        pred = np.linspace(0, -10, 60)
+        self.assertGreater(envelope.fit_r2(pred + 3, pred), 0.99)
+        self.assertLess(envelope.fit_r2(pred / 10 + 3, pred), envelope.fit_r2(pred + 3, pred))
+        self.assertTrue(np.isnan(envelope.fit_r2(np.full(60, 2.0), pred)))
+
+    def test_deterministic(self):
+        tr = self.flyby()
+        x = self.with_plane(self.room(), tr)
+        self.assertEqual(self.score(x, tr), self.score(x, tr))
 
 
 class Plumbing(unittest.TestCase):

@@ -155,7 +155,7 @@ def cmd_envelope(sid: str, others: list[str]):
     g = corpus.geometry(sid)
     audios, sr = with_copies(sid, others)
     levels = {name: envelope.band_levels(a, sr) for name, a in audios}
-    print("| aircraft | closest | heard | " + " | ".join(f"z, r ({n})" for n, _ in audios) + " |\n| --- | ---: | ---: |" + " ---: |" * len(audios))
+    print("| aircraft | closest | heard | " + " | ".join(f"z, R² ({n})" for n, _ in audios) + " |\n| --- | ---: | ---: |" + " ---: |" * len(audios))
     rows = []
     for q in idx["passes"][:6]:
         track = g["tracks"].get(q["hex"])
@@ -164,7 +164,7 @@ def cmd_envelope(sid: str, others: list[str]):
         res = {name: envelope.envelope_z(*levels[name], track, g["speed_of_sound"]) for name, _ in audios}
         rows.append({"hex": q["hex"], "results": {n: list(v[:2]) + [list(v[2]) if v[2] else None, v[3]] for n, v in res.items()}})
         print(f"| {q['type'] or '?'} {q['hex']} | {q['closest_in_audio_km']} km | {q['heard_s']} s | "
-              + " | ".join(f"{z:.1f}, {r:+.2f} ({int(b[0]) if b else '?'}–{int(b[1]) if b else '?'} Hz, {o:+.1f} s)" for z, r, b, o in res.values()) + " |")
+              + " | ".join(f"{z:.1f}, {r:.2f} ({int(b[0]) if b else '?'}–{int(b[1]) if b else '?'} Hz, {o:+.1f} s)" for z, r, b, o in res.values()) + " |")
     save_result(f"envelope-{sid}", rows)
 
 
