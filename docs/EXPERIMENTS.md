@@ -532,6 +532,9 @@ steady pair near 55–65 Hz present all clip long (not the rotor: no Doppler, an
 rotor would sit near 26 Hz, which the cloak's low band replaces anyway). Removal from the archive
 filled one tone at 1.9 kHz along one of 22 curves: a false fill in the TV's sound, the second.
 
+**A 30 s clip in the same room**, started 11 s after a Boeing 737-800's closest approach (4.5 km):
+its receding half scores 0.8, nothing else stands out, and removal from the archive fills nothing.
+
 **Verdict:** worth pursuing, not yet worth porting (step 3 was "only if it clearly wins"). It wins
 on sensitivity and loses on real-world false alarms. Next: harder negatives in training (vehicles
 slowing down, reversing beepers, more real outdoor backgrounds: the construction session is where
