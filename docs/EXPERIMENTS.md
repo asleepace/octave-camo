@@ -457,6 +457,13 @@ car: one more false pass in traffic. (The corpus places the listener where the r
 133 m is under 4 % of these distances, but a walking recording near a close source would need the
 location track.) The recorder's mains estimate now reports no grid outdoors, as it should.
 
+**A second walk, at night** (90 s, walking about 110 m, wind most of the way; nearest aircraft
+12.4 km, heard at the very end): nothing anywhere. The check finds no flyby, the learned detector
+no pass, and the known-path attacker scores −0.1 and −0.5 on the two aircraft whose sound reached
+the clip. A clean negative, and the first one in wind. On the recorder side it confirms a bug: its
+per-second analyses (the ultrasonic scan and the new low-band level behind its aircraft check)
+wrote no rows again, while the mains track, which takes audio in any block size, did.
+
 **Verdict:** worth pursuing, not yet worth porting (step 3 was "only if it clearly wins"). It wins
 on sensitivity and loses on real-world false alarms. Next: harder negatives in training (vehicles
 slowing down, reversing beepers, more real outdoor backgrounds: the construction session is where
