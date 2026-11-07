@@ -39,6 +39,14 @@ public struct LineFill: ScrubStage {
     public var voiceToleranceHz = 9.0
     public var pitch = PitchTracker()
     public var seed: UInt64 = .random(in: 1...UInt64.max)
+    /// Fill a strip with what the same frequencies sound like this far away in time (s, tried in
+    /// order for each frame), scaled to the local floor, instead of fresh noise; fresh noise only
+    /// where no offset fits. Empty: noise everywhere. A noise fill sits at the floor beside the
+    /// strip, so it also erases whatever else was there (notes, a room's steady tones) and the exact
+    /// curve comes out emptier than the same curve at other times: a dip, and summed over aircraft
+    /// a hole at the true place (docs/EXPERIMENTS.md, "The fill's mark"). Borrowed sound carries the
+    /// background's own structure, so the curve looks like it does at any other time.
+    public var borrowSeconds: [Double] = []
 
     public init() {}
 
@@ -95,8 +103,11 @@ public struct LineFill: ScrubStage {
         }
     }
 
-    /// Replaces one line's strip with matched noise. Returns false when there was nothing to fill.
-    func fill(_ y: inout [Double], _ line: Track, sampleRate: Int, rng: inout SeededRNG) -> Bool {
+    /// Replaces one line's strip with matched noise (or borrowed sound, `borrowSeconds`). Returns
+    /// false when there was nothing to fill. `source`, when given, is where the tone being removed
+    /// is at every time (not only along the strip): a frame isn't borrowed from a time when the tone
+    /// would be inside the strip there, or the fill would copy the tone back in.
+    func fill(_ y: inout [Double], _ line: Track, sampleRate: Int, rng: inout SeededRNG, source tone: Track? = nil) -> Bool {
         guard let t0 = line.times.first, let t1 = line.times.last, !line.frequencies.isEmpty else { return false }
         let sr = Double(sampleRate), size = Self.fftSize(sampleRate: sampleRate), hop = size / 4
         let binHz = sr / Double(size), frameSeconds = Double(size) / sr
@@ -120,6 +131,16 @@ public struct LineFill: ScrubStage {
 
         let band = BandSTFT(y[a..<b], size: size, hop: hop, lo: lo, hi: hi)
         let W = band.width, F = band.frames
+        // The same band elsewhere in time, for borrowing: each offset's stretch, clipped to the audio.
+        let sources: [(band: BandSTFT, start: Int, end: Int, shift: Int)] = borrowSeconds.compactMap { d in
+            let shift = Int((d * sr).rounded())
+            let sa = max(0, a + shift), sb = min(y.count, b + shift)
+            guard sb - sa > 2 * size else { return nil }
+            return (BandSTFT(y[sa..<sb], size: size, hop: hop, lo: lo, hi: hi), sa, sb, shift)
+        }
+        let sourcePower: [[Double]] = sources.map { src in
+            (0..<(src.band.frames * W)).map { src.band.re[$0] * src.band.re[$0] + src.band.im[$0] * src.band.im[$0] }
+        }
         var power = [Double](repeating: 0, count: F * W)
         for i in 0..<(F * W) { power[i] = band.re[i] * band.re[i] + band.im[i] * band.im[i] }
         var outRe = band.re, outIm = band.im
@@ -153,6 +174,32 @@ public struct LineFill: ScrubStage {
             let meanPower = floor / log(2.0)
             let amp = (meanPower / 2).squareRoot() * gain
 
+            // A frame to borrow from: the first offset whose frame lies wholly inside the audio,
+            // scaled so its side bins match this frame's.
+            var borrowed: (s: Int, frame: Int, scale: Double)? = nil
+            let here = a + band.center(of: m)
+            for (s, src) in sources.enumerated() {
+                let at = here + src.shift
+                if let tone, let t0 = tone.times.first, let t1 = tone.times.last {
+                    let ts = Double(at) / sr
+                    if ts >= t0 && ts <= t1 && abs(Self.interpolate(tone, at: ts) - f) <= Double(2 * half + 1) * binHz { continue }
+                }
+                guard at - size / 2 >= src.start, at + size / 2 <= src.end else { continue }
+                let ms = (at - src.start + size - size / 2) / hop          // center(of:) inverted
+                guard ms >= 0, ms < src.band.frames, abs(src.band.center(of: ms) + src.start - at) <= hop / 2 else { continue }
+                sideBins.removeAll(keepingCapacity: true)
+                for mm in max(0, ms - 2)...min(src.band.frames - 1, ms + 2) {
+                    for k in 0..<W {
+                        let d = abs(Double(k) - c)
+                        if d >= Double(2 * half + 1) && d <= Double(side) { sideBins.append(sourcePower[s][mm * W + k]) }
+                    }
+                }
+                let there = DSP.median(sideBins[...])
+                guard there > 0 else { continue }
+                borrowed = (s, ms, (floor / there).squareRoot())
+                break
+            }
+
             let kLo = max(0, Int((c - Double(half) - 1).rounded(.down))), kHi = min(W - 1, Int((c + Double(half) + 1).rounded(.up)))
             for k in kLo...kHi {
                 let d = abs(Double(k) - c)
@@ -161,8 +208,14 @@ public struct LineFill: ScrubStage {
                 if w <= 0 { continue }
                 let i = m * W + k
                 let keep = (1 - w).squareRoot(), use = w.squareRoot()
-                outRe[i] = keep * band.re[i] + use * amp * rng.normal()
-                outIm[i] = keep * band.im[i] + use * amp * rng.normal()
+                if let (s, ms, scale) = borrowed {
+                    let j = ms * W + k
+                    outRe[i] = keep * band.re[i] + use * scale * sources[s].band.re[j]
+                    outIm[i] = keep * band.im[i] + use * scale * sources[s].band.im[j]
+                } else {
+                    outRe[i] = keep * band.re[i] + use * amp * rng.normal()
+                    outIm[i] = keep * band.im[i] + use * amp * rng.normal()
+                }
                 changed = true
             }
         }

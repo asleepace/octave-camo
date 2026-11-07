@@ -39,8 +39,8 @@ MAX_RANGE_KM = 10.0           # a point farther than this from an aircraft doesn
 class Scene:
     """One audio's spectrogram, prepared for scoring curves."""
 
-    def __init__(self, x: np.ndarray, sr: int, name: str):
-        self.f, self.t, L = whitened(f"{name}:locate", x, sr, P)
+    def __init__(self, x: np.ndarray, sr: int, name: str, params: detect.Params | None = None):
+        self.f, self.t, L = whitened(f"{name}:locate", x, sr, params or P)
         A = L - L.mean()
         Am = A.copy()
         for o in range(1, TOL_BINS + 1):

@@ -120,6 +120,9 @@ public struct TrackFill {
     /// window fills nothing) and made 37a954's place easier (p 0.49 → 0.14, same seed). Fills
     /// aren't yet clean enough to fill on weaker evidence.
     public var windows: [Double] = [0.17]
+    /// Fill with the same frequencies' sound from these offsets (s) rather than fresh noise
+    /// (LineFill.borrowSeconds). Empty: noise.
+    public var borrowSeconds: [Double] = []
 
     var search: PathSearch { search(window: windows.first ?? 0.17) }
 
@@ -149,6 +152,7 @@ public struct TrackFill {
         var fill = LineFill()
         fill.marginHz = marginHz
         fill.relativeMargin = relativeMargin
+        fill.borrowSeconds = borrowSeconds
         var filled: [Tone] = [], open = Set(usable.indices), count = [Int](repeating: 0, count: usable.count)
         var first = [Double?](repeating: nil, count: usable.count), last = first
         var previous: [Int: Tone] = [:]
@@ -162,7 +166,8 @@ public struct TrackFill {
                 guard let tone, tone.z >= stopZ, count[pi] < maxTones, round <= maxTones else { open.remove(pi); continue }
                 // The same tone again after filling it: the fill didn't take; stop rather than loop.
                 if let p = previous[pi], abs(p.rest / tone.rest - 1) < 0.01, abs(p.offset - tone.offset) <= 1 { open.remove(pi); continue }
-                if let line = stage.track(tone, sampleRate: sampleRate, count: y.count), fill.fill(&y, line, sampleRate: sampleRate, rng: &rng) {
+                if let line = stage.track(tone, sampleRate: sampleRate, count: y.count),
+                   fill.fill(&y, line, sampleRate: sampleRate, rng: &rng, source: stage.track(tone, sampleRate: sampleRate, count: y.count, whole: true)) {
                     filled.append(tone)
                     count[pi] += 1
                     previous[pi] = tone
@@ -187,14 +192,16 @@ public struct TrackFill {
     var fillHalfWindow: Double { halfWindow + maxOffset }
 
     /// The predicted tone as a track around the closest approach (where it was tested).
-    func track(_ tone: Tone, sampleRate: Int, count: Int) -> Track? {
+    /// The tone's path to fill: within `fillHalfWindow` of the closest approach, or with `whole`
+    /// across the whole clip (where borrowing must not take sound from).
+    func track(_ tone: Tone, sampleRate: Int, count: Int, whole: Bool = false) -> Track? {
         let pass = expected[tone.pass], end = Double(count) / Double(sampleRate), c = pass.center + tone.offset
         var times: [Double] = [], freqs: [Double] = []
         // Only where the tone was found: a strip filled where there is nothing to remove is pure
         // risk, since any bias in its level traces the exact curve. That's the searched window,
         // widened by the timing slack: an attacker whose track puts the closest approach a few
         // seconds elsewhere (archive positions are stale) centres its window there.
-        let half = fillHalfWindow
+        let half = whole ? Double.infinity : fillHalfWindow
         var t = max(0, (pass.times.first ?? 0) + tone.offset, c - half)
         while t <= min(end, (pass.times.last ?? 0) + tone.offset, c + half) {
             if let f = pass.factor(at: t - tone.offset) {
