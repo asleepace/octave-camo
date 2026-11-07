@@ -444,14 +444,16 @@ function renderTracks() {
   const disabled = state.busy ? "disabled" : "";
   // A button and a hidden body, not <details>: controls inside a closed <details> still count as
   // laid out, but can't take focus.
-  const open = el.dataset.open ? el.dataset.open === "1" : t.status !== "none";
+  // Open unless closed: it's the stage that removes what an attacker with flight logs finds.
+  const open = el.dataset.open ? el.dataset.open === "1" : true;
   el.innerHTML = `<div class="border border-neutral-800 px-4 py-3 text-[11px] leading-relaxed">
     <button id="tracks-toggle" type="button" aria-expanded="${open}" aria-controls="tracks-body" class="text-left text-white">
       <span aria-hidden="true" class="mr-1 text-neutral-500">${open ? "▾" : "▸"}</span>Remove what flight tracks predict
-      <span class="text-neutral-500">· optional · ${t.on && t.status === "ready" ? `<span class="text-accent">on: ${t.summary?.passing} aircraft</span>` : "off"}</span></button>
+      <span class="text-neutral-500">· recommended · ${t.on && t.status === "ready" ? `<span class="text-accent">on: ${t.summary?.passing} aircraft</span>` : "off"}</span></button>
     <div id="tracks-body" ${open ? "" : "hidden"}>
     <p class="mt-2 text-neutral-500">An attacker with the flight logs knows exactly which tones to look for. Given the same logs, the cloak runs that
-      test first and fills in whatever it finds. The logs come from adsb.lol's public archive: one worldwide file per half hour, so downloading it
+      test first and fills in whatever it finds. Without them it only removes what it can find on its own, and on test recordings that left
+      most of the engine tones such an attacker looks for. The logs come from adsb.lol's public archive: one worldwide file per half hour, so downloading it
       tells adsb.lol the time, never the place. The place and time below stay in this browser.</p>
     <div class="mt-3 flex flex-wrap items-end gap-3">
       <label class="flex flex-col gap-1 text-neutral-500">recorded (UTC)<input id="tracks-time" type="datetime-local" step="1" class="${field}" value="${t.time !== null ? toUtcField(t.time) : ""}" ${disabled} /></label>
@@ -599,7 +601,7 @@ function renderPrimary() {
   else if (fresh() && s.after) {
     const word = s.preset === "full" ? "cloaked" : COMPLETE.includes(s.preset) ? `cloaked (${PRESETS[s.preset].label.toLowerCase()})`
       : `partly cloaked (${PRESETS[s.preset].label})`;
-    text = `<span class="text-accent">${word}</span>${s.outputTracks ? " with flight tracks" : ""} · ${s.after.tones} trackable tone${s.after.tones === 1 ? "" : "s"} left (was ${s.before?.tones ?? "?"}) · ${(s.ms / 1000).toFixed(1)} s · press x to compare`;
+    text = `<span class="text-accent">${word}</span>${s.outputTracks ? " with flight tracks" : " without flight tracks"} · ${s.after.tones} trackable tone${s.after.tones === 1 ? "" : "s"} left (was ${s.before?.tones ?? "?"}) · ${(s.ms / 1000).toFixed(1)} s · press x to compare`;
   } else if (s.outputSamples) text = s.outputPreset !== s.preset ? `preset changed · cloak again to apply ${PRESETS[s.preset].label.toLowerCase()}`
     : "flight tracks changed · cloak again to apply them";
   else if (s.before) {
@@ -617,9 +619,18 @@ function renderPrimary() {
     : pic.status === "short" ? `the clip is too short (under ${MIN_PICTURE_SECONDS} s) to check the picture for light flicker`
     : pic.scan?.detected && !pic.fix && !pic.verify ? "light flicker found and kept: it can help date the recording (tick \"Remove light flicker\" above)"
     : "";
-  for (const w of [warning, savedWarning()].filter(Boolean)) html += `<br><span class="text-amber-300/80"><span aria-hidden="true">⚠ </span>${esc(w)}</span>`;
+  for (const w of [warning, savedWarning(), tracklessWarning()].filter(Boolean)) html += `<br><span class="text-amber-300/80"><span aria-hidden="true">⚠ </span>${esc(w)}</span>`;
   // A live region re-announces whenever it's rewritten: only touch it when the text changes.
   if (status.innerHTML !== html) status.innerHTML = html;
+}
+
+/** Cloaked without flight tracks: the check above can read clean while an attacker with the logs still
+ *  finds the planes (on 35 public test recordings, after Full the check found a plane in 1, but the
+ *  tone an attacker with logs follows still stood out in 20; docs/EXPERIMENTS.md, "The public corpus"). */
+function tracklessWarning(): string {
+  if (!fresh() || !state.after || state.outputTracks || state.preset === "hum") return "";
+  return "without flight tracks, faint plane tones can remain: \"0 trackable tones\" means this check found none, not that an attacker "
+    + "with flight logs can't. Add the flight archive above to remove those.";
 }
 
 /** The saved file's sound, checked again: only worth a line when it differs, or couldn't be checked. */
@@ -729,7 +740,7 @@ function renderSteps() {
     ? { lowband: ` ${PRESETS[state.preset].label}: its loudness also loses every swell slower than ${flatten} s, so a plane's rise and fall can't be lined up with flight tracks; ${flatten >= 10 ? "speech, music and anything quicker keep their movement" : "thumps and doors stay"}.` } : {};
   $("steps-explained").innerHTML = (Object.entries(STEP_TEXT) as [Step, [string, string]][]).map(([step, [title, body0]], i) => [step, [title, body0 + (extra[step] ?? "")], i] as const).map(([step, [title, body], i]) =>
     `<li class="${on.has(step) ? "" : "text-neutral-500"}"><span class="${on.has(step) ? "text-neutral-200" : "text-neutral-400"}">${i + 1}. ${title}.</span> ${body}${on.has(step) ? "" : ` <span class="text-neutral-500">(off in ${PRESETS[state.preset].label})</span>`}</li>`,
-  ).join("") + `<li class="${tracksKey() ? "" : "text-neutral-500"}"><span class="${tracksKey() ? "text-neutral-200" : "text-neutral-400"}">${Object.keys(STEP_TEXT).length + 1}. Remove what flight tracks predict (optional).</span> With adsb.lol's archive for the half hour and where the clip was recorded, each aircraft that passed within 15 km gets four predicted Doppler curves (its logged positions are a few seconds stale, so their shapes differ). Along each, the cloak runs the test an attacker holding the logs would: every rest frequency and a few seconds of timing slack, against the same curve at wrong times. Whatever stands out is filled with noise and tested again, until nothing does.</li>` + `<li class="${state.loaded && !state.loaded.video ? "text-neutral-500" : ""}"><span class="${state.loaded && !state.loaded.video ? "text-neutral-400" : "text-neutral-200"}">${Object.keys(STEP_TEXT).length + 2}. Remove light flicker (picture).</span> When the scan finds bands from flickering lights, each row is divided by its estimated band, which takes the grid clock out of the picture. On when bands are found (untick it to keep the picture untouched), since it re-encodes the video.</li>`;
+  ).join("") + `<li class="${tracksKey() ? "" : "text-neutral-500"}"><span class="${tracksKey() ? "text-neutral-200" : "text-neutral-400"}">${Object.keys(STEP_TEXT).length + 1}. Remove what flight tracks predict (recommended).</span> With adsb.lol's archive for the half hour and where the clip was recorded, each aircraft that passed within 15 km gets four predicted Doppler curves (its logged positions are a few seconds stale, so their shapes differ). Along each, the cloak runs the test an attacker holding the logs would: every rest frequency and a few seconds of timing slack, against the same curve at wrong times. Whatever stands out is filled with noise and tested again, until nothing does. It's the only stage that removes what an attacker holding the logs would find; the others work blind.</li>` + `<li class="${state.loaded && !state.loaded.video ? "text-neutral-500" : ""}"><span class="${state.loaded && !state.loaded.video ? "text-neutral-400" : "text-neutral-200"}">${Object.keys(STEP_TEXT).length + 2}. Remove light flicker (picture).</span> When the scan finds bands from flickering lights, each row is divided by its estimated band, which takes the grid clock out of the picture. On when bands are found (untick it to keep the picture untouched), since it re-encodes the video.</li>`;
 }
 
 const REPO = "https://github.com/asleepace/octave-camo";

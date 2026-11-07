@@ -7,7 +7,7 @@ import type { Flatten, Step } from "./engine/camo.ts";
 export const PRESETS = {
   // The low band's slow loudness: gentle on Full and Light (a plane's swell, little else), strong on
   // Experimental (a quicker pass too). Swap them here; FLATTEN names the strengths.
-  full: { label: "Full", steps: ["hum", "subtract", "scurve", "lowband"], note: "planes, trains and ships", flatten: "gentle" },
+  full: { label: "Full", steps: ["hum", "subtract", "scurve", "lowband"], note: "loud planes, trains and ships; fainter planes need flight tracks", flatten: "gentle" },
   experimental: { label: "Experimental", steps: ["hum", "subtract", "scurve", "lowband", "lines"], flatten: "strong",
                   note: "full, plus every tone the check finds filled in and quicker low-band swells flattened (being tested)" },
   light: { label: "Light", steps: ["hum", "lowband"], note: "faster, but partial: misses trains and close passes", flatten: "gentle" },
