@@ -95,6 +95,15 @@ public struct TrackFill {
     /// ...plus this fraction of its frequency: a predicted swing can be a percent or so off at its
     /// ends (stale archive positions), and a strip that half-covers a tone leaves its edge.
     public var relativeMargin = 0.01
+    /// How far off the curve a frame's excess still counts, Hz (at least ±2 bins of the search's
+    /// own grid, about ±12 Hz at 48 kHz). The stopping test has to be at least as forgiving as a
+    /// plausible attacker: one scoring with 85 ms windows and ±2 of its 11.7 Hz bins found a
+    /// harmonic this search, ±12 Hz wide, had passed over and stopped at (docs/EXPERIMENTS.md,
+    /// "Removal's stopping test against the attacker's").
+    public var toleranceHz = 0.0
+    /// The same as a fraction of the frequency, on top (a curve a little off in shape moves a high
+    /// harmonic further than a low one).
+    public var relativeTolerance = 0.0
     public var seed: UInt64 = .random(in: 1...UInt64.max)
 
     public init() {}
@@ -209,11 +218,12 @@ public struct TrackFill {
         let mean = a.reduce(0, +) / Float(a.count)
         for i in a.indices { a[i] -= mean }
         var am = a
+        let reach = max(2, Int((toleranceHz / g.binHz).rounded()))
         for m in 0..<g.frames {
             let row = m * g.bins
             for k in 0..<g.bins {
                 var v = a[row + k]
-                for d in 1...2 {
+                for d in 1...reach {
                     if k >= d { v = max(v, a[row + k - d]) }
                     if k + d < g.bins { v = max(v, a[row + k + d]) }
                 }
@@ -262,6 +272,23 @@ public struct TrackFill {
             for j in 0..<J where p.binOf[j] >= 0 { rows[base + j] = p.am[row + Int(p.binOf[j])] }
         }
         let lr = log(ratio)
+        // The relative slack: the best within ±T log steps (a constant fraction of the frequency).
+        let T = Int((log(1 + relativeTolerance) / lr).rounded())
+        if T > 0 {
+            var line = [Float](repeating: outside, count: J)
+            for i in 0..<frames.count {
+                let base = i * J
+                for j in 0..<J { line[j] = rows[base + j] }
+                for j in 0..<J {
+                    var v = line[j]
+                    for d in 1...T {
+                        if j >= d { v = max(v, line[j - d]) }
+                        if j + d < J { v = max(v, line[j + d]) }
+                    }
+                    rows[base + j] = v
+                }
+            }
+        }
         var acc = [Float](repeating: 0, count: R)
         var cache: [Int: (score: Double, rest: Double)] = [:]
         let unit = offsetStep

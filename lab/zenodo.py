@@ -88,6 +88,13 @@ def flat_interp(x, t, fac):
 OFFSET_S = 5.0
 
 
+def half(case: str) -> str:
+    """'tune' or 'holdout', fixed by the case id alone (a hash, so not by any result): about half
+    of each category each way. Chosen after one look at all 35 (the only contamination)."""
+    import hashlib
+    return "tune" if int(hashlib.sha1(case.encode()).hexdigest(), 16) % 2 == 0 else "holdout"
+
+
 def usable(p: dict) -> bool:
     """The audio is the traced segment plus 5 s either side (to within 0.5 s)."""
     return abs(sf.info(p["wav"]).duration - p["t"][-1] - 2 * OFFSET_S) <= 0.5
@@ -138,7 +145,7 @@ def level_change(x: np.ndarray, y: np.ndarray, sr: int, lo: float = 300.0, hi: f
     return float(np.abs(levels(x) - levels(y)).mean())
 
 
-def run_pass(p: dict, preset_args: dict) -> dict:
+def run_pass(p: dict, preset_args: dict, extra: list[str] | None = None) -> dict:
     """One pass: the original, Full, Experimental and Full with the traced curve as its expected
     pass (removal with a perfect curve), each scored along the traced curve; the blind check on the
     original and on Full; sound change above 300 Hz against the original."""
@@ -154,7 +161,9 @@ def run_pass(p: dict, preset_args: dict) -> dict:
         exp = Path(tmp) / "expect.json"
         exp.write_text(json.dumps([expected_pass(p, OFFSET_S, len(x) / sr)]))
         variants = {"full": [*preset_args["full"]], "experimental": [*preset_args["experimental"]],
-                    "full+tracks": [*preset_args["full"], "--expect", str(exp)]}
+                    "full+tracks": [*preset_args["full"], "--expect", str(exp), *(extra or [])]}
+        if extra:                                   # a sweep of removal settings: only that copy
+            variants = {"full+tracks": variants["full+tracks"]}
         audios = {"original": (x, str(src))}
         for name, args in variants.items():
             dst = Path(tmp) / f"{name}.wav"
@@ -172,6 +181,6 @@ def run_pass(p: dict, preset_args: dict) -> dict:
             out[name] = {"z": round(zz, 2), "excess": round(eff, 3)}
             if name != "original":
                 out[name]["change_db"] = round(level_change(x, y, sr), 2)
-            if name in ("original", "full"):
+            if name in ("original", "full") and not extra:
                 out[name]["blind"] = blind(path)
     return out

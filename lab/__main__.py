@@ -13,7 +13,8 @@
                                         audio of it, e.g. cloaked copies, aligned automatically)
   check <session> [audio …]             the page's check (the real wasm build) on the session and
                                         on other audio of it: counts and flyby passes
-  zenodo [--limit N]                    the public 40-flight corpus as a tone-removal holdout (once)
+  zenodo [--holdout | --all] [--limit N] [-- scrub options for the track-removal copy]
+                                        the public corpus, tone removal (tuning half by default)
   locate <session> [audio …] [--envelope]   the place-searching attacker: rank of the true position
                                         (--envelope: the loudness swell too, alone and combined)
                                         among a grid of candidates (distances and areas only)
@@ -353,11 +354,16 @@ def cmd_zenodo(args: list[str]):
     from concurrent.futures import ProcessPoolExecutor
     from . import zenodo
     ps = [p for p in zenodo.passes() if zenodo.usable(p)]
+    # The tuning half by default; the held-out half only on purpose, once a change is settled.
+    want = "holdout" if "--holdout" in args else "tune"
+    if "--all" not in args:
+        ps = [p for p in ps if zenodo.half(p["case"]) == want]
+    extra = args[args.index("--") + 1:] if "--" in args else []
     if "--limit" in args:
         ps = ps[: int(args[args.index("--limit") + 1])]
     t = time.time()
     with ProcessPoolExecutor(2) as pool:
-        rows = list(pool.map(zenodo.run_pass, ps, [PRESET_ARGS] * len(ps)))
+        rows = list(pool.map(zenodo.run_pass, ps, [PRESET_ARGS] * len(ps), [extra] * len(ps)))
     print(f"{zenodo.CITATION}\n{len(rows)} passes ({time.time() - t:.0f} s)\n")
     print("| case | category | closest | z original | Full | Experimental | Full + perfect curve | blind check: original / Full |")
     print("| --- | --- | ---: | ---: | ---: | ---: | ---: | --- |")
@@ -365,7 +371,8 @@ def cmd_zenodo(args: list[str]):
         g = lambda k: r.get(k, {}).get("z", float("nan"))
         b = lambda k: (r.get(k, {}).get("blind") or {}).get("doppler")
         print(f"| {r['case']} | {r['category']} | {r['closest_m']:.0f} m | {g('original')} | {g('full')} | {g('experimental')} | {g('full+tracks')} | {b('original')} / {b('full')} |")
-    save_result("zenodo", rows)
+    tag = "-".join(a.strip("-") for a in extra).replace("/", "_")
+    save_result(f"zenodo-{'all' if '--all' in args else want}" + (f"-{tag}" if tag else ""), rows)
 
 
 def cmd_bench(args: list[str]):
@@ -404,7 +411,7 @@ def main(argv):
         return
     cmd, rest = argv[0], argv[1:]
     # The holdout is scored only on purpose: --holdout, once a change is settled.
-    if "--holdout" in rest:
+    if "--holdout" in rest and cmd in SCORING:
         rest = [a for a in rest if a != "--holdout"]
     elif cmd in SCORING and rest and corpus.is_holdout(rest[0]):
         raise SystemExit(f"{rest[0]} is in the holdout (corpus.HOLDOUT): pass --holdout to score it, "
