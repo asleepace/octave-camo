@@ -315,6 +315,9 @@ def cmd_trackfill(sid: str, presets: list[str]):
         print("warning: the CLI is older than Sources/ (swift build -c release --product octave-camo)", file=sys.stderr)
     out_dir = corpus.DATA / "cloaked"
     out_dir.mkdir(parents=True, exist_ok=True)
+    # Anything after '--' goes to scrub as is, and names the copy ('-x' plus the flags).
+    passthrough = presets[presets.index("--") + 1:] if "--" in presets else []
+    presets = presets[: presets.index("--")] if "--" in presets else presets
     archive = "--archive" in presets
     opt = lambda name: presets[presets.index(name) + 1] if name in presets else None
     stop, seed = opt("--stop"), opt("--seed") or "7"
@@ -336,9 +339,10 @@ def cmd_trackfill(sid: str, presets: list[str]):
             exp.write_text(json.dumps(passes))
             track_args = ["--expect", str(exp)]
         for preset in presets or ["experimental"]:
-            tag = (f"-stop{stop}" if stop else "") + (f"-s{seed}" if seed != "7" else "")
+            tag = (f"-stop{stop}" if stop else "") + (f"-s{seed}" if seed != "7" else "") + (
+                "-x" + "".join(f.strip("-").replace(",", "_") for f in passthrough) if passthrough else "")
             dst = out_dir / f"{sid}-{preset}-{'archive' if archive else 'tracks'}{tag}.wav"
-            extra = ["--track-stop", stop] if stop else []
+            extra = (["--track-stop", stop] if stop else []) + passthrough
             r = subprocess.run([str(cli), "scrub", str(src), str(dst), *PRESET_ARGS[preset], "--seed", seed, *track_args, *extra],
                                capture_output=True, text=True)
             if r.returncode != 0:

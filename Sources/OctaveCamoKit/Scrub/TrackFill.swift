@@ -114,9 +114,12 @@ public struct TrackFill {
     /// The search's own 0.17 s window resolves 5.9 Hz at 48 kHz; an attacker using 85 ms windows
     /// found harmonics it passed over (docs/EXPERIMENTS.md, "Removal's stopping test against the
     /// attacker's").
-    /// Both windows, on the public corpus's tuning half: median z 1.7 → 0.7 (both seeds), passes
-    /// at z ≥ 5 1–3 → 1–2, at 0.8 dB median change (3.5 at most); the test takes twice as long.
-    public var windows: [Double] = [0.17, 0.085]
+    /// One by default. Adding 85 ms halved the traced harmonic's median z on the public corpus's
+    /// tuning half (1.7 → 0.7, two seeds), but on our own sessions its extra fills left a hole an
+    /// attacker can find (e9a1c3: the truth 1,045th of 1,089, p 0.000 from the bottom, where one
+    /// window fills nothing) and made 37a954's place easier (p 0.49 → 0.14, same seed). Fills
+    /// aren't yet clean enough to fill on weaker evidence.
+    public var windows: [Double] = [0.17]
 
     var search: PathSearch { search(window: windows.first ?? 0.17) }
 
