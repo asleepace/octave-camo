@@ -167,7 +167,8 @@ def run_pass(p: dict, preset_args: dict, extra: list[str] | None = None) -> dict
         audios = {"original": (x, str(src))}
         for name, args in variants.items():
             dst = Path(tmp) / f"{name}.wav"
-            r = subprocess.run([str(cli), "scrub", str(src), str(dst), *args, "--seed", "7"], capture_output=True, text=True)
+            seed = [] if "--seed" in args else ["--seed", "7"]       # a sweep may set its own
+            r = subprocess.run([str(cli), "scrub", str(src), str(dst), *args, *seed], capture_output=True, text=True)
             if r.returncode:
                 out[f"{name}_error"] = (r.stderr or r.stdout)[:200]
                 continue

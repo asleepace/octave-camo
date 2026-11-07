@@ -38,7 +38,7 @@ USAGE
                         (or predict those curves from adsb.lol's half-hour archive: where and
                         when the audio starts, alt in metres on the pressure-altitude scale)
                         [--track-stop 1] (remove until each pass's attacker z is below this)
-                        [--track-max-tones 8] [--track-tolerance-hz 0] [--track-tolerance 0] [--track-windows 0.17]
+                        [--track-max-tones 24] [--track-tolerance-hz 0] [--track-tolerance 0] [--track-windows 0.17,0.085]
                         (tones per pass; the stopping test's slack off the curve, Hz and fraction)
   octave-camo predict <heatmap.bin> --at lat,lon[,alt] --start unix --duration s [--temp 15]
   octave-camo --version

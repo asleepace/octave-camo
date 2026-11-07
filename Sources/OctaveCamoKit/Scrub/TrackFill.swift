@@ -77,8 +77,11 @@ public struct TrackFill {
     /// 0.21 against the scene's no-information baseline, for 0.1–0.3 dB more change above 300 Hz;
     /// 0 doubled the change for nothing more. On the holdout, 1 and 2.5 cleared both sessions alike.
     public var stopZ = 1.0
-    /// Tones filled per pass at most (an engine has several: fan, shaft orders, harmonics).
-    public var maxTones = 8
+    /// Tones filled per pass at most (an engine has several: fan, shaft orders, harmonics; a light
+    /// aircraft's propeller many more). At 8, 10 of 35 public-corpus passes stopped at the cap with
+    /// the tone still up; at 24, the tuning half's median z along the traced harmonic went 2.5 → 1.7
+    /// and passes at z ≥ 5 from 6 to 1–3 (two seeds), for 0.7 dB median change above 300 Hz.
+    public var maxTones = 24
     /// Timing slack, s (published positions lag and are coarse), as the attacker searches it.
     public var maxOffset = 6.0
     public var offsetStep = 0.5
@@ -96,13 +99,12 @@ public struct TrackFill {
     /// ends (stale archive positions), and a strip that half-covers a tone leaves its edge.
     public var relativeMargin = 0.01
     /// How far off the curve a frame's excess still counts, Hz (at least ±2 bins of the search's
-    /// own grid, about ±12 Hz at 48 kHz). The stopping test has to be at least as forgiving as a
-    /// plausible attacker: one scoring with 85 ms windows and ±2 of its 11.7 Hz bins found a
-    /// harmonic this search, ±12 Hz wide, had passed over and stopped at (docs/EXPERIMENTS.md,
-    /// "Removal's stopping test against the attacker's").
+    /// own grid, about ±12 Hz at 48 kHz). Off by default: tried to match an attacker scoring ±23 Hz
+    /// wide, it raised the wrong-time scores more than the real tone's, so removal filled less
+    /// (public corpus, tuning half: median z 1.7 → 2.7 at ±24 Hz). The second window does that job.
     public var toleranceHz = 0.0
     /// The same as a fraction of the frequency, on top (a curve a little off in shape moves a high
-    /// harmonic further than a low one).
+    /// harmonic further than a low one). Off by default, for the same reason (with 2 %: 4.3).
     public var relativeTolerance = 0.0
     public var seed: UInt64 = .random(in: 1...UInt64.max)
 
@@ -112,7 +114,9 @@ public struct TrackFill {
     /// The search's own 0.17 s window resolves 5.9 Hz at 48 kHz; an attacker using 85 ms windows
     /// found harmonics it passed over (docs/EXPERIMENTS.md, "Removal's stopping test against the
     /// attacker's").
-    public var windows: [Double] = [0.17]
+    /// Both windows, on the public corpus's tuning half: median z 1.7 → 0.7 (both seeds), passes
+    /// at z ≥ 5 1–3 → 1–2, at 0.8 dB median change (3.5 at most); the test takes twice as long.
+    public var windows: [Double] = [0.17, 0.085]
 
     var search: PathSearch { search(window: windows.first ?? 0.17) }
 
