@@ -383,6 +383,51 @@ nothing was tuned on it.
     TrackFill's own test (nothing filled) and 8.6 by the lab's.
 - **Cost stays small:** under 1 dB median above 300 Hz for every variant.
 
+## Removal's stopping test against the attacker's (public corpus, split)
+
+The corpus is now split by a hash of each case id (`zenodo.half`): 17 passes for tuning, 18 held
+out (`lab zenodo --holdout`), chosen after the one look above. Everything below was tuned on the
+tuning half and our own sessions, then the held-out half was scored once.
+
+**Why removal stopped early.** After removal its own test scores a pass near 0 while the attacker
+still finds it: on N4004R_R19 removal filled the 288 Hz harmonic and stopped at z 0.9, and the
+attacker's best match moved to a 440 Hz harmonic it never touched. Two causes: the eight-tone cap
+(10 of 35 passes hit it), and resolution: removal tests with 0.17 s windows (5.9 Hz at 48 kHz),
+the attacker with 85 ms windows and ±2 of its 11.7 Hz bins.
+
+Tuning half, z along the traced harmonic after Full + the traced curve as its expected pass (two
+seeds where shown):
+
+| removal | median z | z ≥ 3 | z ≥ 5 | change above 300 Hz, median / max |
+| --- | ---: | ---: | ---: | ---: |
+| cap 8 (was shipped) | 2.5 | 7 | 6 | 0.69 / 1.7 dB |
+| cap 24 | 1.7 / 1.7 | 4 / 2 | 3 / 1 | 0.7 / 1.9 dB |
+| cap 24, ±24 Hz slack | 2.7 | 7 | 6 | 0.6 / 1.7 dB |
+| cap 24, ±24 Hz and 2 % slack | 4.3 | 10 | 7 | 0.5 / 1.8 dB |
+| cap 24, windows 0.17 + 0.085 s | 0.7 / 0.7 | 5 / 2 | 1 / 2 | 0.8 / 3.5 dB |
+
+- **Slack backfires:** widening what counts as on the curve raised the wrong-time scores more
+  than the real tone's, so removal filled less. Not shipped (options, off).
+- **The second window works on the corpus and fails on our sessions.** Same seed, our sessions:
+  on e9a1c3 it made 7 fills where one window makes none, and left a hole (the truth 1,045th of
+  1,089, p 0.000 from the bottom; one window: p 0.51); 37a954's place got easier (p 0.49 → 0.14
+  and 0.61 → 0.45 over two seeds). Fills aren't clean enough to fill on weaker evidence: a filled
+  strip is a faint mark along the exact curve. Not shipped (option `--track-windows`).
+- **The cap is shipped at 24.** On our sessions it changes nothing (none reaches 8 tones).
+
+Held-out half, scored once (18 passes):
+
+| | original | Full | cap 8 | cap 24 |
+| --- | ---: | ---: | ---: | ---: |
+| median z | 4.5 | 3.8 | 0.95 | 0.89 |
+| z ≥ 3 | 11 | 10 | 5 | 4 |
+| z ≥ 5 | 8 | 7 | 2 | 2 |
+| change above 300 Hz, median / max | | | 0.77 / 2.2 dB | 0.80 / 2.5 dB |
+
+A modest confirmation: three passes improve (N9658K_R24 5.0 → 1.8, N2933A_R08 2.3 → 0.0, N394FX_R20
+2.5 → 1.5), none get worse. The next lever is the fill itself: until a filled strip is
+indistinguishable from the background around it, removing more means marking more.
+
 ## Review of the place-scored work, and the loudness term in the place search
 
 **Review.** Re-read the fast scoring, ranks, baseline, benchmark, cache lock, holdout guard and
@@ -832,10 +877,10 @@ logs the real tracks with every session.
 
 ## Next experiments
 
-0. **The place as the metric** (envelope term, holdout, stopping and the public corpus done):
-   TrackFill's eight-tone cap and its disagreement with the attacker's statistic (public corpus);
-   flatten mid-band swells and score the combined place; why cleanup sharpens a faint survivor.
-   Before tuning on the public corpus, split it: half for tuning, half held out.
+0. **The place as the metric** (envelope term, holdouts, stopping, the public corpus and the
+   tone cap done): make a filled strip indistinguishable from its surroundings (it marks the
+   curve, so removing on weaker evidence leaves a hole); flatten mid-band swells and score the
+   combined place; why cleanup sharpens a faint survivor.
 1. **E2, continued:** real music, singing, traffic, wind and outdoor clips against the check's
    path search (now in Swift, with joined passes); level against pitch to tell a slowing vehicle
    from a flyby; the band up to 8 kHz; a faster search (one forward pass shared by the spans).

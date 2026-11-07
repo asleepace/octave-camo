@@ -9,6 +9,18 @@ are grouped by milestone, newest first, with the commits that made them.
 
 ## [Unreleased]
 
+### Track removal: up to 24 tones per pass
+
+- **Removal now fills up to 24 tones per pass** (was 8). On the public 40-flight corpus (Pathak
+  2026, CC BY 4.0) 10 of 35 passes hit the old cap with the tone still strong, mostly light
+  aircraft whose propellers make many harmonics. Tuning half: median z along the traced harmonic
+  2.5 → 1.7; held-out half, scored once: 0.95 → 0.89, three passes better, none worse; sound
+  change about the same. No change on our own sessions (none reached 8).
+- Options for the stopping test, off by default and documented as tried: slack off the curve
+  (`--track-tolerance-hz`, `--track-tolerance`) and extra analysis windows (`--track-windows`);
+  the second window cut the corpus's median further but over-filled our sessions and left a hole
+  an attacker can find. CLI usage now shows `--track-stop`'s real default (1).
+
 ### Place-scored evaluation, and track removal stopping at z 1
 
 - **Track removal now stops at z 1** (was 2.5). Scored by where the clip was recorded instead of
