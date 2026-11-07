@@ -61,10 +61,18 @@ def shape(p: dict) -> tuple[np.ndarray, np.ndarray, float]:
     """(times from the curve's start, factor = smoothed frequency over its median, time of the
     steepest fall)."""
     from scipy.ndimage import median_filter, uniform_filter1d
-    f = uniform_filter1d(median_filter(p["f"], 9, mode="nearest"), 9, mode="nearest")
+    # A traced ridge can jump to another line for a moment (one pass drops from ~300 to 61 Hz):
+    # points more than 10 % from the running median over ~5 s, or outside 0.55–1.8 times the
+    # curve's median (beyond any subsonic swing; a 150 m/s jet's real swing spans 1.25 kHz to
+    # 512 Hz here), are dropped first.
+    t, f = p["t"], p["f"]
+    rel = f / np.median(f)
+    keep = (np.abs(f / median_filter(f, 31, mode="nearest") - 1) <= 0.10) & (rel >= 0.55) & (rel <= 1.8)
+    t, f = t[keep], f[keep]
+    f = uniform_filter1d(median_filter(f, 9, mode="nearest"), 9, mode="nearest")
     fac = f / np.median(f)
-    slope = np.gradient(uniform_filter1d(fac, 15, mode="nearest"), p["t"])
-    return p["t"], fac, float(p["t"][int(np.argmin(slope))])
+    slope = np.gradient(uniform_filter1d(fac, 15, mode="nearest"), t)
+    return t, fac, float(t[int(np.argmin(slope))])
 
 
 def flat_interp(x, t, fac):

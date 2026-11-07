@@ -347,6 +347,42 @@ narrow it:
 - **The search is tone-only.** On 6b838f the 767 that the loudness attacker scores z 5.5 isn't
   found (rank 924): a broadband jet needs the envelope term in the place search too.
 
+## The public corpus: 35 held-out passes (tone removal)
+
+Data: Pathak, P. (2026). *Aeroplane data full analysis and raw files.* Zenodo, record 23424278.
+CC BY 4.0. Forty smartphone recordings of aircraft passing one place (May 2026, many light aircraft,
+some jets), each with a hand-traced curve of one engine harmonic and the ADS-B track. `python3 -m
+lab zenodo` (lab/zenodo.py); the data stays in `$LAB_DATA/external`.
+
+The recorder's position isn't published, and the lab never tries to recover it (the tracks and
+published distances could be combined to locate a private person's recording spot, the attack
+this project defends against), so this scores **tones, not places**. The traced curve is the
+tone's real path, a stronger attacker than any curve predicted from tracks: its shape is scored
+like the place search (every rest frequency, against six wrong times). Each recording is the
+traced segment plus 5 s either side, which places the curve; 35 of 40 fit that layout (the rest
+are left out). Ridge jumps in the traces (one drops to 61 Hz) are dropped first. Scored once;
+nothing was tuned on it.
+
+| | original | Full | Experimental | Full + the traced curve as its expected pass |
+| --- | ---: | ---: | ---: | ---: |
+| median z along the traced curve | 3.7 | 4.0 | 3.6 | 1.8 |
+| passes at z ≥ 3 (of 35) | 22 | 20 | 18 | 12 |
+| passes at z ≥ 5 | 13 | 14 | 15 | 8 |
+| blind check finds a flyby | 33 | 1 | — | — |
+| change above 300 Hz (median / max) | | 0.5 / 1.5 dB | 0.6 / 2.3 dB | 0.7 / 2.2 dB |
+
+- **The blind presets fool the blind check, not the tone.** The engine's own check finds a flyby
+  in 33 of 35 originals and 1 after Full, yet the traced tone's z doesn't fall: Full raises it by
+  more than 1 on 14 passes and lowers it on 13 (Experimental: 10 and 16). The same cleanup effect
+  as 37a954, now on independent data: "the check sees nothing" is not "the tone is gone".
+- **Removal with a perfect curve helps but doesn't finish.** It halves the median and takes the
+  strong passes (13 at z ≥ 5) to 4. Two causes, both in TrackFill:
+  - **the eight-tone cap**: 10 of 35 passes stop at eight filled tones with z still up (light
+    aircraft and props make many harmonics);
+  - **its statistic disagrees with the attacker's** on some passes: N451EE_R51 scores −2.0 by
+    TrackFill's own test (nothing filled) and 8.6 by the lab's.
+- **Cost stays small:** under 1 dB median above 300 Hz for every variant.
+
 ## Review of the place-scored work, and the loudness term in the place search
 
 **Review.** Re-read the fast scoring, ranks, baseline, benchmark, cache lock, holdout guard and
@@ -796,9 +832,10 @@ logs the real tracks with every session.
 
 ## Next experiments
 
-0. **The place as the metric** (from the location re-run; envelope term, holdout and stopping
-   done): flatten mid-band swells and score the combined place; why cleanup sharpens a faint
-   survivor (37a954, tone and loudness); the public corpus as a real holdout.
+0. **The place as the metric** (envelope term, holdout, stopping and the public corpus done):
+   TrackFill's eight-tone cap and its disagreement with the attacker's statistic (public corpus);
+   flatten mid-band swells and score the combined place; why cleanup sharpens a faint survivor.
+   Before tuning on the public corpus, split it: half for tuning, half held out.
 1. **E2, continued:** real music, singing, traffic, wind and outdoor clips against the check's
    path search (now in Swift, with joined passes); level against pitch to tell a slowing vehicle
    from a flyby; the band up to 8 kHz; a faster search (one forward pass shared by the spans).
