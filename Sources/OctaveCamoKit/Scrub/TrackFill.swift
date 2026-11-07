@@ -108,9 +108,18 @@ public struct TrackFill {
 
     public init() {}
 
-    var search: PathSearch {
+    /// Analysis windows the stopping test checks, s (a tone counts at whichever sees it best).
+    /// The search's own 0.17 s window resolves 5.9 Hz at 48 kHz; an attacker using 85 ms windows
+    /// found harmonics it passed over (docs/EXPERIMENTS.md, "Removal's stopping test against the
+    /// attacker's").
+    public var windows: [Double] = [0.17]
+
+    var search: PathSearch { search(window: windows.first ?? 0.17) }
+
+    func search(window: Double) -> PathSearch {
         var p = PathSearch()
         p.band = band
+        p.windowSeconds = window
         // Quarter-second blocks for the running median, closer to the attacker's exact 15 s
         // median: with 1 s blocks this search scored a real pass 5.2 where the attacker scores
         // 6.3, and stopped after two of the four tones the attacker could use; at 0.25 s, 6.4.
@@ -138,8 +147,7 @@ public struct TrackFill {
         var previous: [Int: Tone] = [:]
         var round = 0
         while !open.isEmpty {
-            let prepared = stage.prepare(y, sampleRate: sampleRate)
-            let verdicts = stage.test(prepared, passes: open)
+            let verdicts = stage.test(y, sampleRate: sampleRate, passes: open)
             for pi in verdicts.keys.sorted() {
                 let tone = verdicts[pi] ?? nil
                 if first[pi] == nil { first[pi] = tone?.z }
@@ -211,8 +219,8 @@ public struct TrackFill {
         let jLo: Int
     }
 
-    func prepare(_ x: [Double], sampleRate: Int) -> Prepared? {
-        let ps = search
+    func prepare(_ x: [Double], sampleRate: Int, window: Double? = nil) -> Prepared? {
+        let ps = window.map { search(window: $0) } ?? search
         guard let g = ps.grid(count: x.count, sampleRate: sampleRate) else { return nil }
         var a = ps.excess(x, g)
         let mean = a.reduce(0, +) / Float(a.count)
@@ -244,7 +252,15 @@ public struct TrackFill {
     /// The attacker's verdict on each pass in `passes` (nil: it can't be tested, e.g. its closest
     /// approach is out of the audio).
     func test(_ x: [Double], sampleRate: Int, passes: Set<Int>) -> [Int: Tone?] {
-        test(prepare(x, sampleRate: sampleRate), passes: passes)
+        var best: [Int: Tone?] = [:]
+        for w in windows.isEmpty ? [0.17] : windows {
+            for (pi, tone) in test(prepare(x, sampleRate: sampleRate, window: w), passes: passes) {
+                guard let tone else { if best[pi] == nil { best[pi] = .some(nil) }; continue }
+                if let old = best[pi] ?? nil, old.z >= tone.z { continue }
+                best[pi] = tone
+            }
+        }
+        return best
     }
 
     func test(_ p: Prepared?, passes: Set<Int>) -> [Int: Tone?] {
