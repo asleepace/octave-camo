@@ -211,8 +211,11 @@ ADSB = "https://adsb.lol"
 HEADERS = {"User-Agent": "octave-camo-lab (research; https://github.com/asleepace/octave-camo)"}
 
 
-def _get(url: str, cache: Path) -> bytes | None:
-    """GET with an on-disk cache; None on 404 or network failure."""
+def _get(url: str, cache: Path, keep: bool = True) -> bytes | None:
+    """GET with an on-disk cache; None on 404 or network failure. Written to a temporary name and
+    renamed, so a second job never reads a half-written file (two at once read a truncated
+    archive once). `keep=False` fetches without caching (data that isn't final yet)."""
+    import os
     import urllib.error
     import urllib.request
     if cache.exists():
@@ -222,8 +225,11 @@ def _get(url: str, cache: Path) -> bytes | None:
             data = r.read()
     except (urllib.error.URLError, TimeoutError):
         return None
-    cache.parent.mkdir(parents=True, exist_ok=True)
-    cache.write_bytes(data)
+    if keep:
+        cache.parent.mkdir(parents=True, exist_ok=True)
+        part = cache.with_name(f"{cache.name}.{os.getpid()}.part")
+        part.write_bytes(data)
+        os.replace(part, cache)
     return data
 
 
@@ -272,8 +278,19 @@ def archive_files(sid: str, margin_s: float = 240) -> tuple[list[Path], str, flo
         day = datetime.datetime.fromtimestamp(t, datetime.timezone.utc)
         hh = (day.hour * 60 + day.minute) // 30
         f = DATA / "adsb" / "heatmap" / f"{day:%Y-%m-%d}-{hh:02d}.bin"
-        if _get(f"{ADSB}/globe_history/{day:%Y/%m/%d}/heatmap/{hh:02d}.bin.ttf", f) is not None and f not in files:
+        # A half hour fetched before it ended (plus ten minutes for adsb.lol to write it) is
+        # incomplete: use it, but don't keep it in the cache as if it were final.
+        final = datetime.datetime.now(datetime.timezone.utc).timestamp() > (t // 1800 + 1) * 1800 + 600
+        url = f"{ADSB}/globe_history/{day:%Y/%m/%d}/heatmap/{hh:02d}.bin.ttf"
+        tmp = DATA / "adsb" / "heatmap" / "unfinished" / f.name
+        if f in files or tmp in files:
+            continue
+        if f.exists() or (final and _get(url, f) is not None):
             files.append(f)
+        elif not final and (data := _get(url, f, keep=False)) is not None:
+            tmp.parent.mkdir(parents=True, exist_ok=True)
+            tmp.write_bytes(data)
+            files.append(tmp)
     return files, f"{loc['lat']},{loc['lon']},{alt0:.1f}", t0
 
 
