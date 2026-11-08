@@ -120,8 +120,24 @@ public struct TrackFill {
     /// window fills nothing) and made 37a954's place easier (p 0.49 → 0.14, same seed). Fills
     /// aren't yet clean enough to fill on weaker evidence.
     public var windows: [Double] = [0.17]
-    /// How strips are filled (LineFill.Fill).
-    public var fillMode: LineFill.Fill = .floor
+
+    /// Where each pass's score should end up. `.fixed`: below `stopZ` (removal only). That leaves a
+    /// mark of its own: removal takes away the best match along the true curve, and even with no
+    /// plane some background lines up with it by chance, so afterwards the true curve scores lower
+    /// than the same curve at wrong times or places, which keep their best. Summed over aircraft,
+    /// a hole at the true place, however clean the fill (docs/EXPERIMENTS.md, "What leaves the
+    /// dip"). `.null`: a target drawn for each pass from the attacker's own null (the same score
+    /// at a random wrong time, against the other wrong times); removal while the score is above
+    /// it, and while it's below, the strip along the best tone's curve raised (the sound already
+    /// there, louder) up to it. The true curve's score is then a draw from the null whatever was
+    /// there: neither a bump nor a hole.
+    public enum Target: String, Sendable { case fixed, null }
+    public var target: Target = .fixed
+    /// How close to its target a pass's score has to get (z), raising.
+    public var targetTolerance = 0.25
+    /// Raising: rounds per pass, and the most any strip is raised in all, dB.
+    public var maxRaises = 3
+    public var maxGainDB = 10.0
 
     var search: PathSearch { search(window: windows.first ?? 0.17) }
 
@@ -139,7 +155,21 @@ public struct TrackFill {
     let ratio = 1.002
 
     /// A pass's verdict: its best tone (rest frequency, timing offset) and how far it stands out.
-    struct Tone { let pass: Int; let rest: Double; let offset: Double; let z: Double; let effect: Double }
+    struct Tone {
+        let pass: Int; let rest: Double; let offset: Double; let z: Double; let effect: Double
+        /// The wrong-time scores' spread (z's unit, in mean excess) and the scores themselves.
+        var sd: Double = 1; var nulls: [Double] = []
+
+        /// The score of one wrong time, picked by `u` in 0..<1, against the other wrong times: a
+        /// draw from the attacker's null.
+        func nullDraw(_ u: Double) -> Double? {
+            guard nulls.count >= 6 else { return nil }
+            let k = min(nulls.count - 1, Int(u * Double(nulls.count)))
+            var others = nulls
+            let x = others.remove(at: k)
+            return (x - DSP.mean(others)) / max(DSP.standardDeviation(others), 1e-3)
+        }
+    }
 
     public func process(_ x: [Double], sampleRate: Int) -> (output: [Double], summary: String) {
         let usable = expected.filter(\.isValid)
@@ -151,25 +181,51 @@ public struct TrackFill {
         var fill = LineFill()
         fill.marginHz = marginHz
         fill.relativeMargin = relativeMargin
-        fill.fillMode = fillMode
         var filled: [Tone] = [], open = Set(usable.indices), count = [Int](repeating: 0, count: usable.count)
-        var first = [Double?](repeating: nil, count: usable.count), last = first
+        var first = [Double?](repeating: nil, count: usable.count), last = first, goal = first
+        var raised = [Int](repeating: 0, count: usable.count), gainUsed = [Double](repeating: 0, count: usable.count)
         var previous: [Int: Tone] = [:]
+        var draws = SeededRNG(seed: seed ^ 0x7461_7267_6574)     // targets apart from the fill's noise
+        let rounds = maxTones + (target == .null ? maxRaises : 0)
         var round = 0
         while !open.isEmpty {
             let verdicts = stage.test(y, sampleRate: sampleRate, passes: open)
             for pi in verdicts.keys.sorted() {
                 let tone = verdicts[pi] ?? nil
-                if first[pi] == nil { first[pi] = tone?.z }
+                if first[pi] == nil {
+                    first[pi] = tone?.z
+                    // Drawn once, from the audio as it came (null), or the fixed stop.
+                    goal[pi] = target == .null ? tone?.nullDraw(Double.random(in: 0..<1, using: &draws)) : stopZ
+                }
                 last[pi] = tone?.z
-                guard let tone, tone.z >= stopZ, count[pi] < maxTones, round <= maxTones else { open.remove(pi); continue }
-                // The same tone again after filling it: the fill didn't take; stop rather than loop.
-                if let p = previous[pi], abs(p.rest / tone.rest - 1) < 0.01, abs(p.offset - tone.offset) <= 1 { open.remove(pi); continue }
-                if let line = stage.track(tone, sampleRate: sampleRate, count: y.count),
-                   fill.fill(&y, line, sampleRate: sampleRate, rng: &rng, source: stage.track(tone, sampleRate: sampleRate, count: y.count, whole: true)) {
-                    filled.append(tone)
-                    count[pi] += 1
-                    previous[pi] = tone
+                guard let tone, let aim = goal[pi], round <= rounds else { open.remove(pi); continue }
+                let above = target == .null ? tone.z > aim : tone.z >= aim
+                if above && raised[pi] == 0 {
+                    guard count[pi] < maxTones else { open.remove(pi); continue }
+                    // Aiming at a target: a fill that didn't lower the score is where removal stops
+                    // helping (taking more of a background's best matches away tightens the wrong
+                    // times' spread, and the true curve's score rises again).
+                    if target == .null, let p = previous[pi], tone.z >= p.z { open.remove(pi); continue }
+                    // The same tone again after filling it: the fill didn't take; stop rather than loop.
+                    if let p = previous[pi], abs(p.rest / tone.rest - 1) < 0.01, abs(p.offset - tone.offset) <= 1 { open.remove(pi); continue }
+                    if let line = stage.track(tone, sampleRate: sampleRate, count: y.count), fill.fill(&y, line, sampleRate: sampleRate, rng: &rng) {
+                        filled.append(tone)
+                        count[pi] += 1
+                        previous[pi] = tone
+                    } else {
+                        open.remove(pi)
+                    }
+                } else if target == .null, tone.z < aim - targetTolerance, raised[pi] < maxRaises, gainUsed[pi] < maxGainDB {
+                    // Below its target: the best tone's strip, louder by what the gap is worth in mean
+                    // excess (dB along the curve), no more than the cap allows.
+                    let gain = min((aim - tone.z) * tone.sd, maxGainDB - gainUsed[pi])
+                    if gain >= 0.05, let line = stage.track(tone, sampleRate: sampleRate, count: y.count),
+                       fill.amplify(&y, line, gainDB: gain, sampleRate: sampleRate) {
+                        raised[pi] += 1
+                        gainUsed[pi] += gain
+                    } else {
+                        open.remove(pi)
+                    }
                 } else {
                     open.remove(pi)
                 }
@@ -179,9 +235,12 @@ public struct TrackFill {
         let list = filled.map { "\(Int($0.rest.rounded())) Hz" }.joined(separator: ", ")
         let scores = usable.indices.compactMap { i -> String? in
             guard let a = first[i] else { return nil }
-            return "\(Self.one(a)) → \(Self.one(last[i] ?? a))"
+            let aim = target == .null ? goal[i].map { " (target \(Self.one($0)))" } ?? "" : ""
+            return "\(Self.one(a)) → \(Self.one(last[i] ?? a))\(aim)"
         }.joined(separator: ", ")
+        let lifts = raised.filter { $0 > 0 }.count
         return (y, "tracks: \(usable.count) expected pass(es), filled \(filled.count) tone(s)\(list.isEmpty ? "" : " (" + list + ")")"
+                    + (target == .null ? ", raised \(lifts) pass(es)" : "")
                     + (scores.isEmpty ? "" : "; attacker z \(scores)"))
     }
 
@@ -191,16 +250,14 @@ public struct TrackFill {
     var fillHalfWindow: Double { halfWindow + maxOffset }
 
     /// The predicted tone as a track around the closest approach (where it was tested).
-    /// The tone's path to fill: within `fillHalfWindow` of the closest approach, or with `whole`
-    /// across the whole clip (where a level fill must not take levels from).
-    func track(_ tone: Tone, sampleRate: Int, count: Int, whole: Bool = false) -> Track? {
+    func track(_ tone: Tone, sampleRate: Int, count: Int) -> Track? {
         let pass = expected[tone.pass], end = Double(count) / Double(sampleRate), c = pass.center + tone.offset
         var times: [Double] = [], freqs: [Double] = []
         // Only where the tone was found: a strip filled where there is nothing to remove is pure
         // risk, since any bias in its level traces the exact curve. That's the searched window,
         // widened by the timing slack: an attacker whose track puts the closest approach a few
         // seconds elsewhere (archive positions are stale) centres its window there.
-        let half = whole ? Double.infinity : fillHalfWindow
+        let half = fillHalfWindow
         var t = max(0, (pass.times.first ?? 0) + tone.offset, c - half)
         while t <= min(end, (pass.times.last ?? 0) + tone.offset, c + half) {
             if let f = pass.factor(at: t - tone.offset) {
@@ -362,6 +419,6 @@ public struct TrackFill {
         let nulls = nullShifts.map { best(shift: $0).score }.filter(\.isFinite)
         guard nulls.count >= 6 else { return nil }
         let mean = DSP.mean(nulls), sd = max(DSP.standardDeviation(nulls), 1e-3)
-        return Tone(pass: pi, rest: real.rest, offset: real.offset, z: (real.score - mean) / sd, effect: real.score - mean)
+        return Tone(pass: pi, rest: real.rest, offset: real.offset, z: (real.score - mean) / sd, effect: real.score - mean, sd: sd, nulls: nulls)
     }
 }

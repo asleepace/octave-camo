@@ -39,17 +39,6 @@ public struct LineFill: ScrubStage {
     public var voiceToleranceHz = 9.0
     public var pitch = PitchTracker()
     public var seed: UInt64 = .random(in: 1...UInt64.max)
-    /// How a strip is filled. `.floor`: noise at the level just beside the strip. That also erases
-    /// whatever else was in the strip (notes, a room's steady tones), so the exact curve comes out
-    /// emptier than the same curve at other times: a dip, and summed over aircraft a hole at the
-    /// true place (docs/EXPERIMENTS.md, "The fill's mark"). `.level`: each bin of the strip takes
-    /// the level the same bin has at a random other time within `levelSeconds` (one where the tone
-    /// being removed isn't near it), with a random phase. The strip then has the background's own
-    /// levels, notes and steady tones included, but no copied sound. Noise at the floor where no
-    /// time fits (a tone that holds one frequency throughout).
-    public enum Fill: String, Sendable { case floor, level, copy }
-    public var fillMode: Fill = .floor
-    public var levelSeconds = 8.0
 
     public init() {}
 
@@ -106,41 +95,12 @@ public struct LineFill: ScrubStage {
         }
     }
 
-    /// Replaces one line's strip with matched noise (`fillMode`). Returns false when there was
-    /// nothing to fill. `source`, when given, is where the tone being removed is at every time (not
-    /// only along the strip; else the line itself): a level fill never takes a bin's level from a
-    /// time when the tone is near it, or the fill would copy the tone back in.
-    func fill(_ y: inout [Double], _ line: Track, sampleRate: Int, rng: inout SeededRNG, source tone: Track? = nil) -> Bool {
-        guard let t0 = line.times.first, let t1 = line.times.last, !line.frequencies.isEmpty else { return false }
-        let sr = Double(sampleRate), size = Self.fftSize(sampleRate: sampleRate), hop = size / 4
-        let binHz = sr / Double(size), frameSeconds = Double(size) / sr
-
-        // How wide: the Hann main lobe (±2 bins), the tracking margin, and the sweep within a frame.
-        var slope = 0.0
-        for i in 1..<max(line.times.count, 1) where line.times[i] > line.times[i - 1] {
-            slope = max(slope, abs(line.frequencies[i] - line.frequencies[i - 1]) / (line.times[i] - line.times[i - 1]))
-        }
-        let top = line.maxFrequency
-        let half = 2 + Int(((marginHz + relativeMargin * top + 0.5 * slope * frameSeconds) / binHz).rounded(.up))
-        let side = 4 * half + 3
-
-        // The stretch: the line plus a frame and a half either side (the fill fades in and out over half a frame).
-        let a = max(0, Int(((t0 - 1.5 * frameSeconds) * sr).rounded(.down)))
-        let b = min(y.count, Int(((t1 + 1.5 * frameSeconds) * sr).rounded(.up)))
-        guard b - a > size / 2 else { return false }
-        let lo = max(1, Int((line.minFrequency / binHz).rounded(.down)) - side)
-        let hi = min(size / 2, Int((line.maxFrequency / binHz).rounded(.up)) + side + 1)
-        guard hi - lo > 2 * side else { return false }
-
-        // A level fill reads the same band at other times, so the band reaches `levelSeconds`
-        // beyond the stretch and the other times are just other frames of it.
-        let level = fillMode != .floor, copy = fillMode == .copy
-        let reach = level ? Int(levelSeconds * sr) : 0
-        let a0 = max(0, a - reach), b0 = min(y.count, b + reach)
-        let band = BandSTFT(y[a0..<b0], size: size, hop: hop, lo: lo, hi: hi)
+    /// Replaces one line's strip with matched noise. Returns false when there was nothing to fill.
+    func fill(_ y: inout [Double], _ line: Track, sampleRate: Int, rng: inout SeededRNG) -> Bool {
+        guard let st = strip(line, sampleRate: sampleRate, count: y.count) else { return false }
+        let (t0, t1, sr, binHz, frameSeconds, half, side, a, lo) = (st.t0, st.t1, st.sr, st.binHz, st.frameSeconds, st.half, st.side, st.a, st.lo)
+        let band = BandSTFT(y[st.a..<st.b], size: st.size, hop: st.size / 4, lo: st.lo, hi: st.hi)
         let W = band.width, F = band.frames
-        let span = Int((levelSeconds * sr / Double(hop)).rounded())                       // in frames
-        let path = tone ?? line              // where the tone being removed is (never borrow from there)
         var power = [Double](repeating: 0, count: F * W)
         for i in 0..<(F * W) { power[i] = band.re[i] * band.re[i] + band.im[i] * band.im[i] }
         var outRe = band.re, outIm = band.im
@@ -150,39 +110,8 @@ public struct LineFill: ScrubStage {
         var sideBins: [Double] = []
         sideBins.reserveCapacity(5 * 4 * side)
 
-        // A random other frame within `span` to take this frame's strip levels from: wholly inside
-        // the audio, at least a frame's length away, and not where the tone is near the strip. The
-        // tone's path is a prediction (archive positions are stale, 1-2 % off), and a far pass barely
-        // bends, so "near" is within the strip's width or 3 %, whichever is wider. One frame for
-        // the whole strip, so levels keep the background's shape across bins (independent draws per
-        // bin make the strip's peaks taller than the background's: a bump under music). Up to 24
-        // draws, else nil.
-        let minGap = size / hop, total = y.count
-        var sticky: Int? = nil
-        func usable(_ ms: Int, _ f: Double, _ near: Double) -> Bool {
-            guard ms >= 0, ms < F else { return false }
-            let at = a0 + band.center(of: ms)
-            guard at - size / 2 >= 0, at + size / 2 <= total else { return false }
-            if let p0 = path.times.first, let p1 = path.times.last {
-                let ts = Double(at) / sr
-                if ts >= p0 - frameSeconds, ts <= p1 + frameSeconds,
-                   abs(Self.interpolate(path, at: min(max(ts, p0), p1)) - f) <= near { return false }
-            }
-            return true
-        }
-        func levelFrame(_ m: Int, _ f: Double) -> Int? {
-            let near = max(Double(3 * half + 2) * binHz, 0.03 * f + Double(half + 1) * binHz)
-            if copy, let d = sticky, usable(m + d, f, near) { return m + d }
-            for _ in 0..<24 {
-                let d = Int(rng.uniform(Double(minGap)...Double(max(span, minGap) + 1)).rounded(.down))
-                let ms = rng.uniform(0...1) < 0.5 ? m - d : m + d
-                if usable(ms, f, near) { sticky = ms - m; return ms }
-            }
-            return nil
-        }
-
         for m in 0..<F {
-            let t = (Double(a0) + Double(band.center(of: m))) / sr
+            let t = (Double(a) + Double(band.center(of: m))) / sr
             // Weight in time: 1 along the line, a raised cosine to 0 over half a frame beyond its ends.
             let beyond = max(t0 - t, t - t1, 0)
             if beyond >= fade { continue }
@@ -205,7 +134,6 @@ public struct LineFill: ScrubStage {
             let meanPower = floor / log(2.0)
             let amp = (meanPower / 2).squareRoot() * gain
 
-            let source = level ? levelFrame(m, f) : nil
             let kLo = max(0, Int((c - Double(half) - 1).rounded(.down))), kHi = min(W - 1, Int((c + Double(half) + 1).rounded(.up)))
             for k in kLo...kHi {
                 let d = abs(Double(k) - c)
@@ -214,23 +142,73 @@ public struct LineFill: ScrubStage {
                 if w <= 0 { continue }
                 let i = m * W + k
                 let keep = (1 - w).squareRoot(), use = w.squareRoot()
-                if let ms = source, copy {
-                    outRe[i] = keep * band.re[i] + use * band.re[ms * W + k]
-                    outIm[i] = keep * band.im[i] + use * band.im[ms * W + k]
-                } else if let ms = source {
-                    let r = power[ms * W + k].squareRoot() * gain, phase = rng.uniform(0...(2 * Double.pi))
-                    outRe[i] = keep * band.re[i] + use * r * cos(phase)
-                    outIm[i] = keep * band.im[i] + use * r * sin(phase)
-                } else {
-                    outRe[i] = keep * band.re[i] + use * amp * rng.normal()
-                    outIm[i] = keep * band.im[i] + use * amp * rng.normal()
-                }
+                outRe[i] = keep * band.re[i] + use * amp * rng.normal()
+                outIm[i] = keep * band.im[i] + use * amp * rng.normal()
                 changed = true
             }
         }
         guard changed else { return false }
         let delta = band.change(re: outRe, im: outIm)
-        for i in 0..<delta.count { y[a0 + i] += delta[i] }
+        for i in 0..<delta.count { y[a + i] += delta[i] }
+        return true
+    }
+
+    /// Where a line's strip lies: the STFT size, the strip's half-width and the side band (bins),
+    /// the stretch of samples [a, b) and the bins [lo, hi) it reaches.
+    struct Strip { let t0, t1, sr, binHz, frameSeconds: Double; let size, half, side, a, b, lo, hi: Int }
+
+    func strip(_ line: Track, sampleRate: Int, count: Int) -> Strip? {
+        guard let t0 = line.times.first, let t1 = line.times.last, !line.frequencies.isEmpty else { return nil }
+        let sr = Double(sampleRate), size = Self.fftSize(sampleRate: sampleRate)
+        let binHz = sr / Double(size), frameSeconds = Double(size) / sr
+
+        // How wide: the Hann main lobe (±2 bins), the tracking margin, and the sweep within a frame.
+        var slope = 0.0
+        for i in 1..<max(line.times.count, 1) where line.times[i] > line.times[i - 1] {
+            slope = max(slope, abs(line.frequencies[i] - line.frequencies[i - 1]) / (line.times[i] - line.times[i - 1]))
+        }
+        let top = line.maxFrequency
+        let half = 2 + Int(((marginHz + relativeMargin * top + 0.5 * slope * frameSeconds) / binHz).rounded(.up))
+        let side = 4 * half + 3
+
+        // The stretch: the line plus a frame and a half either side (the fill fades in and out over half a frame).
+        let a = max(0, Int(((t0 - 1.5 * frameSeconds) * sr).rounded(.down)))
+        let b = min(count, Int(((t1 + 1.5 * frameSeconds) * sr).rounded(.up)))
+        guard b - a > size / 2 else { return nil }
+        let lo = max(1, Int((line.minFrequency / binHz).rounded(.down)) - side)
+        let hi = min(size / 2, Int((line.maxFrequency / binHz).rounded(.up)) + side + 1)
+        guard hi - lo > 2 * side else { return nil }
+        return Strip(t0: t0, t1: t1, sr: sr, binHz: binHz, frameSeconds: frameSeconds, size: size, half: half, side: side, a: a, b: b, lo: lo, hi: hi)
+    }
+
+    /// Raises one line's strip by `gainDB`: the sound already there, louder (no new tone), over the
+    /// same strip a fill would replace, faded in the same way. Returns false when there was nothing.
+    func amplify(_ y: inout [Double], _ line: Track, gainDB: Double, sampleRate: Int) -> Bool {
+        guard gainDB > 0, let st = strip(line, sampleRate: sampleRate, count: y.count) else { return false }
+        let band = BandSTFT(y[st.a..<st.b], size: st.size, hop: st.size / 4, lo: st.lo, hi: st.hi)
+        let W = band.width, F = band.frames, g = pow(10, gainDB / 20) - 1, fade = 0.5 * st.frameSeconds
+        var outRe = band.re, outIm = band.im, changed = false
+        for m in 0..<F {
+            let t = (Double(st.a) + Double(band.center(of: m))) / st.sr
+            let beyond = max(st.t0 - t, t - st.t1, 0)
+            if beyond >= fade { continue }
+            let wt = beyond == 0 ? 1 : 0.5 + 0.5 * cos(Double.pi * beyond / fade)
+            let c = Self.interpolate(line, at: min(max(t, st.t0), st.t1)) / st.binHz - Double(st.lo)
+            guard c > Double(st.side), c < Double(W - st.side) else { continue }
+            let kLo = max(0, Int((c - Double(st.half) - 1).rounded(.down))), kHi = min(W - 1, Int((c + Double(st.half) + 1).rounded(.up)))
+            for k in kLo...kHi {
+                let d = abs(Double(k) - c)
+                let w = wt * (d <= Double(st.half) ? 1.0 : max(0, 1 - (d - Double(st.half))))
+                if w <= 0 { continue }
+                let i = m * W + k, scale = 1 + w * g
+                outRe[i] = band.re[i] * scale
+                outIm[i] = band.im[i] * scale
+                changed = true
+            }
+        }
+        guard changed else { return false }
+        let delta = band.change(re: outRe, im: outIm)
+        for i in 0..<delta.count { y[st.a + i] += delta[i] }
         return true
     }
 

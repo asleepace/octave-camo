@@ -148,6 +148,49 @@ final class TrackFillTests: XCTestCase {
         XCTAssertEqual(r.output, x, r.summary)
     }
 
+    // MARK: Aiming at a draw from the null
+
+    /// (score before, after, target) from a null-target summary's "a → b (target t)".
+    static func aimed(_ summary: String) -> (Double, Double, Double)? {
+        guard let r = summary.range(of: #"(-?[0-9.]+) → (-?[0-9.]+) \(target (-?[0-9.]+)\)"#, options: .regularExpression) else { return nil }
+        let n = summary[r].split(whereSeparator: { " →()target".contains($0) }).compactMap { Double($0) }
+        return n.count == 3 ? (n[0], n[1], n[2]) : nil
+    }
+
+    /// Noise along a curve, the target drawn above its score: the strip is raised (the sound already
+    /// there, louder) until the score is near the target, and nothing is filled.
+    func testNullTargetRaisesAQuietPassTowardItsTarget() {
+        var lifted = 0
+        for seed in 1...6 {
+            var stage = Self.stage([Self.expected()])
+            stage.target = .null
+            stage.seed = UInt64(seed)
+            let x = DetectionScenes.white(Self.rate * 60, seed: UInt64(seed))
+            let r = stage.process(x, sampleRate: Self.rate)
+            guard let (before, after, aim) = Self.aimed(r.summary) else { return XCTFail(r.summary) }
+            let check = Self.verdict(r.output, stage)?.z ?? .nan
+            XCTAssertEqual(check, after, accuracy: 0.11, r.summary)
+            if aim > before + stage.targetTolerance {
+                lifted += 1
+                XCTAssertTrue(r.summary.contains("filled 0 ") && r.summary.contains("raised 1 "), r.summary)
+                XCTAssertEqual(after, aim, accuracy: 0.6, r.summary)
+            }
+        }
+        XCTAssertGreaterThan(lifted, 0, "no target fell above its score: this test lost its point")
+    }
+
+    /// A loud pass under a null target: removed down to around its target (a draw from the null,
+    /// so a few at most), not left standing.
+    func testNullTargetStillRemovesALoudPass() {
+        let x = LineFillTests.fanTone(rate: Self.rate, snr: 30).mono
+        var stage = Self.stage([Self.expected()])
+        stage.target = .null
+        let r = stage.process(x, sampleRate: Self.rate)
+        guard let (before, after, aim) = Self.aimed(r.summary) else { return XCTFail(r.summary) }
+        XCTAssertGreaterThan(before, 10, r.summary)
+        XCTAssertLessThan(after, max(aim, stage.stopZ) + 1, r.summary)
+    }
+
     // MARK: In the pipeline
 
     func testRunsAfterTheLowBandAndBeforeLinesOnlyWhenGivenPasses() {

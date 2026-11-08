@@ -14,7 +14,7 @@ let commands = [
             flags: ["hard"], run: synth),
     Command(name: "analyze", options: ["threshold"], flags: ["json"], run: analyze),
     Command(name: "scrub", options: ["steps", "mains", "passes", "cutoff", "lowband-mode", "flatten", "depth", "wobble-top", "seed", "expect",
-                                     "archive", "at", "start", "temp", "track-stop", "track-max-tones", "track-tolerance-hz", "track-tolerance", "track-windows", "track-fill"],
+                                     "archive", "at", "start", "temp", "track-stop", "track-max-tones", "track-tolerance-hz", "track-tolerance", "track-windows", "track-target"],
             flags: ["no-keep-voice"], run: scrub),
     Command(name: "predict", options: ["at", "start", "duration", "temp"], flags: [], run: predict),
 ]
@@ -38,7 +38,7 @@ USAGE
                         (or predict those curves from adsb.lol's half-hour archive: where and
                         when the audio starts, alt in metres on the pressure-altitude scale)
                         [--track-stop 1] (remove until each pass's attacker z is below this)
-                        [--track-max-tones 24] [--track-tolerance-hz 0] [--track-tolerance 0] [--track-windows 0.17] [--track-fill floor|level]
+                        [--track-max-tones 24] [--track-tolerance-hz 0] [--track-tolerance 0] [--track-windows 0.17] [--track-target fixed|null]
                         (tones per pass; the stopping test's slack off the curve, Hz and fraction)
   octave-camo predict <heatmap.bin> --at lat,lon[,alt] --start unix --duration s [--temp 15]
   octave-camo --version
@@ -130,9 +130,9 @@ func scrub(_ args: Arguments) throws {
     pipeline.tracks.maxTones = try args.value("track-max-tones", default: pipeline.tracks.maxTones)
     pipeline.tracks.toleranceHz = try args.value("track-tolerance-hz", default: pipeline.tracks.toleranceHz)
     pipeline.tracks.relativeTolerance = try args.value("track-tolerance", default: pipeline.tracks.relativeTolerance)
-    if let w = args.string("track-fill") {
-        guard let mode = LineFill.Fill(rawValue: w) else { throw UsageError("--track-fill takes floor or level") }
-        pipeline.tracks.fillMode = mode
+    if let w = args.string("track-target") {
+        guard let t = TrackFill.Target(rawValue: w) else { throw UsageError("--track-target takes fixed or null") }
+        pipeline.tracks.target = t
     }
     if let w = args.string("track-windows") {
         pipeline.tracks.windows = w.split(separator: ",").compactMap { Double($0) }
