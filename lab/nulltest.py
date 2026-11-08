@@ -21,7 +21,10 @@ import tempfile
 
 import numpy as np
 
-from . import fillmark, locate, synth
+from . import detect, fillmark, locate, synth
+
+# Every scene here is scored once: no disk cache (200 s scenes, a few hundred of them, fill it).
+locate.whitened = lambda name, x, sr, p: detect.whiten(x, sr, p)
 
 SECONDS = 200.0
 SHIFTS = np.concatenate([-np.arange(50, 85, 2.5), np.arange(50, 85, 2.5)])
@@ -70,6 +73,7 @@ def run(runs: int = 12, with_plane: bool = False, variants: dict | None = None) 
     rng = np.random.default_rng(1)
     variants = variants or {"untouched": None, "fixed": [], "null": ["--track-target", "null"]}
     out = {}
+    tmpdir = tempfile.mkdtemp()
     for kind in ("room", "music", "pink"):
         res = {v: [] for v in variants}
         for r in range(runs):
@@ -79,7 +83,7 @@ def run(runs: int = 12, with_plane: bool = False, variants: dict | None = None) 
                 x = plane(x, tc, depth, rng)
             grid = np.arange(-60.0, SECONDS + 60.0, 0.1)
             exp = [{"times": np.round(grid, 3).tolist(), "factors": np.round(fillmark.factor(grid, tc, depth), 7).tolist(), "closest": tc}]
-            with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
+            with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, dir=tmpdir) as f:
                 json.dump(exp, f)
             for v, extra in variants.items():
                 base = ["--steps", "mono", "--seed", str(r + 1)]
