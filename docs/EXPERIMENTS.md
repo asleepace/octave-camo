@@ -428,6 +428,29 @@ A modest confirmation: three passes improve (N9658K_R24 5.0 → 1.8, N2933A_R08 
 2.5 → 1.5), none get worse. The next lever is the fill itself: until a filled strip is
 indistinguishable from the background around it, removing more means marking more.
 
+## Two noisy outdoor walks
+
+Two phone recordings made on a walk outdoors (traffic, footsteps, a tow truck), with jets
+overhead: 196 s (nearest aircraft 2.9 km) and 42 s (3.4 km). The listener moved (about 130 m and
+15 m); the lab treats them as standing at the start point (walking shifts a tone by about 0.3 %,
+inside the search's slack).
+
+| place p (tones; tones + loudness) | original | Full | Experimental | Full + archive tracks |
+| --- | ---: | ---: | ---: | ---: |
+| 196 s walk | 0.89; 0.92 | 0.66; 0.90 | 0.16; 0.39 | 0.54; 0.79 |
+| 42 s walk | 0.54; 0.36 | 0.40; 0.47 | 0.43; 0.50 | 0.23; 0.41 |
+
+Nothing places either walk, before or after. The planes were 3–5 km off, under a loud broadband
+street. One thing worth knowing: on the 196 s walk the known-path attacker's z for one jet (5.3 km)
+goes from 0.0 in the original to 2.0 after Full and 5.8 after Experimental. Not from the cuts
+(putting every cut cell back leaves 2.2): the cleanup quiets the background, and a faint real
+harmonic stands out more. The place search doesn't pick it up (p 0.16, one aircraft of four),
+but it's the same effect as 37a954's: a cleaner background sharpens what survives.
+
+Also found: two lab jobs fetching the same archive half hour at once read a half-written file
+(12 bogus passes, 99 fills). The cache is now written atomically, and a half hour fetched before
+it's complete isn't cached as final.
+
 ## Review of the place-scored work, and the loudness term in the place search
 
 **Review.** Re-read the fast scoring, ranks, baseline, benchmark, cache lock, holdout guard and
