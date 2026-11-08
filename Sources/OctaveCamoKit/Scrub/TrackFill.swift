@@ -139,6 +139,8 @@ public struct TrackFill {
     /// Raising: rounds per pass, and the most any strip is raised in all, dB.
     public var maxRaises = 6
     public var maxGainDB = 10.0
+    /// Under the null target, removal goes on while z is at least this, whatever the score.
+    public var strongZ = 3.0
 
     var search: PathSearch { search(window: windows.first ?? 0.17) }
 
@@ -214,10 +216,12 @@ public struct TrackFill {
                 // what the place search compares across curves.
                 // A score at its target isn't enough on its own: the same audio along the curve's
                 // neighbours (the place search's other curves, the wrong times within the stretch)
-                // still sees a plane's harmonic that's left, so the fixed stop holds as well, and
-                // a strip that stands out that far is never the one raised.
+                // still sees a plane's harmonic that's left (z 3-8 at target), so removal goes on
+                // while z is at least `strongZ`, and a strip that stands out that far is never the
+                // one raised. Not at `stopZ`: background alone gets there often enough that
+                // removing it leaves the hole again (pink noise, null-test percentile 0.39 → 0.27).
                 let level = target == .null ? tone.score : tone.z
-                let strong = tone.z >= stopZ
+                let strong = tone.z >= strongZ
                 let above = target == .null ? strong || level > aim : level >= aim
                 if above && (raised[pi] == 0 || strong) {
                     guard count[pi] < maxTones else { open.remove(pi); continue }
