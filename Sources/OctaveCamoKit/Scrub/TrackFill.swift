@@ -136,7 +136,7 @@ public struct TrackFill {
     /// How close to its target a pass's score has to get (z), raising.
     public var targetTolerance = 0.25
     /// Raising: rounds per pass, and the most any strip is raised in all, dB.
-    public var maxRaises = 3
+    public var maxRaises = 6
     public var maxGainDB = 10.0
 
     var search: PathSearch { search(window: windows.first ?? 0.17) }
@@ -185,6 +185,7 @@ public struct TrackFill {
         var first = [Double?](repeating: nil, count: usable.count), last = first, goal = first
         var raised = [Int](repeating: 0, count: usable.count), gainUsed = [Double](repeating: 0, count: usable.count)
         var previous: [Int: Tone] = [:]
+        var lastRaise: [Int: (z: Double, gain: Double)] = [:]
         var draws = SeededRNG(seed: seed ^ 0x7461_7267_6574)     // targets apart from the fill's noise
         let rounds = maxTones + (target == .null ? maxRaises : 0)
         var prepared: [Prepared?]? = nil                        // the audio as it came, for the draws
@@ -225,11 +226,20 @@ public struct TrackFill {
                 } else if target == .null, tone.z < aim - targetTolerance, raised[pi] < maxRaises, gainUsed[pi] < maxGainDB {
                     // Below its target: the best tone's strip, louder by what the gap is worth in mean
                     // excess (dB along the curve), no more than the cap allows.
-                    let gain = min((aim - tone.z) * tone.sd, maxGainDB - gainUsed[pi])
+                    // A strip's dB don't all reach the score (the excess is clipped, the search takes
+                    // the best of neighbouring bins, the running median moves), so after the first
+                    // raise the step comes from how far the last one moved it (at most 4× the last).
+                    var gain = (aim - tone.z) * tone.sd
+                    if let (z0, g0) = lastRaise[pi], g0 > 0 {
+                        let slope = (tone.z - z0) / g0
+                        gain = slope > 1e-3 ? min((aim - tone.z) / slope, 4 * g0) : 4 * g0
+                    }
+                    gain = min(gain, maxGainDB - gainUsed[pi])
                     if gain >= 0.05, let line = stage.track(tone, sampleRate: sampleRate, count: y.count),
                        fill.amplify(&y, line, gainDB: gain, sampleRate: sampleRate) {
                         raised[pi] += 1
                         gainUsed[pi] += gain
+                        lastRaise[pi] = (tone.z, gain)
                     } else {
                         open.remove(pi)
                     }
