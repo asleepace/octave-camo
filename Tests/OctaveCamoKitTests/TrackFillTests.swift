@@ -168,12 +168,12 @@ final class TrackFillTests: XCTestCase {
             let x = DetectionScenes.white(Self.rate * 60, seed: UInt64(seed))
             let r = stage.process(x, sampleRate: Self.rate)
             guard let (before, after, aim) = Self.aimed(r.summary) else { return XCTFail(r.summary) }
-            let check = Self.verdict(r.output, stage)?.z ?? .nan
-            XCTAssertEqual(check, after, accuracy: 0.11, r.summary)
-            if aim > before + stage.targetTolerance {
+            let check = Self.verdict(r.output, stage)?.score ?? .nan
+            XCTAssertEqual(check, after, accuracy: 0.011, r.summary)
+            if aim > before + 0.05 {
                 lifted += 1
-                XCTAssertTrue(r.summary.contains("filled 0 ") && r.summary.contains("raised 1 "), r.summary)
-                XCTAssertEqual(after, aim, accuracy: 0.6, r.summary)
+                XCTAssertTrue(r.summary.contains("filled 0 ") && !r.summary.contains("raised 0 "), r.summary)
+                XCTAssertLessThan(abs(after - aim), 0.5 * (aim - before), r.summary)
             }
         }
         XCTAssertGreaterThan(lifted, 0, "no target fell above its score: this test lost its point")
@@ -187,8 +187,8 @@ final class TrackFillTests: XCTestCase {
         stage.target = .null
         let r = stage.process(x, sampleRate: Self.rate)
         guard let (before, after, aim) = Self.aimed(r.summary) else { return XCTFail(r.summary) }
-        XCTAssertGreaterThan(before, 10, r.summary)
-        XCTAssertLessThan(after, max(aim, stage.stopZ) + 1, r.summary)
+        XCTAssertGreaterThan(before - aim, 1, r.summary)
+        XCTAssertLessThan(after - aim, 0.3 * (before - aim), r.summary)
     }
 
     // MARK: In the pipeline
