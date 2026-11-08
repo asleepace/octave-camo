@@ -9,7 +9,9 @@ outside it and leaves a flat curve that scores differently in noise and higher o
 no plane there is nothing to find, so a clean cloak leaves that percentile uniform (mean 0.5):
 lower is the dip (a hole, summed over aircraft), higher a bump.
 
-    python3 -m lab.nulltest [runs per background]
+    python3 -m lab.nulltest [runs per background] [--plane] [--untouched --fixed --null]
+(--plane: an engine's tone along the curve first; then a clean removal leaves 0.5 too, a
+residual more, a hole less.)
 """
 from __future__ import annotations
 
@@ -47,15 +49,34 @@ def background(kind: str, seed: int, seconds: float = SECONDS) -> np.ndarray:
     return fillmark._pink(n, np.random.default_rng(seed + 5000))    # not room's white noise
 
 
-def run(runs: int = 12) -> dict:
+def plane(x: np.ndarray, tc: float, depth: float, rng, snr_db: float = 14.0) -> np.ndarray:
+    """An engine's tone and two harmonics along the pass's curve, swelling over ~25 s around the
+    closest approach, `snr_db` over a hertz of the background near the tone (its median)."""
+    sr = synth.SR
+    f0 = float(rng.uniform(400, 1200))
+    X = np.abs(np.fft.rfft(x)) ** 2 / (len(x) * sr / 2)
+    f = np.fft.rfftfreq(len(x), 1 / sr)
+    t = np.arange(len(x)) / sr
+    env = np.exp(-0.5 * ((t - tc) / 12.0) ** 2)
+    phase = 2 * np.pi * np.cumsum(f0 * fillmark.factor(t, tc, depth)) / sr
+    y = x.copy()
+    for h, lv in ((1, 1.0), (2, 0.6), (3, 0.4)):
+        psd = np.median(X[(f > 0.9 * h * f0) & (f < 1.1 * h * f0)])
+        y += lv * np.sqrt(2 * psd * 10 ** (snr_db / 10)) * env * np.sin(h * phase)
+    return y
+
+
+def run(runs: int = 12, with_plane: bool = False, variants: dict | None = None) -> dict:
     rng = np.random.default_rng(1)
-    variants = {"untouched": None, "fixed": [], "null": ["--track-target", "null"]}
+    variants = variants or {"untouched": None, "fixed": [], "null": ["--track-target", "null"]}
     out = {}
     for kind in ("room", "music", "pink"):
         res = {v: [] for v in variants}
         for r in range(runs):
             x = background(kind, 100 + r)
             tc, depth = float(rng.uniform(95, 105)), float(rng.uniform(0.15, 0.35))
+            if with_plane:
+                x = plane(x, tc, depth, rng)
             grid = np.arange(-60.0, SECONDS + 60.0, 0.1)
             exp = [{"times": np.round(grid, 3).tolist(), "factors": np.round(fillmark.factor(grid, tc, depth), 7).tolist(), "closest": tc}]
             with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
@@ -63,7 +84,7 @@ def run(runs: int = 12) -> dict:
             for v, extra in variants.items():
                 base = ["--steps", "mono", "--seed", str(r + 1)]
                 y = fillmark.scrub(x, synth.SR, base if extra is None else [*base, "--expect", f.name, *extra])
-                res[v].append(percentile(y, synth.SR, tc, depth, f"nulltest:{kind}:{r}:{v}"))
+                res[v].append(percentile(y, synth.SR, tc, depth, f"nulltest:{kind}:{r}:{v}:{'plane' if with_plane else 'free'}"))
             print(kind, r, {v: round(p[-1], 2) for v, p in res.items()}, flush=True)
         out[kind] = {v: (float(np.mean(p)), float(np.std(p) / np.sqrt(len(p)))) for v, p in res.items()}
         print(kind, {v: f"{m:.2f} ± {e:.2f}" for v, (m, e) in out[kind].items()}, flush=True)
@@ -71,4 +92,7 @@ def run(runs: int = 12) -> dict:
 
 
 if __name__ == "__main__":
-    run(int(sys.argv[1]) if len(sys.argv) > 1 else 12)
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    only = [a[2:] for a in sys.argv[1:] if a.startswith("--") and a != "--plane"]
+    allv = {"untouched": None, "fixed": [], "null": ["--track-target", "null"]}
+    run(int(args[0]) if args else 12, "--plane" in sys.argv, {k: v for k, v in allv.items() if not only or k in only})
