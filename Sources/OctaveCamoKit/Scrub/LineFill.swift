@@ -106,7 +106,7 @@ public struct LineFill: ScrubStage {
     /// Replaces one line's strip with matched noise (or borrowed sound, `borrowSeconds`). Returns
     /// false when there was nothing to fill. `source`, when given, is where the tone being removed
     /// is at every time (not only along the strip): a frame isn't borrowed from a time when the tone
-    /// would be inside the strip there, or the fill would copy the tone back in.
+    /// would be within 3 % of the strip there, or the fill would copy the tone back in.
     func fill(_ y: inout [Double], _ line: Track, sampleRate: Int, rng: inout SeededRNG, source tone: Track? = nil) -> Bool {
         guard let t0 = line.times.first, let t1 = line.times.last, !line.frequencies.isEmpty else { return false }
         let sr = Double(sampleRate), size = Self.fftSize(sampleRate: sampleRate), hop = size / 4
@@ -129,18 +129,13 @@ public struct LineFill: ScrubStage {
         let hi = min(size / 2, Int((line.maxFrequency / binHz).rounded(.up)) + side + 1)
         guard hi - lo > 2 * side else { return false }
 
-        let band = BandSTFT(y[a..<b], size: size, hop: hop, lo: lo, hi: hi)
+        // Borrowing reads the same band at other times, so then the band covers the whole clip and
+        // the other times are just other frames of it (offsets rounded to whole hops).
+        let borrowing = !borrowSeconds.isEmpty
+        let a0 = borrowing ? 0 : a, b0 = borrowing ? y.count : b
+        let band = BandSTFT(y[a0..<b0], size: size, hop: hop, lo: lo, hi: hi)
         let W = band.width, F = band.frames
-        // The same band elsewhere in time, for borrowing: each offset's stretch, clipped to the audio.
-        let sources: [(band: BandSTFT, start: Int, end: Int, shift: Int)] = borrowSeconds.compactMap { d in
-            let shift = Int((d * sr).rounded())
-            let sa = max(0, a + shift), sb = min(y.count, b + shift)
-            guard sb - sa > 2 * size else { return nil }
-            return (BandSTFT(y[sa..<sb], size: size, hop: hop, lo: lo, hi: hi), sa, sb, shift)
-        }
-        let sourcePower: [[Double]] = sources.map { src in
-            (0..<(src.band.frames * W)).map { src.band.re[$0] * src.band.re[$0] + src.band.im[$0] * src.band.im[$0] }
-        }
+        let shifts = borrowSeconds.map { Int(($0 * sr / Double(hop)).rounded()) }       // in frames
         var power = [Double](repeating: 0, count: F * W)
         for i in 0..<(F * W) { power[i] = band.re[i] * band.re[i] + band.im[i] * band.im[i] }
         var outRe = band.re, outIm = band.im
@@ -151,7 +146,7 @@ public struct LineFill: ScrubStage {
         sideBins.reserveCapacity(5 * 4 * side)
 
         for m in 0..<F {
-            let t = (Double(a) + Double(band.center(of: m))) / sr
+            let t = (Double(a0) + Double(band.center(of: m))) / sr
             // Weight in time: 1 along the line, a raised cosine to 0 over half a frame beyond its ends.
             let beyond = max(t0 - t, t - t1, 0)
             if beyond >= fade { continue }
@@ -174,29 +169,35 @@ public struct LineFill: ScrubStage {
             let meanPower = floor / log(2.0)
             let amp = (meanPower / 2).squareRoot() * gain
 
-            // A frame to borrow from: the first offset whose frame lies wholly inside the audio,
-            // scaled so its side bins match this frame's.
-            var borrowed: (s: Int, frame: Int, scale: Double)? = nil
-            let here = a + band.center(of: m)
-            for (s, src) in sources.enumerated() {
-                let at = here + src.shift
+            // A frame to borrow from: the first offset whose frame lies wholly inside the audio and
+            // doesn't hold the tone being removed, scaled so its side bins match this frame's.
+            var borrowed: (frame: Int, scale: Double)? = nil
+            for shift in shifts {
+                let ms = m + shift
+                let at = a0 + band.center(of: ms)
+                guard at - size / 2 >= 0, at + size / 2 <= y.count, ms >= 0, ms < F else { continue }
                 if let tone, let t0 = tone.times.first, let t1 = tone.times.last {
                     let ts = Double(at) / sr
-                    if ts >= t0 && ts <= t1 && abs(Self.interpolate(tone, at: ts) - f) <= Double(2 * half + 1) * binHz { continue }
+                    // The tone's path is a prediction (archive positions are stale, 1-2 % off), and a
+                    // far pass barely bends: sound from near the tone's predicted frequency can still
+                    // hold the tone, so the margin is the strip's width or 3 %, whichever is wider.
+                    if ts >= t0 && ts <= t1 && abs(Self.interpolate(tone, at: ts) - f) <= max(Double(2 * half + 1) * binHz, 0.03 * f) { continue }
                 }
-                guard at - size / 2 >= src.start, at + size / 2 <= src.end else { continue }
-                let ms = (at - src.start + size - size / 2) / hop          // center(of:) inverted
-                guard ms >= 0, ms < src.band.frames, abs(src.band.center(of: ms) + src.start - at) <= hop / 2 else { continue }
                 sideBins.removeAll(keepingCapacity: true)
-                for mm in max(0, ms - 2)...min(src.band.frames - 1, ms + 2) {
+                for mm in max(0, ms - 2)...min(F - 1, ms + 2) {
                     for k in 0..<W {
                         let d = abs(Double(k) - c)
-                        if d >= Double(2 * half + 1) && d <= Double(side) { sideBins.append(sourcePower[s][mm * W + k]) }
+                        if d >= Double(2 * half + 1) && d <= Double(side) { sideBins.append(power[mm * W + k]) }
                     }
                 }
                 let there = DSP.median(sideBins[...])
                 guard there > 0 else { continue }
-                borrowed = (s, ms, (floor / there).squareRoot())
+                // Not from a frame much louder in the strip than beside it (a tone there, which would
+                // be copied in), and never amplified more than 2×.
+                var strip = 0.0, n = 0
+                for k in max(0, Int(c) - half)...min(W - 1, Int(c) + half) { strip += power[ms * W + k]; n += 1 }
+                guard n > 0, strip / Double(n) <= 4 * there / log(2.0) else { continue }
+                borrowed = (ms, min((floor / there).squareRoot(), 2))
                 break
             }
 
@@ -208,10 +209,10 @@ public struct LineFill: ScrubStage {
                 if w <= 0 { continue }
                 let i = m * W + k
                 let keep = (1 - w).squareRoot(), use = w.squareRoot()
-                if let (s, ms, scale) = borrowed {
-                    let j = ms * W + k
-                    outRe[i] = keep * band.re[i] + use * scale * sources[s].band.re[j]
-                    outIm[i] = keep * band.im[i] + use * scale * sources[s].band.im[j]
+                if let (ms, scale) = borrowed {
+                    let j = ms * W + k                     // the original's sound there, not a fill's
+                    outRe[i] = keep * band.re[i] + use * scale * band.re[j]
+                    outIm[i] = keep * band.im[i] + use * scale * band.im[j]
                 } else {
                     outRe[i] = keep * band.re[i] + use * amp * rng.normal()
                     outIm[i] = keep * band.im[i] + use * amp * rng.normal()
@@ -221,7 +222,7 @@ public struct LineFill: ScrubStage {
         }
         guard changed else { return false }
         let delta = band.change(re: outRe, im: outIm)
-        for i in 0..<delta.count { y[a + i] += delta[i] }
+        for i in 0..<delta.count { y[a0 + i] += delta[i] }
         return true
     }
 
