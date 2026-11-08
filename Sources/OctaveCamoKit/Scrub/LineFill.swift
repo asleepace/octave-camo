@@ -39,14 +39,17 @@ public struct LineFill: ScrubStage {
     public var voiceToleranceHz = 9.0
     public var pitch = PitchTracker()
     public var seed: UInt64 = .random(in: 1...UInt64.max)
-    /// Fill a strip with what the same frequencies sound like this far away in time (s, tried in
-    /// order for each frame), scaled to the local floor, instead of fresh noise; fresh noise only
-    /// where no offset fits. Empty: noise everywhere. A noise fill sits at the floor beside the
-    /// strip, so it also erases whatever else was there (notes, a room's steady tones) and the exact
-    /// curve comes out emptier than the same curve at other times: a dip, and summed over aircraft
-    /// a hole at the true place (docs/EXPERIMENTS.md, "The fill's mark"). Borrowed sound carries the
-    /// background's own structure, so the curve looks like it does at any other time.
-    public var borrowSeconds: [Double] = []
+    /// How a strip is filled. `.floor`: noise at the level just beside the strip. That also erases
+    /// whatever else was in the strip (notes, a room's steady tones), so the exact curve comes out
+    /// emptier than the same curve at other times: a dip, and summed over aircraft a hole at the
+    /// true place (docs/EXPERIMENTS.md, "The fill's mark"). `.level`: each bin of the strip takes
+    /// the level the same bin has at a random other time within `levelSeconds` (one where the tone
+    /// being removed isn't near it), with a random phase. The strip then has the background's own
+    /// levels, notes and steady tones included, but no copied sound. Noise at the floor where no
+    /// time fits (a tone that holds one frequency throughout).
+    public enum Fill: String, Sendable { case floor, level, copy }
+    public var fillMode: Fill = .floor
+    public var levelSeconds = 8.0
 
     public init() {}
 
@@ -103,10 +106,10 @@ public struct LineFill: ScrubStage {
         }
     }
 
-    /// Replaces one line's strip with matched noise (or borrowed sound, `borrowSeconds`). Returns
-    /// false when there was nothing to fill. `source`, when given, is where the tone being removed
-    /// is at every time (not only along the strip): a frame isn't borrowed from a time when the tone
-    /// would be within 3 % of the strip there, or the fill would copy the tone back in.
+    /// Replaces one line's strip with matched noise (`fillMode`). Returns false when there was
+    /// nothing to fill. `source`, when given, is where the tone being removed is at every time (not
+    /// only along the strip; else the line itself): a level fill never takes a bin's level from a
+    /// time when the tone is near it, or the fill would copy the tone back in.
     func fill(_ y: inout [Double], _ line: Track, sampleRate: Int, rng: inout SeededRNG, source tone: Track? = nil) -> Bool {
         guard let t0 = line.times.first, let t1 = line.times.last, !line.frequencies.isEmpty else { return false }
         let sr = Double(sampleRate), size = Self.fftSize(sampleRate: sampleRate), hop = size / 4
@@ -129,13 +132,15 @@ public struct LineFill: ScrubStage {
         let hi = min(size / 2, Int((line.maxFrequency / binHz).rounded(.up)) + side + 1)
         guard hi - lo > 2 * side else { return false }
 
-        // Borrowing reads the same band at other times, so then the band covers the whole clip and
-        // the other times are just other frames of it (offsets rounded to whole hops).
-        let borrowing = !borrowSeconds.isEmpty
-        let a0 = borrowing ? 0 : a, b0 = borrowing ? y.count : b
+        // A level fill reads the same band at other times, so the band reaches `levelSeconds`
+        // beyond the stretch and the other times are just other frames of it.
+        let level = fillMode != .floor, copy = fillMode == .copy
+        let reach = level ? Int(levelSeconds * sr) : 0
+        let a0 = max(0, a - reach), b0 = min(y.count, b + reach)
         let band = BandSTFT(y[a0..<b0], size: size, hop: hop, lo: lo, hi: hi)
         let W = band.width, F = band.frames
-        let shifts = borrowSeconds.map { Int(($0 * sr / Double(hop)).rounded()) }       // in frames
+        let span = Int((levelSeconds * sr / Double(hop)).rounded())                       // in frames
+        let path = tone ?? line              // where the tone being removed is (never borrow from there)
         var power = [Double](repeating: 0, count: F * W)
         for i in 0..<(F * W) { power[i] = band.re[i] * band.re[i] + band.im[i] * band.im[i] }
         var outRe = band.re, outIm = band.im
@@ -144,6 +149,37 @@ public struct LineFill: ScrubStage {
         var changed = false
         var sideBins: [Double] = []
         sideBins.reserveCapacity(5 * 4 * side)
+
+        // A random other frame within `span` to take this frame's strip levels from: wholly inside
+        // the audio, at least a frame's length away, and not where the tone is near the strip. The
+        // tone's path is a prediction (archive positions are stale, 1-2 % off), and a far pass barely
+        // bends, so "near" is within the strip's width or 3 %, whichever is wider. One frame for
+        // the whole strip, so levels keep the background's shape across bins (independent draws per
+        // bin make the strip's peaks taller than the background's: a bump under music). Up to 24
+        // draws, else nil.
+        let minGap = size / hop, total = y.count
+        var sticky: Int? = nil
+        func usable(_ ms: Int, _ f: Double, _ near: Double) -> Bool {
+            guard ms >= 0, ms < F else { return false }
+            let at = a0 + band.center(of: ms)
+            guard at - size / 2 >= 0, at + size / 2 <= total else { return false }
+            if let p0 = path.times.first, let p1 = path.times.last {
+                let ts = Double(at) / sr
+                if ts >= p0 - frameSeconds, ts <= p1 + frameSeconds,
+                   abs(Self.interpolate(path, at: min(max(ts, p0), p1)) - f) <= near { return false }
+            }
+            return true
+        }
+        func levelFrame(_ m: Int, _ f: Double) -> Int? {
+            let near = max(Double(3 * half + 2) * binHz, 0.03 * f + Double(half + 1) * binHz)
+            if copy, let d = sticky, usable(m + d, f, near) { return m + d }
+            for _ in 0..<24 {
+                let d = Int(rng.uniform(Double(minGap)...Double(max(span, minGap) + 1)).rounded(.down))
+                let ms = rng.uniform(0...1) < 0.5 ? m - d : m + d
+                if usable(ms, f, near) { sticky = ms - m; return ms }
+            }
+            return nil
+        }
 
         for m in 0..<F {
             let t = (Double(a0) + Double(band.center(of: m))) / sr
@@ -169,38 +205,7 @@ public struct LineFill: ScrubStage {
             let meanPower = floor / log(2.0)
             let amp = (meanPower / 2).squareRoot() * gain
 
-            // A frame to borrow from: the first offset whose frame lies wholly inside the audio and
-            // doesn't hold the tone being removed, scaled so its side bins match this frame's.
-            var borrowed: (frame: Int, scale: Double)? = nil
-            for shift in shifts {
-                let ms = m + shift
-                let at = a0 + band.center(of: ms)
-                guard at - size / 2 >= 0, at + size / 2 <= y.count, ms >= 0, ms < F else { continue }
-                if let tone, let t0 = tone.times.first, let t1 = tone.times.last {
-                    let ts = Double(at) / sr
-                    // The tone's path is a prediction (archive positions are stale, 1-2 % off), and a
-                    // far pass barely bends: sound from near the tone's predicted frequency can still
-                    // hold the tone, so the margin is the strip's width or 3 %, whichever is wider.
-                    if ts >= t0 && ts <= t1 && abs(Self.interpolate(tone, at: ts) - f) <= max(Double(2 * half + 1) * binHz, 0.03 * f) { continue }
-                }
-                sideBins.removeAll(keepingCapacity: true)
-                for mm in max(0, ms - 2)...min(F - 1, ms + 2) {
-                    for k in 0..<W {
-                        let d = abs(Double(k) - c)
-                        if d >= Double(2 * half + 1) && d <= Double(side) { sideBins.append(power[mm * W + k]) }
-                    }
-                }
-                let there = DSP.median(sideBins[...])
-                guard there > 0 else { continue }
-                // Not from a frame much louder in the strip than beside it (a tone there, which would
-                // be copied in), and never amplified more than 2×.
-                var strip = 0.0, n = 0
-                for k in max(0, Int(c) - half)...min(W - 1, Int(c) + half) { strip += power[ms * W + k]; n += 1 }
-                guard n > 0, strip / Double(n) <= 4 * there / log(2.0) else { continue }
-                borrowed = (ms, min((floor / there).squareRoot(), 2))
-                break
-            }
-
+            let source = level ? levelFrame(m, f) : nil
             let kLo = max(0, Int((c - Double(half) - 1).rounded(.down))), kHi = min(W - 1, Int((c + Double(half) + 1).rounded(.up)))
             for k in kLo...kHi {
                 let d = abs(Double(k) - c)
@@ -209,10 +214,13 @@ public struct LineFill: ScrubStage {
                 if w <= 0 { continue }
                 let i = m * W + k
                 let keep = (1 - w).squareRoot(), use = w.squareRoot()
-                if let (ms, scale) = borrowed {
-                    let j = ms * W + k                     // the original's sound there, not a fill's
-                    outRe[i] = keep * band.re[i] + use * scale * band.re[j]
-                    outIm[i] = keep * band.im[i] + use * scale * band.im[j]
+                if let ms = source, copy {
+                    outRe[i] = keep * band.re[i] + use * band.re[ms * W + k]
+                    outIm[i] = keep * band.im[i] + use * band.im[ms * W + k]
+                } else if let ms = source {
+                    let r = power[ms * W + k].squareRoot() * gain, phase = rng.uniform(0...(2 * Double.pi))
+                    outRe[i] = keep * band.re[i] + use * r * cos(phase)
+                    outIm[i] = keep * band.im[i] + use * r * sin(phase)
                 } else {
                     outRe[i] = keep * band.re[i] + use * amp * rng.normal()
                     outIm[i] = keep * band.im[i] + use * amp * rng.normal()

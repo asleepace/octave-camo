@@ -120,9 +120,8 @@ public struct TrackFill {
     /// window fills nothing) and made 37a954's place easier (p 0.49 → 0.14, same seed). Fills
     /// aren't yet clean enough to fill on weaker evidence.
     public var windows: [Double] = [0.17]
-    /// Fill with the same frequencies' sound from these offsets (s) rather than fresh noise
-    /// (LineFill.borrowSeconds). Empty: noise.
-    public var borrowSeconds: [Double] = []
+    /// How strips are filled (LineFill.Fill).
+    public var fillMode: LineFill.Fill = .floor
 
     var search: PathSearch { search(window: windows.first ?? 0.17) }
 
@@ -152,7 +151,7 @@ public struct TrackFill {
         var fill = LineFill()
         fill.marginHz = marginHz
         fill.relativeMargin = relativeMargin
-        fill.borrowSeconds = borrowSeconds
+        fill.fillMode = fillMode
         var filled: [Tone] = [], open = Set(usable.indices), count = [Int](repeating: 0, count: usable.count)
         var first = [Double?](repeating: nil, count: usable.count), last = first
         var previous: [Int: Tone] = [:]
@@ -193,7 +192,7 @@ public struct TrackFill {
 
     /// The predicted tone as a track around the closest approach (where it was tested).
     /// The tone's path to fill: within `fillHalfWindow` of the closest approach, or with `whole`
-    /// across the whole clip (where borrowing must not take sound from).
+    /// across the whole clip (where a level fill must not take levels from).
     func track(_ tone: Tone, sampleRate: Int, count: Int, whole: Bool = false) -> Track? {
         let pass = expected[tone.pass], end = Double(count) / Double(sampleRate), c = pass.center + tone.offset
         var times: [Double] = [], freqs: [Double] = []
