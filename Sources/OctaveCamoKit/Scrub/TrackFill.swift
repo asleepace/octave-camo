@@ -187,6 +187,7 @@ public struct TrackFill {
         var previous: [Int: Tone] = [:]
         var draws = SeededRNG(seed: seed ^ 0x7461_7267_6574)     // targets apart from the fill's noise
         let rounds = maxTones + (target == .null ? maxRaises : 0)
+        var prepared: [Prepared?]? = nil                        // the audio as it came, for the draws
         var round = 0
         while !open.isEmpty {
             let verdicts = stage.test(y, sampleRate: sampleRate, passes: open)
@@ -195,7 +196,13 @@ public struct TrackFill {
                 if first[pi] == nil {
                     first[pi] = tone?.z
                     // Drawn once, from the audio as it came (null), or the fixed stop.
-                    goal[pi] = target == .null ? tone?.nullDraw(Double.random(in: 0..<1, using: &draws)) : stopZ
+                    if target == .null, let tone {
+                        let u = Double.random(in: 0..<1, using: &draws)
+                        if prepared == nil { prepared = (windows.isEmpty ? [0.17] : windows).map { stage.prepare(y, sampleRate: sampleRate, window: $0) } }
+                        goal[pi] = stage.elsewhere(pi, u, prepared ?? [], duration: Double(y.count) / Double(sampleRate)) ?? tone.nullDraw(u)
+                    } else {
+                        goal[pi] = stopZ
+                    }
                 }
                 last[pi] = tone?.z
                 guard let tone, let aim = goal[pi], round <= rounds else { open.remove(pi); continue }
@@ -268,6 +275,29 @@ public struct TrackFill {
         }
         guard times.count > 4 else { return nil }
         return Track(times: times, frequencies: freqs, levels: [Double](repeating: 0, count: times.count))
+    }
+
+    /// A draw from what the pass's score would be with nothing there: the same curve, shape and all,
+    /// centred at another time (picked by `u`) and scored on its own stretch, as a wrong place's
+    /// curve is scored. Far enough away that neither stretch nor any fill reaches the other. Nil
+    /// when the audio is too short; then the wrong-time scores stand in (`Tone.nullDraw`), which
+    /// move the curve within one stretch: its fall leaves the stretch and a flatter curve scores
+    /// differently (higher along held notes), so they're the rougher draw.
+    func elsewhere(_ pi: Int, _ u: Double, _ prepared: [Prepared?], duration end: Double) -> Double? {
+        let pass = expected[pi], c = pass.center
+        let gap = 2 * halfWindow + maxOffset
+        // Centres for the copy: [halfWindow, c − gap] and [c + gap, end − halfWindow].
+        let left = (halfWindow, c - gap), right = (c + gap, end - halfWindow)
+        let lw = max(0, left.1 - left.0), rw = max(0, right.1 - right.0)
+        guard lw + rw > 0 else { return nil }
+        let at = u * (lw + rw) < lw ? left.0 + u * (lw + rw) : right.0 + (u * (lw + rw) - lw)
+        let d = at - c
+        var moved = pass
+        moved.times = pass.times.map { $0 + d }
+        moved.closest = c + d
+        // The best over the analysis windows, as `test` takes it.
+        let zs = prepared.compactMap { $0 }.compactMap { verdict(moved, pi, $0)?.z }
+        return zs.max()
     }
 
     /// The attacker's verdict on every pass, in order.

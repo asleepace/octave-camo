@@ -2,9 +2,12 @@
 leaves the dip".) On plane-free audio (synthetic room noise, music, pink noise; nothing real), one
 predicted pass at a random time; the clip cloaked with track removal (fixed stop, or the null
 target) and left alone. Scored the attacker's way: the best mean excess along the true curve over
-every rest frequency, as a percentile among the same curve at 40 wrong times. With no plane there
-is nothing to find, so a clean cloak leaves that percentile uniform (mean 0.5): lower is the dip
-(a hole, summed over aircraft), higher a bump.
+every rest frequency, as a percentile among the same curve centred at 28 other times, each scored
+on its own stretch (50-85 s away, clear of anything removal touched). The same shape at another
+time, as a wrong place's curve would be; not the curve moved within one stretch, which puts its fall
+outside it and leaves a flat curve that scores differently in noise and higher on held notes. With
+no plane there is nothing to find, so a clean cloak leaves that percentile uniform (mean 0.5):
+lower is the dip (a hole, summed over aircraft), higher a bump.
 
     python3 -m lab.nulltest [runs per background]
 """
@@ -18,24 +21,29 @@ import numpy as np
 
 from . import fillmark, locate, synth
 
-SHIFTS = np.concatenate([-np.arange(10, 40.1, 1.5), np.arange(10, 40.1, 1.5)])
+SECONDS = 200.0
+SHIFTS = np.concatenate([-np.arange(50, 85, 2.5), np.arange(50, 85, 2.5)])
+HALF = 15.0
 
 
 def percentile(y: np.ndarray, sr: int, tc: float, depth: float, name: str) -> float:
     sc = locate.Scene(y, sr, name)
-    j = np.flatnonzero(np.abs(sc.t - tc) <= locate.HALF_WINDOW_S)
-    best = lambda d: np.nanmax(fillmark.per_rest(sc, j, fillmark.factor(sc.t[j] - d, tc, depth)))
-    s0, nulls = best(0.0), np.array([best(d) for d in SHIFTS])
+    def best(c):
+        j = np.flatnonzero(np.abs(sc.t - c) <= HALF)
+        return np.nanmax(fillmark.per_rest(sc, j, fillmark.factor(sc.t[j], c, depth)))
+    s0, nulls = best(tc), np.array([best(tc + d) for d in SHIFTS])
     return float(np.mean(nulls < s0) + 0.5 * np.mean(nulls == s0))
 
 
-def background(kind: str, seed: int, seconds: float = 60.0) -> np.ndarray:
+def background(kind: str, seed: int, seconds: float = SECONDS) -> np.ndarray:
     n = int(seconds * synth.SR)
     if kind == "room":
         return synth.room(seconds, seed=seed)[:n]
     if kind == "music":
-        x = synth.music(seed=seed)[0]
-        return np.pad(x, (0, max(0, n - len(x))))[:n]
+        parts, k = [], 0
+        while sum(map(len, parts)) < n:                       # 58 s pieces, each its own tune
+            parts.append(synth.music(seed=seed + 1000 * k)[0]); k += 1
+        return np.concatenate(parts)[:n]
     return fillmark._pink(n, np.random.default_rng(seed + 5000))    # not room's white noise
 
 
@@ -47,8 +55,8 @@ def run(runs: int = 12) -> dict:
         res = {v: [] for v in variants}
         for r in range(runs):
             x = background(kind, 100 + r)
-            tc, depth = float(rng.uniform(25, 35)), float(rng.uniform(0.15, 0.35))
-            grid = np.arange(-60.0, 120.0, 0.1)
+            tc, depth = float(rng.uniform(95, 105)), float(rng.uniform(0.15, 0.35))
+            grid = np.arange(-60.0, SECONDS + 60.0, 0.1)
             exp = [{"times": np.round(grid, 3).tolist(), "factors": np.round(fillmark.factor(grid, tc, depth), 7).tolist(), "closest": tc}]
             with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
                 json.dump(exp, f)
