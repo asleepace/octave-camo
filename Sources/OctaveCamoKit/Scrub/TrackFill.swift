@@ -141,6 +141,8 @@ public struct TrackFill {
     public var maxGainDB = 10.0
     /// Under the null target, removal goes on while z is at least this, whatever the score.
     public var strongZ = 3.0
+    /// Under the null target, each filled tone's multiples up to this one are filled with it.
+    public var harmonics = 3
 
     var search: PathSearch { search(window: windows.first ?? 0.17) }
 
@@ -235,6 +237,20 @@ public struct TrackFill {
                         filled.append(tone)
                         count[pi] += 1
                         previous[pi] = tone
+                        // An engine's tone comes with its harmonics, each along the same curve, and
+                        // the search finds whichever is left (a plane's second or third harmonic
+                        // stood out after its fundamental went: null-test room percentile 0.96).
+                        // Filled with it, unscored: if the tone was background, its multiples are
+                        // just other background (other rests, not the best ones), which leaves
+                        // no hole.
+                        if target == .null {
+                            for h in 2...max(2, harmonics) where tone.rest * Double(h) <= restRange.upperBound {
+                                let up = Tone(pass: tone.pass, rest: tone.rest * Double(h), offset: tone.offset, z: tone.z, effect: tone.effect)
+                                if let line = stage.track(up, sampleRate: sampleRate, count: y.count) {
+                                    _ = fill.fill(&y, line, sampleRate: sampleRate, rng: &rng)
+                                }
+                            }
+                        }
                     } else {
                         open.remove(pi)
                     }
