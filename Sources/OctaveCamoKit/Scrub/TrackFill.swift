@@ -212,14 +212,19 @@ public struct TrackFill {
                 // within the pass's own stretch, which differs from stretch to stretch (music's
                 // held notes), so a z drawn elsewhere doesn't translate; the score does, and it's
                 // what the place search compares across curves.
+                // A score at its target isn't enough on its own: the same audio along the curve's
+                // neighbours (the place search's other curves, the wrong times within the stretch)
+                // still sees a plane's harmonic that's left, so the fixed stop holds as well, and
+                // a strip that stands out that far is never the one raised.
                 let level = target == .null ? tone.score : tone.z
-                let above = target == .null ? level > aim : level >= aim
-                if above && raised[pi] == 0 {
+                let strong = tone.z >= stopZ
+                let above = target == .null ? strong || level > aim : level >= aim
+                if above && (raised[pi] == 0 || strong) {
                     guard count[pi] < maxTones else { open.remove(pi); continue }
                     // Aiming at a target: a fill that didn't lower the score is where removal stops
                     // helping (taking more of a background's best matches away tightens the wrong
                     // times' spread, and the true curve's score rises again).
-                    if target == .null, let p = previous[pi], tone.score >= p.score { open.remove(pi); continue }
+                    if target == .null, !strong, let p = previous[pi], tone.score >= p.score { open.remove(pi); continue }
                     // The same tone again after filling it: the fill didn't take; stop rather than loop.
                     if let p = previous[pi], abs(p.rest / tone.rest - 1) < 0.01, abs(p.offset - tone.offset) <= 1 { open.remove(pi); continue }
                     if let line = stage.track(tone, sampleRate: sampleRate, count: y.count), fill.fill(&y, line, sampleRate: sampleRate, rng: &rng) {
@@ -229,7 +234,7 @@ public struct TrackFill {
                     } else {
                         open.remove(pi)
                     }
-                } else if target == .null, level < aim - targetTolerance * tone.sd, raised[pi] < maxRaises, gainUsed[pi] < maxGainDB {
+                } else if target == .null, !strong, level < aim - targetTolerance * tone.sd, raised[pi] < maxRaises, gainUsed[pi] < maxGainDB {
                     // Below its target: the best tone's strip, louder by what the gap is worth in mean
                     // excess (dB along the curve), no more than the cap allows.
                     // A strip's dB don't all reach the score (the excess is clipped, the search takes
