@@ -898,6 +898,46 @@ perfect blind check is only an upper bound on what's hidden. The honest bar is *
 knows where the planes were can't find them"**, and we can measure exactly that: the recorder app
 logs the real tracks with every session.
 
+## One attacker, one score (foundation review)
+
+Different tests here had drifted into different attackers and leak rules: the place search's
+calibrated p, the known-path z against 34 wrong times, the corpus's z against six, the null
+test's percentile, the engine's own z, the benchmark gate's rule. THREAT_MODEL.md now names the
+attacker every design decision is scored against, and one score: **where the truth ranks among
+wrong answers**, read at both ends (top 5 % a leak, bottom 5 % a hole).
+
+**The corpus's score changes.** Its z compared the traced curve with the same curve moved 24–40 s,
+six times; with 75 s curves in 85 s clips the moved copies keep under half the swing, and six
+values make a fragile spread. It's now scored by **u**: the traced curve's rank among wrong
+places' curves, the other passes' traced shapes with their closest approach at this clip's ±6 s
+(144 per pass on the tuning half). With no plane (synthetic room noise, music, pink noise, 17
+shapes each) u averages 0.53, 0.52 and 0.52, with one or two of 17 in each tail: calibrated.
+Untouched, the corpus's tuning half averages 0.92 (11 of 17 at u ≥ 0.95): the planes are there,
+as they should be. One lesson from the test: a geometry close to the truth's (fall 0.35 deep
+against 0.30) scores as well as the truth. Nearby places do, so u asks "this pass or a different
+geometry", not "this exact place".
+
+**The removal variants, re-scored** (tuning half, Full + the traced curve, one seed):
+
+| | mean u | leaks (u ≥ 0.95) | u ≥ 0.9 | holes (u ≤ 0.05) | mean z (six wrong times) |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| original | 0.92 | 11 | 13 | 0 | 6.16 |
+| fixed stop | 0.63 | 2 | 6 | 1 | 2.02 |
+| null target | 0.67 | 2 | 4 | 0 | 3.10 |
+| null target, no raising | 0.69 | 4 | 6 | 0 | 2.66 |
+
+No information gives 0.50 ± 0.07 and about one in each tail.
+
+- **The variants are closer than z said.** z put the fixed stop well ahead (2.0 against 3.1) on
+  large values like N788BM's 11.5; by rank the three are within noise of each other (17 passes,
+  one seed). Raising still makes N788BM worse (u 0.26 → 1.0), but the fixed stop has two leaks of
+  its own (N913TC 0.99, N231DT 0.99) that z had at 2.9 and 0.0. z and u agree on order (Spearman
+  0.73) and not on size.
+- **None is clean.** Every variant leaves the truth above a no-information draw on average
+  (0.63–0.69). What's left is common to all three, so the next lever is what removal leaves
+  behind (the many lines a real engine has, the fill itself), not where it stops.
+- Decisions between these variants need more seeds, or the holdout once settled.
+
 ## Next experiments
 
 0. **The place as the metric** (envelope term, holdouts, stopping, the public corpus and the
