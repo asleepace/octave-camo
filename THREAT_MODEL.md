@@ -22,6 +22,60 @@ The attacker can:
 The attacker does **not** have the original file, other clips of the same scene, or anything
 about you beyond this post.
 
+## The attacker every result is scored against
+
+The setting above is the threat. For measuring, one stronger attacker stands in for it, and
+every number that decides a design is about this one (docs/EXPERIMENTS.md and the lab use it):
+
+- **Has:** the posted audio; the recording time **exactly** (stronger than the post time, see
+  gap 5); a candidate area (a city-sized box, here 16 × 16 km); the **exact tracks** of every
+  aircraft (full ADS-B traces, not the few-seconds-stale archive the page can use); this
+  repository, the preset and its settings (everything but the random seed: the defense is
+  assumed known).
+- **Asks:** which candidate place the audio fits best. At each place it predicts every audible
+  aircraft's Doppler curve (sound travel included) and scores the best mean whitened excess
+  along it over every rest frequency (100 Hz–3.5 kHz), within ±6 s of timing, plus the fit of the
+  loudness swell; it adds the aircraft up.
+- **Wins** if the true place stands out from the places that carry no information about it, in
+  either direction:
+  - **a leak:** the truth ranks in the top 5 % (p ≤ 0.05 against the no-information baseline);
+  - **a hole:** the truth ranks in the bottom 5 %. An attacker who knows the defense removes
+    evidence can look for the place that looks most cleaned, so a cloak that leaves its truth
+    unusually empty gives the place away as surely as one that leaves the plane.
+- **Doesn't yet:** sum a plane's family of lines along one curve (harmonics: a real attacker
+  could, and the lab's statistic takes the best single line); use silence (a place that should
+  have heard a plane the audio doesn't have); average several renders; search over the time
+  (gap 5). Each is a way this attacker is weaker than a real one; the first is the one most
+  likely to matter.
+
+### The score
+
+One number decides: **where the truth ranks among wrong answers, p**, read from both ends.
+Over a set of clips, the cloak is working when its p values look like those of clips with no
+plane in them: about 5 % in each 5 % tail, mean 0.5. A design is better if it has fewer leaks
+without more holes; sound change above 300 Hz breaks ties. What the wrong answers are depends on
+what's known about the clip:
+
+| Clips | Truth | Wrong answers | Lab command |
+| --- | --- | --- | --- |
+| Our own sessions (place known, never published) | the true place | every grid point over 2 km away, redrawn per aircraft (`locate.null_bits`) | `lab locate` |
+| The public corpus (Pathak 2026; position not published and **never reconstructed**) | the pass's own traced curve | the other passes' traced curves, put at this clip's closest approach ±6 s: the shapes other places would give | `lab zenodo` |
+| Synthetic scenes | the inserted pass's curve | the same curve at 28 other times, each on its own stretch | `lab nulltest` |
+
+The corpus can't be scored by place without its position, so it's scored on the one question the
+place search asks of each aircraft: does this curve, rather than a curve from somewhere else, fit
+the audio.
+
+Other numbers in the notebook are diagnostics, not verdicts: the engine's own z (TrackFill's
+stopping test), the known-path z (`lab attack`, one aircraft against wrong times), the benchmark
+gate's leak rule (CI's regression test on synthetic clips), detection rates. A z with few wrong
+answers is especially loose: the corpus's first score used six, and put one pass at 20.8 that
+ranks simply first among 144 wrong curves.
+
+Rules that keep the score honest: every cloaked copy is one random draw, so a design is scored on
+at least two seeds; settings are tuned on the tuning sessions and the corpus's tuning half, and
+the held-out sessions and half are scored once, when a change is settled.
+
 ## The general attack
 
 Every audio location attack in scope has the same shape:
@@ -181,9 +235,12 @@ cycle per frame and looks like a gradient.
 
 In order of how much we think they matter:
 
-1. **No real ground truth yet.** Every number above is synthetic. Real clips with saved tracks
-   are being collected. Two real outdoor clips have been checked by eye against the check's lines
-   (ACOUSTICS.md §1), without flight tracks to score against.
+1. **Little real ground truth.** The Evidence table above is synthetic. Real scores now come from
+   about twenty of our own sessions with saved flight tracks and a public corpus of 35 passes
+   (docs/EXPERIMENTS.md), which is still a small sample, mostly of one listener's surroundings and
+   one corpus's place. The synthetic pass the null test inserts (a tone and two harmonics) is
+   simpler than real engines, which carry many lines, and it has favoured a design the real
+   passes then rejected.
 2. **Loudness envelope attack.** Measured now (`lab envelope`, docs/EXPERIMENTS.md): a 767's
    low-band swell at 3 km passed through regeneration alone (z 5.2) and is gone with flattening
    (0.2), which Full now does over 10 s and Experimental over 5 s. Still open: a close pass's

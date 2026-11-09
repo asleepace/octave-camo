@@ -367,14 +367,21 @@ def cmd_zenodo(args: list[str]):
         ps = ps[: int(args[args.index("--limit") + 1])]
     t = time.time()
     with ProcessPoolExecutor(2) as pool:
-        rows = list(pool.map(zenodo.run_pass, ps, [PRESET_ARGS] * len(ps), [extra] * len(ps)))
+        rows = list(pool.map(zenodo.run_pass, ps, [PRESET_ARGS] * len(ps), [extra] * len(ps), [ps] * len(ps)))
     print(f"{zenodo.CITATION}\n{len(rows)} passes ({time.time() - t:.0f} s)\n")
-    print("| case | category | closest | z original | Full | Experimental | Full + perfect curve | blind check: original / Full |")
+    # u decides (THREAT_MODEL.md, "The score"): the traced curve's rank among wrong places'
+    # curves; z (six wrong times) is kept as a diagnostic.
+    print("| case | category | closest | u / z original | Full | Experimental | Full + perfect curve | blind check: original / Full |")
     print("| --- | --- | ---: | ---: | ---: | ---: | ---: | --- |")
+    nan = float("nan")
+    g = lambda r, k: f"{r.get(k, {}).get('u', nan)} / {r.get(k, {}).get('z', nan)}"
     for r in rows:
-        g = lambda k: r.get(k, {}).get("z", float("nan"))
         b = lambda k: (r.get(k, {}).get("blind") or {}).get("doppler")
-        print(f"| {r['case']} | {r['category']} | {r['closest_m']:.0f} m | {g('original')} | {g('full')} | {g('experimental')} | {g('full+tracks')} | {b('original')} / {b('full')} |")
+        print(f"| {r['case']} | {r['category']} | {r['closest_m']:.0f} m | {g(r, 'original')} | {g(r, 'full')} | {g(r, 'experimental')} | {g(r, 'full+tracks')} | {b('original')} / {b('full')} |")
+    for k in ("original", "full", "experimental", "full+tracks"):
+        us = [r[k]["u"] for r in rows if "u" in r.get(k, {})]
+        if us:
+            print(f"{k}: mean u {sum(us) / len(us):.2f}, leaks (u ≥ 0.95) {sum(x >= 0.95 for x in us)}, holes (u ≤ 0.05) {sum(x <= 0.05 for x in us)} of {len(us)}")
     tag = "-".join(a.strip("-") for a in extra).replace("/", "_")
     save_result(f"zenodo-{'all' if '--all' in args else want}" + (f"-{tag}" if tag else ""), rows)
 

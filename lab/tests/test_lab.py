@@ -231,6 +231,29 @@ class PublicCorpus(unittest.TestCase):
         self.assertAlmostEqual(f[0], fac[0], places=5)
         self.assertAlmostEqual(f[-1], fac[-1], places=5)
 
+    def test_wrong_place_rank_finds_its_own_pass_and_not_noise(self):
+        # Six passes of clearly different geometries (depth and width of the fall), each traced for
+        # 50 s. (A similar one, 0.35 deep and 6.5 s wide, ties the truth: a nearby place does.)
+        t = np.arange(0, 50, 0.1707)
+        geos = [(0.30, 4.0), (0.12, 6.0), (0.50, 2.0), (0.20, 9.0), (0.06, 5.0), (0.15, 2.0)]
+        ps = [{"case": f"c{k}", "t": t, "f": 300 * (1 + d / 2 - d / (1 + np.exp(-(t - 25) / w)))}
+              for k, (d, w) in enumerate(geos)]
+        n = int(SR * (50 + 2 * zenodo.OFFSET_S))
+        tt = np.arange(n) / SR
+        rng = np.random.default_rng(4)
+        _, fac, _ = zenodo.shape(ps[0])
+        f = 700 * zenodo.flat_interp(tt - zenodo.OFFSET_S, t, fac)
+        a = np.sqrt(4 * 10 ** (12 / 10) / SR)
+        x = rng.normal(0, 1, n) + a * np.sin(2 * np.pi * np.cumsum(f) / SR)
+        u, count = zenodo.u(locate.Scene(x, SR, "test:u:pass"), ps[0], ps, zenodo.OFFSET_S)
+        self.assertEqual(count, 5 * len(zenodo.PLACE_OFFSETS_S))
+        self.assertGreaterEqual(u, 0.95)                 # its own curve beats every wrong place's
+        # Noise alone: no pass's rank is pinned to the top (each is one draw of a uniform rank).
+        noise = [zenodo.u(locate.Scene(np.random.default_rng(10 + k).normal(0, 1, n), SR, f"test:u:noise{k}"),
+                          ps[k], ps, zenodo.OFFSET_S)[0] for k in range(len(ps))]
+        self.assertLess(np.mean(noise), 0.85)
+        self.assertGreater(np.mean(noise), 0.15)
+
 
 class Holdout(unittest.TestCase):
     def test_scoring_refuses_the_holdout_unless_asked(self):

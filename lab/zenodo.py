@@ -14,8 +14,10 @@ the traced curve is the tone's real path, a stronger attacker than any curve pre
 Per pass: the traced curve becomes a shape (frequency over its median), extended flat beyond its
 ends (a tone holds its pitch before and after a pass); the audio's start isn't recorded either, so
 the curve is placed by the dataset's own layout (OFFSET_S).
-The score is the place search's own (lab/locate.py): the best mean whitened excess along the shape
-over every rest frequency, near the steepest fall, against the same curve at six wrong times.
+The statistic is the place search's own (lab/locate.py): the best mean whitened excess along the
+shape over every rest frequency, near the steepest fall. What decides is `u`, its rank among wrong
+places' curves (the other passes' shapes at this clip's time; THREAT_MODEL.md, "The score"); `z`,
+against the same curve at six wrong times, is kept as a diagnostic.
 """
 from __future__ import annotations
 
@@ -112,6 +114,31 @@ def z(scene: locate.Scene, p: dict, offset: float) -> tuple[float, float]:
     return float((s0 - nulls.mean()) / max(nulls.std(), 1e-3)), float(s0 - nulls.mean())
 
 
+PLACE_OFFSETS_S = np.arange(-6.0, 6.01, 1.5)   # a wrong place's closest approach, around this one's
+
+
+def u(scene: locate.Scene, p: dict, others: list[dict], offset: float) -> tuple[float, int]:
+    """(where the traced shape ranks among wrong places' curves, how many). The wrong places'
+    curves are the other passes' traced shapes with their closest approach put at this one's,
+    ±6 s: the shapes a different geometry gives, scored on the same frames with every rest
+    frequency free. With no plane in the audio this is uniform (mean 0.5, checked on synthetic
+    room noise, music and pink noise); the top 5 % is a leak, the bottom 5 % a hole. Uses only
+    curve shapes, never a position."""
+    t, fac, tc = shape(p)
+    tcl = tc + offset
+    j = np.flatnonzero(np.abs(scene.t - tcl) <= locate.HALF_WINDOW_S)
+    s0 = scene._best(j, flat_interp(scene.t[j], t + offset, fac))
+    nulls = []
+    for q in others:
+        if q["case"] == p["case"]:
+            continue
+        tq, fq, tcq = shape(q)
+        nulls += [scene._best(j, flat_interp(scene.t[j] - (tcl + o - tcq), tq, fq)) for o in PLACE_OFFSETS_S]
+    n = np.array(nulls)
+    n = n[np.isfinite(n)]
+    return float(np.mean(n < s0) + 0.5 * np.mean(n == s0)), len(n)
+
+
 def expected_pass(p: dict, offset: float, duration: float) -> dict:
     """The traced shape as the engine's ExpectedPass (audio times, factors 0.5-2, closest
     approach), flat beyond its ends to cover the audio: removal with a perfect curve."""
@@ -145,10 +172,11 @@ def level_change(x: np.ndarray, y: np.ndarray, sr: int, lo: float = 300.0, hi: f
     return float(np.abs(levels(x) - levels(y)).mean())
 
 
-def run_pass(p: dict, preset_args: dict, extra: list[str] | None = None) -> dict:
+def run_pass(p: dict, preset_args: dict, extra: list[str] | None = None, others: list[dict] | None = None) -> dict:
     """One pass: the original, Full, Experimental and Full with the traced curve as its expected
     pass (removal with a perfect curve), each scored along the traced curve; the blind check on the
-    original and on Full; sound change above 300 Hz against the original."""
+    original and on Full; sound change above 300 Hz against the original. With `others` (the
+    passes whose shapes are the wrong places), also the score that decides, `u` (THREAT_MODEL.md)."""
     import tempfile
     cli = Path(__file__).resolve().parent.parent / ".build/release/octave-camo"
     x, sr = sf.read(p["wav"])
@@ -180,6 +208,8 @@ def run_pass(p: dict, preset_args: dict, extra: list[str] | None = None) -> dict
             sc = locate.Scene(y, sr, f"zenodo:{p['case']}:{name}")
             zz, eff = z(sc, p, OFFSET_S)
             out[name] = {"z": round(zz, 2), "excess": round(eff, 3)}
+            if others:
+                out[name]["u"] = round(u(sc, p, others, OFFSET_S)[0], 3)
             if name != "original":
                 out[name]["change_db"] = round(level_change(x, y, sr), 2)
             if name in ("original", "full") and not extra:
