@@ -1045,25 +1045,39 @@ Plane-free pink, paired with untouched: −0.09 ± 0.04, the fixed stop's hole a
 against it). The four-line stop is no better than removing deeper (−0.10 ± 0.07 the other way),
 so the default stays one line; the option stays for the work below.
 
-**What the leaks are made of.** In every copy that still leaks, the four lines the attacker adds up,
-each looked up in the original: of 68, 24 were lines there (z ≥ 4 along the true curve before
-cloaking). Most weren't, and many are much stronger now than before: N60RS 450 Hz z 0.5 → 6–8 and
-339 Hz 1.5 → 6 under both variants and seeds; N413AK 878 Hz 1.2 → 4.2, 2287 Hz 0.8 → 4.2; N784MB
-781 Hz −0.1 → 3.5. **The fill draws the curve.** It writes fresh noise along exactly the true
-curve, so wherever its level comes out above what it replaces, the strip is a line along that
-curve, and an attacker scoring the curve finds it. (In pink noise the hole goes the other way; the
-fill's level error likely depends on the spectrum around it.) Separately, N913TC with the four-line
-stop is left exactly as it was (the engine's verdict didn't reach its stop): a leak by omission.
+**What the leaks are made of (corrected).** In every copy that still leaks, the attacker's four
+lines, each looked up in the original as a z against wrong places at that rest frequency: of 68, 24
+were lines there (z ≥ 4), and many others look much stronger after cloaking (N60RS 450 Hz z 0.5 →
+6–8). A first reading, "the fill draws the curve", was wrong. Filling N60RS one tone at a time:
+removing its 503 Hz line moves the 450 Hz z from 0.6 to 7.3, but the true curve's own excess at
+450 Hz doesn't change (3.93 → 3.94); the wrong places' curves at 450 Hz fall (median 5.52 → 3.52),
+because they cross the 503 Hz line and were scoring on it. A strong line lifts every wrong curve at
+nearby rest frequencies that crosses it, never the true curve's (parallel to it), so in the original
+the truth at those rests ranks low; removing the line takes the lift away. That z is confounded; the
+leaks themselves (u, the truth's four best lines against wrong places' four best, on the same
+cloaked audio) aren't, since nothing is left to cross.
 
-So the next work is in the fill, not the stop: measure the filled strips' excess against what they
-replace, on plane-free audio and on the corpus, and make it zero on average; then give the engine a
-fair null (wrong places' curves, as `u` uses) so its stop means what it says.
+**Is the fill level?** Filling along wrong places' curves at 30 rest frequencies and scoring with the
+attacker's statistic: on synthetic white and pink noise (16 and 48 kHz) the change is +0.01 to
++0.04 (lines are ~0.4). On the corpus clips it is −0.5 below 600 Hz through the attacker's best of ±2
+bins and about 0 above, for every fill level tried (`LineFill.level`: the median fill, a log-mean,
+a quadratic fit across the sides, resampled side bins, the same bin at other moments; the levels
+themselves differ by up to 1 dB in the fill's own spectrum). But those clips aren't plane-free:
+the wrong curves cross the clip's own engine lines, strongest below 600 Hz, and filling removes those
+crossings, the same confound. So there's no clean evidence yet of a fill bias on real audio; it
+needs plane-free real backgrounds to measure.
+
+**What's settled:** the four-line attacker finds 8–12 of 34 cloaked passes; removing deeper helps a
+third; a four-line stop doesn't beat it; the engine's stopping test is biased in noise (z mean
+~1). What isn't: why the rest leak, between faint real lines the engine never reaches (its biased
+stop, its tolerance) and the fill. Next: the fill on plane-free real audio, and a fair null for the
+engine.
 
 ## Next experiments
 
 0. **The place as the metric** (envelope term, holdouts, stopping, the public corpus and the
-   tone cap done): make a filled strip indistinguishable from its surroundings (it marks the
-   curve, so removing on weaker evidence leaves a hole); flatten mid-band swells and score the
+   tone cap done): measure whether a filled strip is indistinguishable from its surroundings on
+   plane-free real audio (the corpus clips can't show it, see above); a fair null for the engine; flatten mid-band swells and score the
    combined place; why cleanup sharpens a faint survivor.
 1. **E2, continued:** real music, singing, traffic, wind and outdoor clips against the check's
    path search (now in Swift, with joined passes); level against pitch to tell a slowing vehicle
