@@ -9,7 +9,7 @@ outside it and leaves a flat curve that scores differently in noise and higher o
 no plane there is nothing to find, so a clean cloak leaves that percentile uniform (mean 0.5):
 lower is the dip (a hole, summed over aircraft), higher a bump.
 
-    python3 -m lab.nulltest [runs per background] [--plane | --plane=harmonic] [--untouched --fixed --null]
+    python3 -m lab.nulltest [runs per background] [--plane | --plane=harmonic] [--kinds=room,music,pink] [--untouched --fixed --null --null0]
 (--plane: an engine along the curve first; then a clean removal leaves 0.5 too, a residual more, a
 hole less. The engine is the corpus's kind by default (docs/EXPERIMENTS.md, "What real engines
 carry"): a main line and a few others at unrelated frequencies and similar levels; --plane=harmonic
@@ -101,13 +101,14 @@ def plane(x: np.ndarray, tc: float, depth: float, rng, snr_db: float = 14.0, kin
     return y
 
 
-def run(runs: int = 12, with_plane: bool | str = False, variants: dict | None = None) -> dict:
+def run(runs: int = 12, with_plane: bool | str = False, variants: dict | None = None,
+        kinds: tuple[str, ...] = ("room", "music", "pink")) -> dict:
     """with_plane: False, True (the corpus's kind of engine) or an `engine` kind."""
     rng = np.random.default_rng(1)
     variants = variants or {"untouched": None, "fixed": [], "null": ["--track-target", "null"]}
     out = {}
     tmpdir = tempfile.mkdtemp()
-    for kind in ("room", "music", "pink"):
+    for kind in kinds:
         res = {v: [] for v in variants}
         for r in range(runs):
             x = background(kind, 100 + r)
@@ -131,8 +132,9 @@ def run(runs: int = 12, with_plane: bool | str = False, variants: dict | None = 
 
 if __name__ == "__main__":
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
-    only = [a[2:] for a in sys.argv[1:] if a.startswith("--") and not a.startswith("--plane")]
+    only = [a[2:] for a in sys.argv[1:] if a.startswith("--") and not a.startswith(("--plane", "--kinds"))]
+    kinds = next((tuple(a.split("=", 1)[1].split(",")) for a in sys.argv[1:] if a.startswith("--kinds=")), ("room", "music", "pink"))
     planes = [a.split("=", 1)[1] if "=" in a else True for a in sys.argv[1:] if a.startswith("--plane")]
     allv = {"untouched": None, "fixed": [], "null": ["--track-target", "null"],
             "null0": ["--track-target", "null", "--track-max-raises", "0"]}
-    run(int(args[0]) if args else 12, planes[0] if planes else False, {k: v for k, v in allv.items() if not only or k in only})
+    run(int(args[0]) if args else 12, planes[0] if planes else False, {k: v for k, v in allv.items() if not only or k in only}, kinds)
