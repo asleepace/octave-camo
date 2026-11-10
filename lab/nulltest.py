@@ -136,5 +136,6 @@ if __name__ == "__main__":
     kinds = next((tuple(a.split("=", 1)[1].split(",")) for a in sys.argv[1:] if a.startswith("--kinds=")), ("room", "music", "pink"))
     planes = [a.split("=", 1)[1] if "=" in a else True for a in sys.argv[1:] if a.startswith("--plane")]
     allv = {"untouched": None, "fixed": [], "null": ["--track-target", "null"],
-            "null0": ["--track-target", "null", "--track-max-raises", "0"]}
+            "null0": ["--track-target", "null", "--track-max-raises", "0"],
+            "lines4": ["--track-lines", "4", "--track-max-tones", "48"]}
     run(int(args[0]) if args else 12, planes[0] if planes else False, {k: v for k, v in allv.items() if not only or k in only}, kinds)
