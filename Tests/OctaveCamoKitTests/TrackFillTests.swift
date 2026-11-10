@@ -127,6 +127,42 @@ final class TrackFillTests: XCTestCase {
         }
     }
 
+    /// An engine's second, unrelated line (1,234 and 1,693 Hz, not harmonics), both following the
+    /// pass, each 11 dB/Hz: summing two lines the verdict's excess nearly doubles (0.44 → 0.79;
+    /// its z barely moves, 11.6 → 12.5, as the wrong times along these long tones gain too), and
+    /// the fill keeps going until the sum is below the stop, both lines gone.
+    func testSeveralLinesAddUpAndAreAllRemoved() {
+        var x = LineFillTests.fanTone(rate: Self.rate, snr: 11).mono
+        let second = LineFillTests.fanTone(rate: Self.rate, snr: 11, seed: 22, f0: 1_693).mono
+        let floor = DetectionScenes.white(x.count, seed: 22)
+        for i in x.indices { x[i] += second[i] - floor[i] }        // one noise floor, two lines
+        let one = Self.stage([Self.expected()])
+        var two = one
+        two.lines = 2
+        guard let v1 = Self.verdict(x, one), let v2 = Self.verdict(x, two) else { return XCTFail("no verdict") }
+        XCTAssertGreaterThan(v2.effect, 1.6 * v1.effect, "the second line should add about as much as the first")
+        let r = two.process(x, sampleRate: Self.rate)
+        XCTAssertLessThan(Self.verdict(r.output, two)?.z ?? 0, two.stopZ, r.summary)
+        XCTAssertLessThan(Self.verdict(r.output, one)?.z ?? 0, one.stopZ + 0.5, r.summary)
+    }
+
+    /// Summing four lines, noise alone: the fill doesn't raise the verdict. (Before any fill, the
+    /// four-line z in white noise runs higher than one line's, mean 1.3 against 0.9 over 16 seeds,
+    /// up to 3.2: the wrong times this verdict compares with, the same curve 20–60 s away, aren't
+    /// exchangeable with the truth in noise. docs/EXPERIMENTS.md.)
+    func testNoiseAloneStaysBelowTheStopWithFourLines() {
+        var stage = Self.stage([Self.expected()])
+        stage.lines = 4
+        for seed in 1...4 {
+            let x = DetectionScenes.white(Self.rate * 60, seed: UInt64(seed))
+            let before = Self.verdict(x, stage)?.z ?? 0
+            XCTAssertLessThan(before, 3.5, "seed \(seed): noise shouldn't look like a pass")
+            let r = stage.process(x, sampleRate: Self.rate)
+            let after = Self.verdict(r.output, stage)?.z ?? 0
+            XCTAssertLessThan(after, max(stage.stopZ, before) + 0.5, "seed \(seed): \(r.summary)")
+        }
+    }
+
     /// The tone is there, but not when the tracks say: a wrong track doesn't remove the real pass
     /// (the right track still finds it afterwards), and works only around its own closest
     /// approach. (Its curve, at some rest frequencies, lies along the real tone's tail, which an

@@ -14,7 +14,7 @@ let commands = [
             flags: ["hard"], run: synth),
     Command(name: "analyze", options: ["threshold"], flags: ["json"], run: analyze),
     Command(name: "scrub", options: ["steps", "mains", "passes", "cutoff", "lowband-mode", "flatten", "depth", "wobble-top", "seed", "expect",
-                                     "archive", "at", "start", "temp", "track-stop", "track-max-tones", "track-tolerance-hz", "track-tolerance", "track-windows", "track-target", "track-max-raises"],
+                                     "archive", "at", "start", "temp", "track-stop", "track-max-tones", "track-tolerance-hz", "track-tolerance", "track-windows", "track-target", "track-max-raises", "track-lines"],
             flags: ["no-keep-voice"], run: scrub),
     Command(name: "predict", options: ["at", "start", "duration", "temp"], flags: [], run: predict),
 ]
@@ -38,7 +38,7 @@ USAGE
                         (or predict those curves from adsb.lol's half-hour archive: where and
                         when the audio starts, alt in metres on the pressure-altitude scale)
                         [--track-stop 1] (remove until each pass's attacker z is below this)
-                        [--track-max-tones 24] [--track-tolerance-hz 0] [--track-tolerance 0] [--track-windows 0.17] [--track-target fixed|null] [--track-max-raises 6]
+                        [--track-max-tones 24] [--track-tolerance-hz 0] [--track-tolerance 0] [--track-windows 0.17] [--track-target fixed|null] [--track-max-raises 6] [--track-lines 1]
                         (tones per pass; the stopping test's slack off the curve, Hz and fraction)
   octave-camo predict <heatmap.bin> --at lat,lon[,alt] --start unix --duration s [--temp 15]
   octave-camo --version
@@ -131,6 +131,7 @@ func scrub(_ args: Arguments) throws {
     pipeline.tracks.toleranceHz = try args.value("track-tolerance-hz", default: pipeline.tracks.toleranceHz)
     pipeline.tracks.relativeTolerance = try args.value("track-tolerance", default: pipeline.tracks.relativeTolerance)
     pipeline.tracks.maxRaises = try args.value("track-max-raises", default: pipeline.tracks.maxRaises)
+    pipeline.tracks.lines = try args.value("track-lines", default: pipeline.tracks.lines)
     if let w = args.string("track-target") {
         guard let t = TrackFill.Target(rawValue: w) else { throw UsageError("--track-target takes fixed or null") }
         pipeline.tracks.target = t
@@ -151,6 +152,7 @@ func scrub(_ args: Arguments) throws {
     try require(pipeline.tracks.stopZ.isFinite, "--track-stop must be a number")
     try require((1...64).contains(pipeline.tracks.maxTones), "--track-max-tones must be 1-64")
     try require((0...64).contains(pipeline.tracks.maxRaises), "--track-max-raises must be 0-64")
+    try require((1...16).contains(pipeline.tracks.lines), "--track-lines must be 1-16")
     try require((0...60).contains(pipeline.tracks.toleranceHz), "--track-tolerance-hz must be 0-60")
     try require((0...0.05).contains(pipeline.tracks.relativeTolerance), "--track-tolerance must be 0-0.05")
     try require(pipeline.subtraction.passes >= 0, "--passes must be 0 or more")

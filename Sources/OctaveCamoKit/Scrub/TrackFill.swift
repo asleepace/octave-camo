@@ -106,6 +106,12 @@ public struct TrackFill {
     /// The same as a fraction of the frequency, on top (a curve a little off in shape moves a high
     /// harmonic further than a low one). Off by default, for the same reason (with 2 %: 4.3).
     public var relativeTolerance = 0.0
+    /// How many separate lines the verdict adds up along the curve (the attacker's statistic,
+    /// THREAT_MODEL.md). Every line an engine makes follows the same Doppler factor, harmonic or
+    /// not, so lines too faint to stand out one at a time still add up; with more than one, the
+    /// fill keeps going while their sum stands out, the strongest line first. Separate: at least
+    /// the tolerance's width (2·reach + 1 bins) apart, so one line counts once.
+    public var lines = 1
     public var seed: UInt64 = .random(in: 1...UInt64.max)
 
     public init() {}
@@ -448,6 +454,7 @@ public struct TrackFill {
             }
         }
         var acc = [Float](repeating: 0, count: R)
+        let width = Double(2 * max(2, Int((toleranceHz / g.binHz).rounded())) + 1) * g.binHz
         var cache: [Int: (score: Double, rest: Double)] = [:]
         let unit = offsetStep
         /// The best mean excess with the curve moved by `tau` s.
@@ -471,7 +478,17 @@ public struct TrackFill {
             if known >= 40 {
                 var bi = 0
                 for i in 1..<R where acc[i] > acc[bi] { bi = i }
-                let mean = Double(acc[bi]) / Double(known)
+                var total = Double(acc[bi])
+                var picked = [p.rests[bi]]
+                while picked.count < lines {
+                    var bj = -1
+                    for i in 0..<R where bj < 0 || acc[i] > acc[bj] {
+                        if picked.allSatisfy({ abs(p.rests[i] - $0) >= width }) { bj = i }
+                    }
+                    guard bj >= 0, Double(acc[bj]) / Double(known) > -1e6 else { break }
+                    total += Double(acc[bj]); picked.append(p.rests[bj])
+                }
+                let mean = total / Double(known)
                 if mean > -1e6 { top = (mean, p.rests[bi]) }
             }
             cache[key] = top

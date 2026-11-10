@@ -9,8 +9,8 @@ final class LineFillTests: XCTestCase {
     /// A jet's fan tone as it was heard on a real indoor recording: a tone near 1.2 kHz at rest,
     /// swept by the Doppler shift of a 141 m/s climb out passing 2 km away (sound travel time
     /// included), over steady noise. Received, it falls from about 1.7 to 0.9 kHz.
-    static func fanTone(rate: Int, seconds: Double = 60, snr: Double = 20, seed: UInt64 = 21) -> Audio {
-        let c = 343.0, v = 141.0, d = 2_000.0, tc = seconds / 2 - 6, f0 = 1_234.0
+    static func fanTone(rate: Int, seconds: Double = 60, snr: Double = 20, seed: UInt64 = 21, f0: Double = 1_234) -> Audio {
+        let c = 343.0, v = 141.0, d = 2_000.0, tc = seconds / 2 - 6
         var x = DetectionScenes.white(Int(Double(rate) * seconds), seed: seed)
         let a = DetectionScenes.amplitude(snr: snr, rate: rate)
         var phase = 0.0
