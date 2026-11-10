@@ -975,6 +975,18 @@ No information gives about 2 of 34 in each tail.
 - What follows: the engine's own stopping test should use the same statistic (the best four lines
   along the curve, against wrong times), and the fill should go after every line that adds to it.
 
+**Removing deeper, as a first check** (`--track-stop -0.5 --track-max-tones 48`: the single-line
+test, kept going until it's below average):
+
+| | mean u, 1 / 4 lines | leaks of 34, 1 / 4 lines | holes of 34, 1 / 4 lines | sound change (mean, max) |
+| --- | --- | --- | --- | --- |
+| fixed stop | 0.65 / 0.76 | 3 / 12 | 2 / 2 | 0.98 dB, 1.91 |
+| null target, no raising | 0.73 / 0.79 | 8 / 14 | 0 / 0 | 1.15 dB, 2.05 |
+| deeper | 0.55 / 0.63 | 3 / 8 | 1 / 2 | 1.24 dB, 2.04 |
+
+Going deeper takes a third of the four-line leaks for a quarter of a decibel, without more holes;
+still four times chance. A stop on the four-line statistic itself is the next step.
+
 ## Next experiments
 
 0. **The place as the metric** (envelope term, holdouts, stopping, the public corpus and the
