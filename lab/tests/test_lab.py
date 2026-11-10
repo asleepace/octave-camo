@@ -160,6 +160,25 @@ class PlaceSearch(unittest.TestCase):
         true = scene._best(j, factor(scene.t[j]))
         self.assertAlmostEqual(true, scene._best_direct(j, factor(scene.t[j])), delta=0.05 * true)
 
+    def test_lines_count_each_line_once_and_add_up(self):
+        # Two lines of an engine, 900 Hz and an unrelated 1370 Hz, along the same pass.
+        x = passing_tone(f0=900.0, snr_db_hz=16.0) + passing_tone(f0=1370.0, snr_db_hz=16.0, seed=8) \
+            - np.random.default_rng(8).normal(0, 1, int(SR * 60))   # one noise floor, not two
+        scene = locate.Scene(x, SR, "test-lines")
+        j = np.flatnonzero(np.abs(scene.t - 30) <= 25)
+        prof = scene._profile(j, factor(scene.t[j]))
+        one, two, three = (scene.lines_of(prof, k) for k in (1, 2, 3))
+        self.assertAlmostEqual(one, scene._best(j, factor(scene.t[j])), places=6)
+        self.assertAlmostEqual(one, np.nanmax(prof), places=6)
+        # Every pick adds the noise floor (the best of ±2 bins is biased up); a line adds more.
+        floor = np.nanmedian(prof)
+        first, second, third = one - floor, two - one - floor, three - two - floor
+        self.assertGreater(second, 0.5 * first)       # the second line counts, as much as the first
+        self.assertLess(third, 0.3 * second)          # a third pick finds only noise
+        # The wrong curve doesn't gain from more lines the way the true one does.
+        wrong = scene._profile(j, factor(scene.t[j] + 12))
+        self.assertGreater(two - scene.lines_of(wrong, 2), one - scene.lines_of(wrong, 1))
+
     def test_rank_bits(self):
         self.assertAlmostEqual(locate.rank_bits(545, 1089), 0.0)            # where a blind guess lands
         self.assertAlmostEqual(locate.rank_bits(1, 1089), np.log2(545))     # truth first
@@ -253,6 +272,26 @@ class PublicCorpus(unittest.TestCase):
                           ps[k], ps, zenodo.OFFSET_S)[0] for k in range(len(ps))]
         self.assertLess(np.mean(noise), 0.85)
         self.assertGreater(np.mean(noise), 0.15)
+
+
+class SyntheticEngine(unittest.TestCase):
+    """lab/nulltest.py's engine: the public corpus's kind (a few unrelated lines, similar levels)."""
+
+    def test_engine_lines(self):
+        from lab import nulltest
+        rng = np.random.default_rng(3)
+        es = [nulltest.engine(rng) for _ in range(400)]
+        n = np.array([len(e) for e in es])
+        self.assertTrue(np.all((n >= 1) & (n <= 6)))
+        self.assertAlmostEqual(np.mean(n - 1), 2.0, delta=0.3)          # Poisson(2), capped at 5
+        for e in es:
+            f = np.array([a for a, _ in e])
+            self.assertEqual(e[0][1], 1.0)                              # the main line first
+            r = f[:, None] / f[None, :]
+            self.assertTrue(np.all((abs(r - 1) > 0.05) | np.eye(len(f), dtype=bool)))   # 5 % apart
+            self.assertTrue(all(10 ** (-6 / 20) - 1e-9 <= a <= 10 ** (3 / 20) + 1e-9 for _, a in e[1:]))
+        h = nulltest.engine(rng, "harmonic")
+        self.assertEqual([round(f / h[0][0], 6) for f, _ in h], [1.0, 2.0, 3.0])
 
 
 class Holdout(unittest.TestCase):

@@ -117,23 +117,24 @@ def z(scene: locate.Scene, p: dict, offset: float) -> tuple[float, float]:
 PLACE_OFFSETS_S = np.arange(-6.0, 6.01, 1.5)   # a wrong place's closest approach, around this one's
 
 
-def u(scene: locate.Scene, p: dict, others: list[dict], offset: float) -> tuple[float, int]:
+def u(scene: locate.Scene, p: dict, others: list[dict], offset: float, lines: int = 1) -> tuple[float, int]:
     """(where the traced shape ranks among wrong places' curves, how many). The wrong places'
     curves are the other passes' traced shapes with their closest approach put at this one's,
     ±6 s: the shapes a different geometry gives, scored on the same frames with every rest
     frequency free. With no plane in the audio this is uniform (mean 0.5, checked on synthetic
     room noise, music and pink noise); the top 5 % is a leak, the bottom 5 % a hole. Uses only
-    curve shapes, never a position."""
+    curve shapes, never a position. `lines`: how many of the pass's lines the attacker adds up
+    (locate.Scene.lines_of)."""
     t, fac, tc = shape(p)
     tcl = tc + offset
     j = np.flatnonzero(np.abs(scene.t - tcl) <= locate.HALF_WINDOW_S)
-    s0 = scene._best(j, flat_interp(scene.t[j], t + offset, fac))
+    s0 = scene._best(j, flat_interp(scene.t[j], t + offset, fac), lines)
     nulls = []
     for q in others:
         if q["case"] == p["case"]:
             continue
         tq, fq, tcq = shape(q)
-        nulls += [scene._best(j, flat_interp(scene.t[j] - (tcl + o - tcq), tq, fq)) for o in PLACE_OFFSETS_S]
+        nulls += [scene._best(j, flat_interp(scene.t[j] - (tcl + o - tcq), tq, fq), lines) for o in PLACE_OFFSETS_S]
     n = np.array(nulls)
     n = n[np.isfinite(n)]
     return float(np.mean(n < s0) + 0.5 * np.mean(n == s0)), len(n)

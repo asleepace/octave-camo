@@ -76,13 +76,37 @@ class Scene:
             return np.nan, np.nan, np.nan
         return s0, float(nulls.mean()), float(nulls.std())
 
-    def _best(self, j: np.ndarray, fac: np.ndarray) -> float:
+    def _best(self, j: np.ndarray, fac: np.ndarray, lines: int = 1) -> float:
         """Best mean excess along f0·fac over all rest frequencies (frames where fac is known), on
         the log axis: the factor rounded to 0.2 %, a fraction of a bin below 5 kHz. `j` must be
-        consecutive frames (a gap just starts a new run)."""
+        consecutive frames (a gap just starts a new run). With `lines` > 1, the sum of that many
+        separate lines' mean excess (`lines_of`): an engine's family of lines all follow the curve."""
+        total = self._profile(j, fac)
+        if total is None or not np.isfinite(total).any():
+            return np.nan
+        return float(np.nanmax(total)) if lines == 1 else self.lines_of(total, lines)
+
+    def lines_of(self, total: np.ndarray, lines: int) -> float:
+        """The `lines` best rest frequencies of a profile, each at least the tolerance's width
+        (2·TOL_BINS + 1 bins) from the others, summed: one line counts once, however many rest
+        frequencies its bins reach, and the lines needn't be harmonics of each other (a turbofan's
+        fan and shaft tones aren't)."""
+        v = np.where(np.isfinite(total), total, -np.inf)
+        width = (2 * TOL_BINS + 1) * self.df
+        out = 0.0
+        for _ in range(lines):
+            i = int(np.argmax(v))
+            if not np.isfinite(v[i]):
+                break
+            out += v[i]
+            v[np.abs(F0S - F0S[i]) < width] = -np.inf
+        return float(out)
+
+    def _profile(self, j: np.ndarray, fac: np.ndarray) -> np.ndarray | None:
+        """Mean excess along f0·fac for every rest frequency f0 (NaN where the curve leaves the band)."""
         ok = np.isfinite(fac) & (fac > 0.5) & (fac < 2)
         if ok.sum() < MIN_FRAMES:
-            return np.nan
+            return None
         j = j[ok]
         s = np.rint(np.log(fac[ok]) / STEP).astype(np.int64)
         cut = np.flatnonzero((np.diff(s) != 0) | (np.diff(j) != 1)) + 1
@@ -91,8 +115,7 @@ class Scene:
         total = np.zeros(len(F0S))
         for k, o in enumerate(FAC_ROWS + s[a]):                              # each run, shifted
             total += runs[k, o:o + len(F0S)]
-        total /= len(j)
-        return float(np.nanmax(total)) if np.isfinite(total).any() else np.nan
+        return total / len(j)
 
     def _best_direct(self, j: np.ndarray, fac: np.ndarray) -> float:
         """The direct search _best replaces (kept to test it): every rest frequency's bins."""
