@@ -987,6 +987,24 @@ test, kept going until it's below average):
 Going deeper takes a third of the four-line leaks for a quarter of a decibel, without more holes;
 still four times chance. A stop on the four-line statistic itself is the next step.
 
+**Does the synthetic test now agree with the corpus?** `lab nulltest 12 --plane` with the
+corpus's kind of engine (`nulltest.engine`), the truth's percentile among 28 other times:
+
+| with a plane | room, 1 / 4 lines | music | pink | mean, 4 lines |
+| --- | --- | --- | --- | ---: |
+| untouched | 0.93 / 0.93 | 0.85 / 0.83 | 1.00 / 0.98 | 0.91 |
+| fixed stop | 0.65 / 0.68 | 0.79 / 0.78 | 0.38 / 0.43 | 0.63 |
+| null target | 0.65 / 0.75 | 0.68 / 0.66 | 0.55 / 0.51 | 0.64 |
+| null target, no raising | 0.65 / 0.75 | 0.63 / 0.60 | 0.54 / 0.48 | 0.61 |
+
+(± 0.06–0.10 each.) With the old engine (a tone, ×2, ×3) the same test put the no-raise target
+far ahead of the fixed stop (0.43–0.57 against 0.63–0.93), which the corpus didn't bear out. With
+the corpus's kind of engine the two come out level, as on the corpus (−0.03 ± 0.05). The synthetic
+residual is smaller than the corpus's (0.61–0.64 against 0.76–0.79 with four lines), and the
+four-line attacker gains less over one line here: the synthetic engine's extra lines are no
+fainter than real ones but the clips have none of a real recording's other sounds near the lines.
+Good enough to rank variants with; the corpus still decides.
+
 ## Next experiments
 
 0. **The place as the metric** (envelope term, holdouts, stopping, the public corpus and the
