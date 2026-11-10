@@ -1020,6 +1020,45 @@ about two standard errors, the same place one showed before (pink, 0.39 → 0.30
 chance lines in pink noise and takes them out; worth checking with more runs before the stop
 changes, since a four-line stop will remove more.
 
+## A four-line stop, and what the leaks are made of
+
+**Pink, more runs.** 24 plane-free pink runs, paired with untouched: the fixed stop is lower by
+0.07 ± 0.04 (four lines; one line 0.09 ± 0.05), and changes the outcome in 12 of the 24. Smaller
+than the first 12 runs suggested, still likely real.
+
+**The engine's own z isn't fair in noise.** Over 16 seeds of white noise along the test pass, the
+engine's verdict (the curve against itself 20–60 s away) averages z 0.9 with one line and 1.3 with
+four, up to 3.2; a fair null would average 0. With the stop at z 1 the fill acts on noise about half
+the time, which is the likeliest source of the pink hole.
+
+**`--track-lines 4`** (the verdict adds up the best four separate lines; the fill keeps going
+while the sum stands out, the strongest line first; 48 tones). Corpus tuning half, 34 cloaked
+copies, against the four-line attacker:
+
+| | mean u | leaks | holes | sound change (mean, max) |
+| --- | ---: | ---: | ---: | --- |
+| fixed stop | 0.76 | 12 | 2 | 0.98 dB, 1.91 |
+| deeper (stop −0.5, 48 tones) | 0.63 | 8 | 2 | 1.24 dB, 2.04 |
+| four-line stop | 0.73 | 9 | 0 | 1.25 dB, 3.49 |
+
+Plane-free pink, paired with untouched: −0.09 ± 0.04, the fixed stop's hole again (−0.02 ± 0.04
+against it). The four-line stop is no better than removing deeper (−0.10 ± 0.07 the other way),
+so the default stays one line; the option stays for the work below.
+
+**What the leaks are made of.** In every copy that still leaks, the four lines the attacker adds up,
+each looked up in the original: of 68, 24 were lines there (z ≥ 4 along the true curve before
+cloaking). Most weren't, and many are much stronger now than before: N60RS 450 Hz z 0.5 → 6–8 and
+339 Hz 1.5 → 6 under both variants and seeds; N413AK 878 Hz 1.2 → 4.2, 2287 Hz 0.8 → 4.2; N784MB
+781 Hz −0.1 → 3.5. **The fill draws the curve.** It writes fresh noise along exactly the true
+curve, so wherever its level comes out above what it replaces, the strip is a line along that
+curve, and an attacker scoring the curve finds it. (In pink noise the hole goes the other way; the
+fill's level error likely depends on the spectrum around it.) Separately, N913TC with the four-line
+stop is left exactly as it was (the engine's verdict didn't reach its stop): a leak by omission.
+
+So the next work is in the fill, not the stop: measure the filled strips' excess against what they
+replace, on plane-free audio and on the corpus, and make it zero on average; then give the engine a
+fair null (wrong places' curves, as `u` uses) so its stop means what it says.
+
 ## Next experiments
 
 0. **The place as the metric** (envelope term, holdouts, stopping, the public corpus and the
