@@ -1001,9 +1001,9 @@ corpus's kind of engine (`nulltest.engine`), the truth's percentile among 28 oth
 far ahead of the fixed stop (0.43–0.57 against 0.63–0.93), which the corpus didn't bear out. With
 the corpus's kind of engine the two come out level, as on the corpus (−0.03 ± 0.05). The synthetic
 residual is smaller than the corpus's (0.61–0.64 against 0.76–0.79 with four lines), and the
-four-line attacker gains less over one line here: the synthetic engine's extra lines are no
-fainter than real ones but the clips have none of a real recording's other sounds near the lines.
-Good enough to rank variants with; the corpus still decides.
+four-line attacker gains less over one line here (why isn't settled; the synthetic levels and
+backgrounds aren't fitted to the corpus's). Good enough to rank variants with; the corpus still
+decides.
 
 ## Next experiments
 
