@@ -39,6 +39,25 @@ public struct LineFill: ScrubStage {
     public var voiceToleranceHz = 9.0
     public var pitch = PitchTracker()
     public var seed: UInt64 = .random(in: 1...UInt64.max)
+    /// How the fill's level is read from the bins beside the strip. `.median`: their median power
+    /// over ln 2, right for noise whose power is exponential. `.logMean`: their mean log power, so
+    /// the fill's expected log power (what the attacker averages, in dB) equals theirs whatever their
+    /// distribution; real backgrounds below ~600 Hz aren't exponential, and there the median fill
+    /// comes out quieter than what it replaces (docs/EXPERIMENTS.md). `.logFit`: a quadratic in log
+    /// power across both sides, read at the strip's centre, so the spectrum's slope and curvature
+    /// over the 2–4 half-widths between them don't bias it (below 600 Hz on real recordings the
+    /// median reads 0.7 dB under the strip; the fit is within 0.1 dB).
+    /// `.resample`: each filled bin takes the power of a random side bin (±2 frames), moved to the
+    /// centre along the quadratic fit, with a random phase: the side bins' distribution, not only
+    /// their level. Below 600 Hz real backgrounds vary more from bin to bin than noise does, and the
+    /// attacker's best of ±2 bins reads a smooth fill 0.5 low there however its level is set.
+    /// `.binTime`: each filled bin takes the power of the same bin at another moment (within
+    /// `binTimeSeconds`, outside the strip, and not more than 4× that bin's median, so another
+    /// line crossing it isn't copied in), at a random phase. The attacker scales each bin by its own
+    /// median over time, so a bin's own over-time distribution is what reads as neutral to it.
+    public enum Level: String { case median, logMean, logFit, resample, binTime }
+    public var binTimeSeconds = 7.5
+    public var level = Level.median
 
     public init() {}
 
@@ -107,8 +126,26 @@ public struct LineFill: ScrubStage {
         let gain = (band.overlapPower / band.windowPower).squareRoot()
         let fade = 0.5 * frameSeconds
         var changed = false
-        var sideBins: [Double] = []
+        var sideBins: [Double] = [], sideD: [Double] = []
         sideBins.reserveCapacity(5 * 4 * side)
+        sideD.reserveCapacity(5 * 4 * side)
+
+        // For `.binTime`: where the strip is in each frame, and each bin's median outside it.
+        var centre = [Double](repeating: .nan, count: F), binMedian = [Double](repeating: 0, count: W)
+        let reachFrames = Int((binTimeSeconds * sr / Double(st.size / 4)).rounded())
+        if level == .binTime {
+            for m in 0..<F {
+                let t = (Double(a) + Double(band.center(of: m))) / sr
+                if max(t0 - t, t - t1, 0) < fade { centre[m] = Self.interpolate(line, at: min(max(t, t0), t1)) / binHz - Double(lo) }
+            }
+            var col: [Double] = []
+            col.reserveCapacity(F)
+            for k in 0..<W {
+                col.removeAll(keepingCapacity: true)
+                for m in 0..<F where !(abs(Double(k) - centre[m]) <= Double(half + 1)) { col.append(power[m * W + k]) }
+                binMedian[k] = col.isEmpty ? 0 : DSP.median(col[...])
+            }
+        }
 
         for m in 0..<F {
             let t = (Double(a) + Double(band.center(of: m))) / sr
@@ -122,16 +159,36 @@ public struct LineFill: ScrubStage {
 
             // The local floor: bins 2–4 half-widths beside the strip, over ±2 frames.
             sideBins.removeAll(keepingCapacity: true)
+            sideD.removeAll(keepingCapacity: true)
             for mm in max(0, m - 2)...min(F - 1, m + 2) {
                 for k in 0..<W {
                     let d = abs(Double(k) - c)
-                    if d >= Double(2 * half + 1) && d <= Double(side) { sideBins.append(power[mm * W + k]) }
+                    if d >= Double(2 * half + 1) && d <= Double(side) { sideBins.append(power[mm * W + k]); sideD.append(Double(k) - c) }
                 }
             }
             guard !sideBins.isEmpty else { continue }
-            let floor = DSP.median(sideBins[...])
-            // Hann-windowed noise: the median of an exponential (|X|²) is ln 2 of its mean.
-            let meanPower = floor / log(2.0)
+            let meanPower: Double
+            var fit: (a: Double, b: Double, c: Double)? = nil
+            switch level {
+            case .median:
+                // Hann-windowed noise: the median of an exponential (|X|²) is ln 2 of its mean.
+                meanPower = DSP.median(sideBins[...]) / log(2.0)
+            case .logMean:
+                // An exponential's mean log is ln(mean) − γ: the noise whose log power averages theirs.
+                var sum = 0.0, n = 0
+                for v in sideBins where v > 0 { sum += log(v); n += 1 }
+                guard n > 0 else { continue }
+                meanPower = exp(sum / Double(n) + 0.5772156649015329)
+            case .logFit:
+                guard let q = Self.logQuadratic(sideD, sideBins) else { continue }
+                meanPower = exp(q.a + 0.5772156649015329)
+            case .resample:
+                guard let q = Self.logQuadratic(sideD, sideBins) else { continue }
+                fit = q
+                meanPower = exp(q.a + 0.5772156649015329)
+            case .binTime:
+                meanPower = DSP.median(sideBins[...]) / log(2.0)   // fallback only
+            }
             let amp = (meanPower / 2).squareRoot() * gain
 
             let kLo = max(0, Int((c - Double(half) - 1).rounded(.down))), kHi = min(W - 1, Int((c + Double(half) + 1).rounded(.up)))
@@ -142,8 +199,22 @@ public struct LineFill: ScrubStage {
                 if w <= 0 { continue }
                 let i = m * W + k
                 let keep = (1 - w).squareRoot(), use = w.squareRoot()
-                outRe[i] = keep * band.re[i] + use * amp * rng.normal()
-                outIm[i] = keep * band.im[i] + use * amp * rng.normal()
+                if level == .binTime, let p = Self.sameBin(k, m, power: power, W: W, F: F, centre: centre, half: half,
+                                                            median: binMedian[k], reach: reachFrames, rng: &rng) {
+                    let mag = p.squareRoot() * gain, phase = 2 * Double.pi * rng.uniform(0...1)
+                    outRe[i] = keep * band.re[i] + use * mag * cos(phase)
+                    outIm[i] = keep * band.im[i] + use * mag * sin(phase)
+                } else if let q = fit {
+                    // A side bin's power, moved to the centre along the fit, at a random phase.
+                    let s = Int(rng.uniform(0...1) * Double(sideBins.count)) % sideBins.count, ds = sideD[s]
+                    let p = sideBins[s] * exp(-(q.b * ds + q.c * ds * ds))
+                    let mag = p.squareRoot() * gain, phase = 2 * Double.pi * rng.uniform(0...1)
+                    outRe[i] = keep * band.re[i] + use * mag * cos(phase)
+                    outIm[i] = keep * band.im[i] + use * mag * sin(phase)
+                } else {
+                    outRe[i] = keep * band.re[i] + use * amp * rng.normal()
+                    outIm[i] = keep * band.im[i] + use * amp * rng.normal()
+                }
                 changed = true
             }
         }
@@ -151,6 +222,45 @@ public struct LineFill: ScrubStage {
         let delta = band.change(re: outRe, im: outIm)
         for i in 0..<delta.count { y[a + i] += delta[i] }
         return true
+    }
+
+    /// The power of bin k at a random other frame within `reach`, outside the strip and at most 4×
+    /// the bin's median (nil after a dozen misses).
+    static func sameBin(_ k: Int, _ m: Int, power: [Double], W: Int, F: Int, centre: [Double], half: Int,
+                        median: Double, reach: Int, rng: inout SeededRNG) -> Double? {
+        guard reach > 0, median > 0 else { return nil }
+        for _ in 0..<12 {
+            let mm = m + Int((rng.uniform(0...1) * Double(2 * reach + 1)).rounded(.down)) - reach
+            guard mm >= 0, mm < F, mm != m else { continue }
+            if abs(Double(k) - centre[mm]) <= Double(half + 1) { continue }
+            let p = power[mm * W + k]
+            if p <= 4 * median { return p }
+        }
+        return nil
+    }
+
+    /// Least squares of log power against a + b·d + c·d² over the side bins (d: bins from the strip's
+    /// centre); a is the expected log power at the centre. Nil if it can't be fitted.
+    static func logQuadratic(_ d: [Double], _ power: [Double]) -> (a: Double, b: Double, c: Double)? {
+        var s = [Double](repeating: 0, count: 5), t = [Double](repeating: 0, count: 3), n = 0
+        for (x, p) in zip(d, power) where p > 0 {
+            let y = log(p), x2 = x * x
+            s[0] += 1; s[1] += x; s[2] += x2; s[3] += x2 * x; s[4] += x2 * x2
+            t[0] += y; t[1] += y * x; t[2] += y * x2
+            n += 1
+        }
+        guard n >= 6 else { return nil }
+        // Normal equations [s0 s1 s2; s1 s2 s3; s2 s3 s4]·(a, b, c) = t, by Cramer's rule for a.
+        func det(_ m: [[Double]]) -> Double {
+            m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1]) - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0]) + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0])
+        }
+        let M = [[s[0], s[1], s[2]], [s[1], s[2], s[3]], [s[2], s[3], s[4]]]
+        let D = det(M)
+        guard abs(D) > 1e-12 else { return nil }
+        let a = det([[t[0], s[1], s[2]], [t[1], s[2], s[3]], [t[2], s[3], s[4]]]) / D
+        let b = det([[s[0], t[0], s[2]], [s[1], t[1], s[3]], [s[2], t[2], s[4]]]) / D
+        let c = det([[s[0], s[1], t[0]], [s[1], s[2], t[1]], [s[2], s[3], t[2]]]) / D
+        return a.isFinite && b.isFinite && c.isFinite ? (a, b, c) : nil
     }
 
     /// Where a line's strip lies: the STFT size, the strip's half-width and the side band (bins),
