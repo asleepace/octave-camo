@@ -1005,6 +1005,21 @@ four-line attacker gains less over one line here (why isn't settled; the synthet
 backgrounds aren't fitted to the corpus's). Good enough to rank variants with; the corpus still
 decides.
 
+With no plane (`lab nulltest 12`; music and pink rerun with `--kinds`, so their draws differ from a
+full run's), each cloak against untouched, four lines:
+
+| no plane | room | music | pink |
+| --- | ---: | ---: | ---: |
+| untouched | 0.33 | 0.42 | 0.51 |
+| fixed stop | 0.35 | 0.42 | 0.35 |
+| null target | 0.32 | 0.44 | 0.35 |
+| null target, no raising | 0.31 | 0.36 | 0.35 |
+
+(± 0.07–0.09.) Room and music match untouched. Pink is 0.16 lower under every variant: a hole of
+about two standard errors, the same place one showed before (pink, 0.39 → 0.30). Removal finds
+chance lines in pink noise and takes them out; worth checking with more runs before the stop
+changes, since a four-line stop will remove more.
+
 ## Next experiments
 
 0. **The place as the metric** (envelope term, holdouts, stopping, the public corpus and the
