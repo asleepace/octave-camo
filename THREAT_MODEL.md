@@ -33,20 +33,24 @@ every number that decides a design is about this one (docs/EXPERIMENTS.md and th
   repository, the preset and its settings (everything but the random seed: the defense is
   assumed known).
 - **Asks:** which candidate place the audio fits best. At each place it predicts every audible
-  aircraft's Doppler curve (sound travel included) and scores the best mean whitened excess
-  along it over every rest frequency (100 Hz–3.5 kHz), within ±6 s of timing, plus the fit of the
-  loudness swell; it adds the aircraft up.
+  aircraft's Doppler curve (sound travel included) and scores the mean whitened excess along it
+  at every rest frequency (100 Hz–3.5 kHz), within ±6 s of timing, plus the fit of the loudness
+  swell; it adds the aircraft up. Per aircraft it **adds up the best four separate lines** along
+  the curve (`locate.Scene.lines_of`): every line an engine makes follows the same Doppler factor,
+  harmonic or not, so lines too faint to stand out one at a time still add up. (The best single
+  line, the lab's first statistic, is a weaker attacker: on the public corpus's passes cloaked with
+  the fixed stop it found 3 leaks in 34 where the four-line one finds 12.)
 - **Wins** if the true place stands out from the places that carry no information about it, in
   either direction:
   - **a leak:** the truth ranks in the top 5 % (p ≤ 0.05 against the no-information baseline);
   - **a hole:** the truth ranks in the bottom 5 %. An attacker who knows the defense removes
     evidence can look for the place that looks most cleaned, so a cloak that leaves its truth
     unusually empty gives the place away as surely as one that leaves the plane.
-- **Doesn't yet:** sum a plane's family of lines along one curve (harmonics: a real attacker
-  could, and the lab's statistic takes the best single line); use silence (a place that should
-  have heard a plane the audio doesn't have); average several renders; search over the time
-  (gap 5). Each is a way this attacker is weaker than a real one; the first is the one most
-  likely to matter.
+- **Doesn't yet:** weight the lines (a learned or likelihood-ratio statistic would beat a plain
+  sum); use silence (a place that should have heard a plane the audio doesn't have); average
+  several renders; search over the time (gap 5). Each is a way this attacker is weaker than a real
+  one. The place search (`lab locate`) still uses one line; the corpus and null-test scores use
+  both.
 
 ### The score
 

@@ -938,6 +938,43 @@ No information gives 0.50 ± 0.07 and about one in each tail.
   behind (the many lines a real engine has, the fill itself), not where it stops.
 - Decisions between these variants need more seeds, or the holdout once settled.
 
+## What real engines carry, and an attacker that adds them up
+
+**Lines along the corpus's curves.** For each tuning-half pass, the mean excess along its traced
+curve at every rest frequency, as a z against the same rest frequency along the other passes'
+curves (wrong places), and the separate lines (5 bins apart) at z ≥ 4. Chance alone gives about one
+such line per curve (the same count along a wrong pass's curve); the true curves give a median of
+two, from none to six. Their frequencies are mostly not harmonics of the strongest (a few are: 1042
+and 2086 Hz, 225 and 450 Hz), and they're about as strong as the strongest (0.3–2.4 times its
+excess). So a real pass is a few unrelated lines at similar levels, not a tone and its ×2 and ×3:
+the synthetic engine was wrong in kind more than in count, and the engine's harmonic fill
+(TrackFill's ×2 and ×3) mostly aims at lines that aren't there.
+
+**The multi-line attacker.** Every line of one engine follows the same Doppler factor, so an
+attacker can add up the best few separate lines along a curve (`locate.Scene.lines_of`; separate
+meaning at least the tolerance's 5 bins apart, so one line counts once). On plane-free audio
+(synthetic room noise, music, pink noise; 17 shapes each) it stays calibrated: mean u 0.49–0.56 for
+2, 4 or 8 lines. On the untouched corpus it finds 14–15 of 17 passes in the top 5 % (one line: 11).
+
+**Cloaked, against it** (tuning half, Full + the traced curve, kept copies in
+`$LAB_DATA/cloaked/zenodo-tune/`, two seeds = 34 cloaked passes):
+
+| | mean u, 1 line | 4 lines | leaks of 34, 1 line | 4 lines | holes of 34, 1 / 4 lines |
+| --- | ---: | ---: | ---: | ---: | --- |
+| fixed stop | 0.65 | 0.76 | 3 | **12** | 2 / 2 |
+| null target, no raising | 0.73 | 0.79 | 8 | **14** | 0 / 0 |
+
+No information gives about 2 of 34 in each tail.
+
+- **Lines below the stop still add up.** The engine removes a line while the best single line
+  stands out (z ≥ 1 for the fixed stop); several lines each under that bar sum to a leak.
+- **The two variants are the same against it:** fixed minus no-raise, per pass averaged over the
+  seeds, −0.03 ± 0.05.
+- **Seeds matter.** The same pass's u under two seeds correlates 0.33–0.61 for one line and
+  0.60–0.82 for four: a single seed's result on one pass is mostly noise.
+- What follows: the engine's own stopping test should use the same statistic (the best four lines
+  along the curve, against wrong times), and the fill should go after every line that adds to it.
+
 ## Next experiments
 
 0. **The place as the metric** (envelope term, holdouts, stopping, the public corpus and the
