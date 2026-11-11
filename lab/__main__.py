@@ -14,7 +14,8 @@
   check <session> [audio …]             the page's check (the real wasm build) on the session and
                                         on other audio of it: counts and flyby passes
   zenodo [--holdout | --all] [--limit N] [-- scrub options for the track-removal copy]
-  blank [--seeds 7,8] [--variant name="scrub options" ...]   the cloak's mark where nothing passed
+  blank [--seeds 7,8] [--spacing 30] [--per-session 3] [--variant name="scrub options" ...]
+        the cloak's mark on real recordings along a curve nothing follows
                                         the public corpus, tone removal (tuning half by default)
   locate <session> [audio …] [--envelope]   the place-searching attacker: rank of the true position
                                         (--envelope: the loudness swell too, alone and combined)
@@ -360,6 +361,10 @@ def cmd_blank(args: list[str]):
     from . import blank
     seeds = [int(s) for s in (args[args.index("--seeds") + 1] if "--seeds" in args else "7,8").split(",")]
     variants = {"fixed": []}
+    if "--spacing" in args:
+        blank.SPACING_S = float(args[args.index("--spacing") + 1])
+    if "--per-session" in args:
+        blank.PER_SESSION = int(args[args.index("--per-session") + 1])
     for i, a in enumerate(args):
         if a == "--variant":
             name, _, rest = args[i + 1].partition("=")

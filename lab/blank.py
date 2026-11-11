@@ -102,18 +102,32 @@ def trial(args: tuple) -> dict:
 
 
 def summarize(rows: list[dict], variants: dict, seeds: list[int]) -> str:
-    lines = [f"{len(rows)} placements in {len({r['sid'] for r in rows})} sessions; u of a curve nothing follows"]
+    """Against 0.5, not against "before": u is calibrated on real backgrounds (mean 0.49-0.51 over
+    1,547 scores, docs/EXPERIMENTS.md), so after-cloaking means are read against it; a paired change
+    from a "before" that happened to land high mostly measures regression back to 0.5. Errors are by
+    session (placements in one session share its background)."""
+    def by_session(vals):
+        per = {}
+        for r, v in zip(rows, vals):
+            if np.isfinite(v):
+                per.setdefault(r["sid"], []).append(v)
+        m = np.array([np.mean(v) for v in per.values()])
+        return m.mean(), m.std() / np.sqrt(max(len(m), 1)), len(m)
+    lines = [f"{len(rows)} placements in {len({r['sid'] for r in rows})} sessions; u of a curve nothing follows (fair: 0.5)"]
     for L in (1, zenodo.ATTACKER_LINES):
         b = np.array([r["before"][L] for r in rows], float)
-        lines.append(f"  {L} line(s): before mean {np.nanmean(b):.2f}, top 5 % {int(np.nansum(b >= 0.95))}, "
+        m, e, n = by_session(b)
+        lines.append(f"  {L} line(s): before {m:.3f} ± {e:.3f} (by session, n {n}); top 5 % {int(np.nansum(b >= 0.95))}, "
                      f"bottom 5 % {int(np.nansum(b <= 0.05))} of {int(np.isfinite(b).sum())}")
         for name in variants:
-            a = np.array([[r[f"{name}-s{s}"][L] for s in seeds] for r in rows], float)
-            d = np.nanmean(a, 1) - b
-            n = np.isfinite(d).sum()
-            lines.append(f"    {name}: after mean {np.nanmean(a):.2f}, paired change {np.nanmean(d):+.3f} ± "
-                         f"{np.nanstd(d) / np.sqrt(max(n, 1)):.3f}, top 5 % {int(np.nansum(a >= 0.95))}, "
-                         f"bottom 5 % {int(np.nansum(a <= 0.05))} of {int(np.isfinite(a).sum())}")
+            a = np.array([np.nanmean([r[f"{name}-s{s}"][L] for s in seeds]) for r in rows], float)
+            every = np.array([r[f"{name}-s{s}"][L] for r in rows for s in seeds], float)
+            m, e, n = by_session(a)
+            ok = np.isfinite(a) & np.isfinite(b)
+            slope, icpt = np.polyfit(b[ok], a[ok], 1) if ok.sum() > 2 else (np.nan, np.nan)
+            lines.append(f"    {name}: after {m:.3f} ± {e:.3f} (against 0.5: {m - 0.5:+.3f}); at a fair before, "
+                         f"{icpt + slope * 0.5 - 0.5:+.3f}; top 5 % {int(np.nansum(every >= 0.95))}, "
+                         f"bottom 5 % {int(np.nansum(every <= 0.05))} of {int(np.isfinite(every).sum())}")
     for name in variants:
         c = [r[f"{name}-s{s}"]["change_db"] for r in rows for s in seeds]
         lines.append(f"  {name}: sound change above 300 Hz {np.mean(c):.2f} dB (max {np.max(c):.2f})")
