@@ -7,9 +7,12 @@ aircraft comes within `CLEAR_KM` for ±`CLEAR_S` s. That curve is the "truth"; i
 the other shapes at the same moment, ±6 s, exactly as `zenodo.u` scores a corpus pass. Nothing in
 the audio follows the truth any more than its wrong answers, so before cloaking its rank is a fair
 draw (uniform); the cloak is then told to expect it (`--expect`) and does what it would for a pass
-it was told about. Afterwards the rank should still be a fair draw: a mean above 0.5 means the cloak
-leaves a bump along the curve (e.g. a fill quieter than what it replaced lowers every wrong curve
-crossing it), below 0.5 a hole (removal of chance matches, or a fill too loud).
+it was told about. Each copy is measured against a control, the same preset and seed blind to the
+curve (no --expect; every other stage is blind anyway): the difference is the track step's own mark.
+Above 0 a bump along the curve (e.g. a fill quieter than what it replaced lowers every wrong curve
+crossing it), below 0 a hole (removal of chance matches, or a fill too loud). Read against the
+control, not against "before" or 0.5: a single shape has a baseline of its own (0.33-0.59 with
+nothing there), and any processing pulls a "before" that landed high or low back toward it.
 
 Prints aggregates only: no positions, no times of day. Real aircraft without ADS-B aren't in the
 tracks, so "no tracked aircraft" isn't "silent"; it only has to be unrelated to the test curve.
@@ -32,6 +35,7 @@ CLEAR_S = 20.0
 EDGE_S = 31.0          # the engine's fill reaches ±31 s (25 s window + 6 s timing)
 SPACING_S = 30.0       # placements in one session at least this far apart
 PER_SESSION = 3
+CONTROL = "blind"       # the preset without --expect: what the track step is measured against
 
 
 def placements(sid: str) -> list[float]:
@@ -88,47 +92,58 @@ def trial(args: tuple) -> dict:
         sf.write(src, x, sr, subtype="FLOAT")
         exp = Path(tmp) / "e.json"
         exp.write_text(json.dumps([expected_at(p, centre, len(x) / sr)]))
-        for name, extra in variants.items():
+        import re
+        # The control: the same preset and seed without --expect (every other stage is blind to the
+        # curve), so a variant's effect is its u minus the control's, free of regression to the mean
+        # and of the blind stages' own shuffling.
+        for name, extra in {CONTROL: None, **variants}.items():
             for seed in seeds:
                 dst = Path(tmp) / "o.wav"
-                subprocess.run([str(cli), "scrub", str(src), str(dst), *PRESET_ARGS["full"], "--expect", str(exp),
-                                "--track-max-tones", "24", *extra, "--seed", str(seed)], check=True, capture_output=True)
+                track = [] if extra is None else ["--expect", str(exp), "--track-max-tones", "24", *extra]
+                r = subprocess.run([str(cli), "scrub", str(src), str(dst), *PRESET_ARGS["full"], *track, "--seed", str(seed)],
+                                   check=True, capture_output=True, text=True)
                 y, _ = sf.read(dst)
                 y = y if y.ndim == 1 else y[:, 0]
                 sy = locate.Scene(y, sr, "blank")
                 out[f"{name}-s{seed}"] = {L: u_at(sy, p, shapes, centre, L) for L in (1, zenodo.ATTACKER_LINES)}
                 out[f"{name}-s{seed}"]["change_db"] = zenodo.level_change(x, y, sr)
+                m = re.search(r"filled (\d+) tone", r.stdout + r.stderr)
+                out[f"{name}-s{seed}"]["filled"] = int(m.group(1)) if m else 0
     return out
 
 
 def summarize(rows: list[dict], variants: dict, seeds: list[int]) -> str:
-    """Against 0.5, not against "before": u is calibrated on real backgrounds (mean 0.49-0.51 over
-    1,547 scores, docs/EXPERIMENTS.md), so after-cloaking means are read against it; a paired change
-    from a "before" that happened to land high mostly measures regression back to 0.5. Errors are by
-    session (placements in one session share its background)."""
-    def by_session(vals):
+    """Each variant against the control (the same preset and seed, blind to the curve), per
+    placement, averaged by session (placements in one session share its background). With nothing
+    following the curve, a fair cloak's effect is 0; below is a hole, above a bump. Also the effect
+    where the track step filled something and where it didn't (there it must be 0 up to noise)."""
+    def by_session(vals, keep=None):
         per = {}
-        for r, v in zip(rows, vals):
-            if np.isfinite(v):
+        for i, (r, v) in enumerate(zip(rows, vals)):
+            if np.isfinite(v) and (keep is None or keep[i]):
                 per.setdefault(r["sid"], []).append(v)
         m = np.array([np.mean(v) for v in per.values()])
-        return m.mean(), m.std() / np.sqrt(max(len(m), 1)), len(m)
-    lines = [f"{len(rows)} placements in {len({r['sid'] for r in rows})} sessions; u of a curve nothing follows (fair: 0.5)"]
+        return (m.mean() if len(m) else np.nan), (m.std() / np.sqrt(len(m)) if len(m) > 1 else np.nan), sum(map(len, per.values()))
+    lines = [f"{len(rows)} placements in {len({r['sid'] for r in rows})} sessions; a curve nothing follows; "
+             f"each variant against the preset blind to it"]
     for L in (1, zenodo.ATTACKER_LINES):
+        c = np.array([np.nanmean([r[f"{CONTROL}-s{s}"][L] for s in seeds]) for r in rows], float)
         b = np.array([r["before"][L] for r in rows], float)
-        m, e, n = by_session(b)
-        lines.append(f"  {L} line(s): before {m:.3f} ± {e:.3f} (by session, n {n}); top 5 % {int(np.nansum(b >= 0.95))}, "
-                     f"bottom 5 % {int(np.nansum(b <= 0.05))} of {int(np.isfinite(b).sum())}")
+        m, e, n = by_session(c)
+        lines.append(f"  {L} line(s): untouched {np.nanmean(b):.3f}, blind preset {m:.3f} ± {e:.3f}")
         for name in variants:
             a = np.array([np.nanmean([r[f"{name}-s{s}"][L] for s in seeds]) for r in rows], float)
+            filled = np.array([any(r[f"{name}-s{s}"]["filled"] > 0 for s in seeds) for r in rows])
+            m, e, n = by_session(a - c)
+            mf, ef, nf = by_session(a - c, filled)
+            mn, en, nn = by_session(a - c, ~filled)
             every = np.array([r[f"{name}-s{s}"][L] for r in rows for s in seeds], float)
-            m, e, n = by_session(a)
-            ok = np.isfinite(a) & np.isfinite(b)
-            slope, icpt = np.polyfit(b[ok], a[ok], 1) if ok.sum() > 2 else (np.nan, np.nan)
-            lines.append(f"    {name}: after {m:.3f} ± {e:.3f} (against 0.5: {m - 0.5:+.3f}); at a fair before, "
-                         f"{icpt + slope * 0.5 - 0.5:+.3f}; top 5 % {int(np.nansum(every >= 0.95))}, "
+            lines.append(f"    {name}: effect {m:+.3f} ± {e:.3f}; where it filled ({nf}) {mf:+.3f} ± {ef:.3f}, "
+                         f"where not ({nn}) {mn:+.3f} ± {en:.3f}; top 5 % {int(np.nansum(every >= 0.95))}, "
                          f"bottom 5 % {int(np.nansum(every <= 0.05))} of {int(np.isfinite(every).sum())}")
     for name in variants:
-        c = [r[f"{name}-s{s}"]["change_db"] for r in rows for s in seeds]
-        lines.append(f"  {name}: sound change above 300 Hz {np.mean(c):.2f} dB (max {np.max(c):.2f})")
+        f = [r[f"{name}-s{s}"]["filled"] for r in rows for s in seeds]
+        ch = [r[f"{name}-s{s}"]["change_db"] - r[f"{CONTROL}-s{s}"]["change_db"] for r in rows for s in seeds]
+        lines.append(f"  {name}: tones filled per copy {np.mean(f):.1f} (filled in {np.mean(np.array(f) > 0):.0%}); "
+                     f"sound change over the blind preset {np.mean(ch):+.2f} dB")
     return "\n".join(lines)
