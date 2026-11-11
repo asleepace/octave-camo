@@ -1107,6 +1107,53 @@ to the numbers recorded above:
 What isn't known, and the pitfalls that misled earlier entries (few wrong answers, the synthetic
 ×2/×3 engine, the crossing lift, single seeds, loose tolerances): [OPEN_QUESTIONS.md](../OPEN_QUESTIONS.md).
 
+## Real backgrounds: is the score fair, and does the cloak leave a mark?
+
+Our own tuning sessions, at moments when no tracked aircraft comes within 4 km for ±20 s (91 such
+moments in 16 sessions; aircraft without ADS-B aren't in the tracks, so "no tracked aircraft" isn't
+"silent", only unrelated). A public-corpus curve shape (shapes only, never a position) placed there
+is a pass nothing follows. Its wrong answers are the other shapes at the same moment ±6 s, as
+`zenodo.u` scores a corpus pass. `lab blank`.
+
+**The score is fair on real audio in aggregate.** Every tuning-half shape as the truth at every
+moment, nothing cloaked, gives 1,547 scores:
+
+| | mean u | per-session means | top 5 % | bottom 5 % |
+| --- | ---: | ---: | ---: | ---: |
+| 1 line | 0.496 | 0.506 ± 0.007 | 5.4 % | 6.3 % |
+| 4 lines | 0.494 | 0.493 ± 0.007 | 6.1 % | 6.6 % |
+
+A single shape, though, carries a baseline of its own with nothing there: from 0.33 (N451EE) to 0.59
+(N913TC), four lines. So one pass's u should be read against its shape's baseline. With one shape
+per placement, a set of placements' mean "before" wanders (0.61 in a first run of 31, 0.39–0.44 in
+a run of 91), and any processing pulls it back toward that set's baselines. A cloak measured
+against its own "before", or against 0.5, mostly measures that regression. Two first runs did just
+that and read as a hole in one and almost nothing in the other.
+
+**Measured right: against the same preset blind to the curve.** Each placement's copy is compared
+with a control, the Full preset with the same seed and no `--expect`. Every other stage is blind to
+the curve anyway. The difference is the track step's own mark (91 placements, seed 7):
+
+| against the blind preset | 1 line | 4 lines | where it filled, 4 lines | where it didn't | filled on | tones per copy |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| fixed stop | −0.027 ± 0.015 | −0.029 ± 0.012 | −0.121 ± 0.056 (27) | 0.000 (64) | 30 % | 0.5 |
+| deeper (stop −0.5, 48) | −0.020 ± 0.027 | −0.038 ± 0.023 | −0.091 ± 0.057 (50) | 0.000 (41) | 55 % | 3.4 |
+
+(± by session.) The control checks itself: where nothing was filled, the effect is exactly 0.
+
+- **The cloak leaves a small hole where nothing passed.** Told to expect a pass that isn't there,
+  the fixed stop still fills on 30 % of curves, and where it does the truth drops by about 0.12.
+  Overall −0.03 ± 0.01, with the bottom tail about doubled (8 of 91 in the bottom 5 %, ~4.5 by
+  chance). Sound change over the blind preset: +0.02 dB.
+- **It's the stopping test, not the fill's level.** In a first run (31 placements, two seeds), the
+  three fill levels (`median`, `logMean`, `binTime`) changed the outcome on only the 6–8 placements
+  where anything was filled, and moved the mean by under 0.01. The stop's bias in noise (its z
+  averages about 1 where a fair test averages 0) makes it remove chance matches along the curve.
+  That's the hole mechanism, now on real backgrounds as well as synthetic pink noise.
+- **The blind stages reshuffle a single placement a lot** (one went 0.92 untouched → 0.28 after
+  the blind preset). They don't move the aggregate in expectation, but they're why a control is
+  needed.
+
 ## Next experiments
 
 0. **The place as the metric** (envelope term, holdouts, stopping, the public corpus and the

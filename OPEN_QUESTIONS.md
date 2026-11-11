@@ -69,34 +69,32 @@ attacker every result is scored against").
   values at the same rests on the *cloaked* audio, together with the engine's list of what it
   filled.
 
-### Is the fill neutral on real backgrounds?
-- **Known (synthetic white noise):**
-  - Along a slowly sweeping line (10 Hz/s) the median fill comes out +0.4 dB in mean power (6 seeds,
-    about 3 standard errors) and +0.2 dB in mean log power. At 40 Hz/s it's +0.2 dB, within noise.
-  - In the attacker's own statistic it's +0.01 to +0.04 (lines are ~0.4).
-  - Cause of the power bias unknown.
-- **Not known (real backgrounds):**
-  - A probe on the corpus clips read −0.5 below 600 Hz for every fill level tried.
-  - Those clips contain a plane, though: the probe's curves cross its lines and the fill removes
-    them, so that number is confounded.
-- **Why it matters:** a fill that differs from what it replaces lifts or lowers every wrong curve that
-  crosses it, while the true curve runs parallel to it and is unaffected. Either way the truth stands
-  out.
-- **Would settle it:** the same probe on plane-free real audio.
-- **Then:** pick between `LineFill.level` `.median` (default), `.logMean` and `.binTime`. All three
-  are experimental until then.
+### Is the fill neutral on real backgrounds? (partly answered: its level doesn't matter there)
+- **Answered:** on real backgrounds the fill's level makes no measurable difference to the cloak's
+  mark (`lab blank`: the three levels within 0.01). The hole the cloak leaves comes from *what* it
+  removes (chance matches, through the biased stop), not from the fill's level.
+- **Still open:** in synthetic white noise, along a slowly sweeping line (10 Hz/s), the median fill
+  is +0.4 dB in mean power (6 seeds, about 3 standard errors) and +0.2 dB in log power. In the
+  attacker's own statistic it's +0.01 to +0.04. The cause is unknown. It doesn't show up as a mark
+  so far, but nobody has checked whether a power-based attacker would see it.
 
 ### The engine's stopping test is biased in noise
 - **Known:** in white noise along the test pass, the engine's z (the curve against itself 20–60 s
   away) averages 0.9 with one line and 1.3 with four, up to 3.2. A fair test would average 0. With
   the stop at z 1, the fill acts on noise about half the time.
+- **Confirmed on real backgrounds** (`lab blank`): told to expect a pass that isn't there, the fixed
+  stop fills on 30 % of curves, and there the truth drops by 0.12 against the blind preset (−0.03 ±
+  0.01 overall, the bottom 5 % tail about doubled). This is the cloak's main known hole, and the
+  next thing to fix.
 - **Would settle it:** give the verdict wrong places' curves as its null (as `u` uses), then check
   it averages 0 in noise.
 
-### Is the plane-free pink hole real, and is the stop's bias its cause?
+### Is the plane-free pink hole the stop's bias too?
 - **Known:** 24 plane-free pink runs, paired with untouched: the fixed stop is lower by 0.07 ± 0.04
-  (four lines). Room and music show nothing.
-- **Would settle it:** fix the stopping bias above, then rerun.
+  (four lines). Room and music show nothing. On real backgrounds the same kind of hole is the stop
+  acting on noise (above).
+- **Caveat:** this was measured against "before", which regression to the mean confounds (see
+  "Pitfalls"). It needs rerunning against a blind control, before and after the stop is fixed.
 
 ### How good is the synthetic engine model?
 - **Known:** `nulltest.engine` has a main line plus Poisson(2) others, −6 to +3 dB, mostly not
@@ -140,5 +138,9 @@ These are ways a flawed assumption got in before. Check new work against them.
 - **Loose tolerances hide biases.** "Strip vs beside within 2.5 dB" passed a fill that's 0.4 dB loud
   on average, and a guard off by one skipped every frame of a line exactly on a bin centre. An
   invariant test needs a tolerance set from the measured spread, not a generous guess.
+- **Measuring a cloak against "before" or against 0.5.** Single shapes have baselines of their own,
+  and processing pulls a "before" that landed high or low back toward them. Two runs read as a hole
+  and as nothing for that reason alone. Compare with a control that has the same processing but is
+  blind to the curve (`lab blank`).
 - **Importing `lab.nulltest` switches off the whitening cache** for the whole process, by design.
   Shared helpers (`locate.rank`) live in `locate`, not there.

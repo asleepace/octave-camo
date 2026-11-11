@@ -67,6 +67,7 @@ what's known about the clip:
 | Our own sessions (place known, never published) | the true place | every grid point over 2 km away, redrawn per aircraft (`locate.null_bits`) | `lab locate` |
 | The public corpus (Pathak 2026; position not published and **never reconstructed**) | the pass's own traced curve | the other passes' traced curves, put at this clip's closest approach ±6 s: the shapes other places would give | `lab zenodo` |
 | Synthetic scenes | the inserted pass's curve | the same curve at 28 other times, each on its own stretch | `lab nulltest` |
+| Our own sessions, a curve nothing follows (holes) | a corpus shape placed where no tracked aircraft is near | the other shapes at that moment ±6 s; scored against the same preset blind to the curve | `lab blank` |
 
 The corpus can't be scored by place without its position, so it's scored on the one question the
 place search asks of each aircraft: does this curve, rather than a curve from somewhere else, fit
