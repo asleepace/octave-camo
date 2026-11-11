@@ -35,13 +35,27 @@ attacker every result is scored against").
 - **Would settle it:** compare statistics by how well they find planes in *untouched* audio (power),
   without tuning them to the cloak.
 
-### The place search on our sessions still uses one line
+### The place search on our sessions needs re-scoring
 - `lab locate` hasn't been switched to the four-line statistic, so session results are against the
-  weaker attacker. Switch it and re-score the tuning sessions.
+  weaker attacker.
+- Its p-values (`locate.null_bits`) drew each aircraft's wrong-place z independently, which loses
+  the dependence between aircraft that share a background. With strongly correlated aircraft that
+  understates the null's spread, and the truth looks rarer than it is (an independent review's
+  stress test: a tail of 0.0005 against 0.0094). Draws are now joint by default (one wrong place,
+  all its aircraft). The session numbers in docs/EXPERIMENTS.md were computed the old way.
+- Switch to four lines, re-score the tuning sessions with joint draws, and check the p-values'
+  calibration on scenes with nothing there.
 
 ### Does a hole matter to a real attacker?
 - A truth that scores unusually *low* is counted as a loss, to be safe. Nobody has measured how well
   an attacker could exploit one. Until then it stays counted.
+
+### Are the lab's scores what a posted video would give?
+- `lab zenodo` and `lab blank` score the cloak's floating-point output. A posted video carries AAC
+  (or another codec) after the browser's export. The benchmark harness re-encodes (160 kbps AAC);
+  the lab doesn't.
+- **Would settle it:** score the same copies after the page's own export and a platform-like
+  re-encode, and compare u.
 
 ### How many seeds does a decision need?
 - **Known:** one pass's u under two seeds correlates only 0.3–0.8. On 17 passes × 2 seeds,

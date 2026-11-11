@@ -242,18 +242,26 @@ def search(scene: Scene, geo: dict, hexes: list[str], points: np.ndarray) -> np.
     return S
 
 
+MIN_SPREAD = 1e-3      # the engine's floor too (TrackFill: max(sd, 1e-3)); scores are mean excess
+
+
 def zscores(S: np.ndarray, floor: np.ndarray | None = None) -> tuple[np.ndarray, np.ndarray]:
     """Per point and aircraft, z = (score − null mean) / null spread, the spread floored at the
-    aircraft's median spread over the grid (six nulls make a noisy spread). Returns (z, floor)."""
+    aircraft's median spread over the grid (six nulls make a noisy spread) and never below
+    MIN_SPREAD: a zero spread (degenerate nulls) can't make an infinite z. Non-finite inputs give
+    NaN (that point doesn't count the aircraft). Returns (z, floor)."""
     if floor is None:
         floor = np.array([np.nanmedian(S[:, k, 2]) if np.isfinite(S[:, k, 2]).any() else 1.0 for k in range(S.shape[1])])
-    Z = (S[:, :, 0] - S[:, :, 1]) / np.maximum(S[:, :, 2], floor[None, :])
-    return Z, floor
+    floor = np.where(np.isfinite(floor), np.maximum(floor, MIN_SPREAD), 1.0)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        Z = (S[:, :, 0] - S[:, :, 1]) / np.maximum(S[:, :, 2], floor[None, :])
+    return np.where(np.isfinite(Z), Z, np.nan), floor
 
 
 def combine(Z: np.ndarray) -> np.ndarray:
-    """All aircraft on one timeline: their z summed (a point that doesn't hear one gets 0 for it)."""
-    return np.nan_to_num(Z, nan=0.0).sum(1)
+    """All aircraft on one timeline: their z summed (a point that doesn't hear one gets 0 for it).
+    Only finite z count: an infinite one is a broken measurement, not a strong one."""
+    return np.where(np.isfinite(Z), Z, 0.0).sum(1)
 
 
 def rank_bits(rank: float, points: int) -> float:
@@ -275,15 +283,22 @@ def _rank(value, others: np.ndarray, low: bool = False):
 
 
 def null_bits(Z: np.ndarray, truth: int, exclude: np.ndarray | None = None, low: bool = False,
-              draws: int = 4000, seed: int = 0) -> np.ndarray:
-    """Rank bits the truth would get from audio with no information about it, in this scene: each
-    aircraft it hears gets a z drawn from that aircraft's z at the other points that hear it (what
-    a wrong place scores), the other points keep theirs. Needed because the truth always hears the
-    aircraft passing it while many grid points hear none and score exactly 0, so any positive
-    noise at the truth beats all of those: one aircraft at z 1.2 ranked a truth 40th of 1,089
-    (3.8 bits) with nothing there. `exclude` marks points left out of the draws (those near the
-    truth share its evidence, so they aren't wrong places). With `low`, ranks from the bottom: an
-    attacker looking for a hole (removal that leaves the truth scoring below wrong places)."""
+              draws: int = 4000, seed: int = 0, joint: bool = True) -> np.ndarray:
+    """Rank bits the truth would get from audio with no information about it, in this scene: the
+    aircraft it hears get the z a wrong place gives them, the other points keep theirs. Needed
+    because the truth always hears the aircraft passing it while many grid points hear none and
+    score exactly 0, so any positive noise at the truth beats all of those: one aircraft at z 1.2
+    ranked a truth 40th of 1,089 (3.8 bits) with nothing there. `exclude` marks points left out of
+    the draws (those near the truth share its evidence, so they aren't wrong places). With `low`,
+    ranks from the bottom: an attacker looking for a hole (removal that leaves the truth scoring
+    below wrong places).
+
+    `joint` (default): each draw is one wrong place, all its aircraft's z together, so the
+    dependence between aircraft (a shared background, the same sounds) is kept; an aircraft that
+    place doesn't hear gets a z from another wrong place that does. Independent draws per aircraft
+    (`joint=False`, the earlier method) lose that dependence and understate the null's spread when
+    aircraft scores move together: with two perfectly correlated aircraft, a tail of 0.0005 against
+    0.0094 drawn jointly (an independent review's stress test)."""
     total = combine(Z)
     others = np.sort(np.delete(total, truth))
     keep = np.ones(len(Z), bool)
@@ -291,12 +306,25 @@ def null_bits(Z: np.ndarray, truth: int, exclude: np.ndarray | None = None, low:
     if exclude is not None:
         keep &= ~exclude
     rng = np.random.default_rng(seed)
+    heard = np.flatnonzero(np.isfinite(Z[truth]))
     t = np.zeros(draws)
-    for k in np.flatnonzero(np.isfinite(Z[truth])):
-        pool = Z[keep, k]
-        pool = pool[np.isfinite(pool)]
-        if len(pool):
-            t += rng.choice(pool, draws)
+    rows = np.flatnonzero(keep)
+    if joint and len(rows):
+        pick = rng.choice(rows, draws)
+        for k in heard:
+            z = Z[pick, k]
+            miss = ~np.isfinite(z)
+            pool = Z[keep, k]
+            pool = pool[np.isfinite(pool)]
+            if miss.any() and len(pool):
+                z[miss] = rng.choice(pool, int(miss.sum()))
+            t += np.where(np.isfinite(z), z, 0.0)
+    else:
+        for k in heard:
+            pool = Z[keep, k]
+            pool = pool[np.isfinite(pool)]
+            if len(pool):
+                t += rng.choice(pool, draws)
     return np.log2((len(total) + 1) / 2 / _rank(t, others, low))
 
 

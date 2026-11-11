@@ -1154,6 +1154,33 @@ the curve anyway. The difference is the track step's own mark (91 placements, se
   the blind preset). They don't move the aggregate in expectation, but they're why a control is
   needed.
 
+## An independent review
+
+A second agent reviewed the repository at 8d2f75a (no private recordings, read-only reproductions).
+All four defects it reported held up against the code and are fixed, each with a regression test
+that fails on the old code:
+
+- **F-01:** a session id from a bundle's `meta.json` became a folder name unchecked, and that folder
+  was deleted before anything was validated (`../x` or an absolute path reached outside the sessions
+  folder). Ids are now plain names only, and an existing session is replaced only after the new one
+  indexes (restored otherwise).
+- **F-02:** a zero null spread made `locate.zscores` infinite, and `combine` turned that into the
+  largest float. The spread now has a positive floor (1e-3, as the engine's), and non-finite z don't
+  count.
+- **F-03:** the ADS-B archive's half-hour files were found from a few boundary times and, in
+  `backfill`, indexed from the first sample's UTC date: a recording across midnight asked for index
+  48 of the wrong day, and one longer than ~40 min could skip half hours. Every half hour is now
+  enumerated with its own date. Our sessions are short and none crossed midnight, so no result
+  should change.
+- **F-04:** `null_bits` drew each aircraft's wrong-place z independently, losing the dependence
+  between aircraft that share a background, which can make the truth look rarer than it is. Draws
+  are now joint (one wrong place, all its aircraft). The place-search p-values recorded above used
+  independent draws and need re-scoring (OPEN_QUESTIONS.md).
+
+It also found the README still said "only tested on synthetic recordings" (corrected). It suggested
+keeping three claims apart (a line removed, a track's score lowered, the place protected; now in
+THREAT_MODEL.md) and scoring after a real codec and export (now an open question).
+
 ## Next experiments
 
 0. **The place as the metric** (envelope term, holdouts, stopping, the public corpus and the

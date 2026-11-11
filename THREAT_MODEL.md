@@ -56,6 +56,11 @@ every number that decides a design is about this one (docs/EXPERIMENTS.md and th
 
 ### The score
 
+Three things get measured and they aren't the same claim: that a detected line is removed
+(a harmonic's z falls), that a known track's score falls, and that the *place* is protected. Only
+the last is the goal; the first two are steps toward it, and a result about one isn't evidence
+about the others.
+
 One number decides: **where the truth ranks among wrong answers, p**, read from both ends.
 Over a set of clips, the cloak is working when its p values look like those of clips with no
 plane in them: about 5 % in each 5 % tail, mean 0.5. A design is better if it has fewer leaks

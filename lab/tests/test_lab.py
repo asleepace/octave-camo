@@ -368,6 +368,82 @@ class BlankTest(unittest.TestCase):
         self.assertTrue(np.all((fs > 0.5) & (fs < 2)))                 # what the engine accepts
 
 
+class ReviewFindings(unittest.TestCase):
+    """Regressions for an independent review's findings (Nov 2026, at commit 8d2f75a)."""
+
+    def test_f01_session_ids_cant_leave_the_sessions_folder(self):
+        import json, tempfile, zipfile
+        from pathlib import Path
+        from lab import corpus
+        with tempfile.TemporaryDirectory() as tmp:
+            old = corpus.DATA
+            corpus.DATA = Path(tmp) / "data"
+            try:
+                self.assertEqual(corpus.session_path("normal-session_1").name, "normal-session_1")
+                for bad in ("../outside", "/tmp/arbitrary-target", "a/b", "", ".hidden", "x" * 200, None):
+                    with self.assertRaises(ValueError, msg=repr(bad)):
+                        corpus.session_path(bad)
+                # A bundle whose meta.json names "../victim": refused, and nothing outside is touched.
+                victim = Path(tmp) / "data" / "victim"
+                victim.mkdir(parents=True)
+                (victim / "keep.txt").write_text("x")
+                bundle = Path(tmp) / "b.zip"
+                with zipfile.ZipFile(bundle, "w") as z:
+                    z.writestr("s/meta.json", json.dumps({"clip_id": "../victim"}))
+                with self.assertRaises(ValueError):
+                    corpus.ingest(bundle)
+                self.assertTrue((victim / "keep.txt").exists())
+                # A good id whose index fails: an existing session of that id is restored.
+                existing = corpus.session_path("s1")
+                existing.mkdir(parents=True)
+                (existing / "keep.txt").write_text("old")
+                with zipfile.ZipFile(bundle, "w") as z:
+                    z.writestr("s/meta.json", json.dumps({"clip_id": "s1"}))     # no audio: index fails
+                with self.assertRaises(Exception):
+                    corpus.ingest(bundle)
+                self.assertEqual((existing / "keep.txt").read_text(), "old")
+            finally:
+                corpus.DATA = old
+
+    def test_f02_zero_spread_cant_make_an_infinite_score(self):
+        S = np.zeros((4, 2, 3))
+        S[:, :, 0] = [[1, 0], [2, 0], [0, 0], [0, 0]]   # scores; null mean 0 and spread 0 everywhere
+        Z, floor = locate.zscores(S)
+        self.assertTrue(np.all(floor > 0))
+        self.assertTrue(np.all(np.isfinite(Z) | np.isnan(Z)))
+        self.assertTrue(np.all(np.isfinite(locate.combine(Z))))
+        self.assertLess(np.nanmax(np.abs(Z)), 1e4)
+        bad = np.array([[np.inf, 1.0], [np.nan, -np.inf]])
+        self.assertEqual(list(locate.combine(bad)), [1.0, 0.0])
+
+    def test_f03_every_utc_half_hour_with_its_own_date(self):
+        import datetime
+        from lab import corpus
+        ts = lambda s: datetime.datetime.fromisoformat(s).replace(tzinfo=datetime.timezone.utc).timestamp()
+        got = [(d.strftime("%Y-%m-%d"), h) for d, h in corpus.half_hours(ts("2026-11-09T23:58:00"), ts("2026-11-10T00:03:00"))]
+        self.assertEqual(got, [("2026-11-09", 47), ("2026-11-10", 0)])
+        got = [h for _, h in corpus.half_hours(ts("2026-11-09T01:00:00"), ts("2026-11-09T04:00:00"))]
+        self.assertEqual(got, [2, 3, 4, 5, 6, 7, 8])                          # no gaps
+        got = [(d.strftime("%Y-%m-%d"), h) for d, h in corpus.half_hours(ts("2028-02-28T23:45:00"), ts("2028-02-29T00:10:00"))]
+        self.assertEqual(got, [("2028-02-28", 47), ("2028-02-29", 0)])          # leap day
+        self.assertEqual(len(corpus.half_hours(ts("2026-11-09T10:30:00"), ts("2026-11-09T10:30:00"))), 1)
+
+    def test_f04_joint_null_keeps_aircraft_dependence(self):
+        rng = np.random.default_rng(0)
+        col = rng.normal(size=1100)
+        Z = np.stack([col, col], 1)                     # two aircraft whose scores move together
+        Z[0] = [2.3, 2.3]                               # the truth: combined 4.6
+        def p(Z, joint):
+            total = locate.combine(Z)
+            real = locate.rank_bits(1 + np.sum(np.delete(total, 0) > total[0]), len(total))
+            return np.mean(locate.null_bits(Z, 0, draws=20000, joint=joint) >= real)
+        pj, pi = p(Z, True), p(Z, False)
+        self.assertGreater(pj, 5 * pi)                  # independent draws make the truth look rarer
+        Zi = np.stack([rng.normal(size=1100), rng.normal(size=1100)], 1)
+        Zi[0] = [2.3, 2.3]                              # independent aircraft: the two agree
+        self.assertAlmostEqual(p(Zi, True), p(Zi, False), delta=0.01)
+
+
 class SyntheticEngine(unittest.TestCase):
     """lab/nulltest.py's engine: the public corpus's kind (a few unrelated lines, similar levels)."""
 

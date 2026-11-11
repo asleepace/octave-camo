@@ -16,10 +16,13 @@ mains-powered lights in the picture, carry the power grid's frequency drift, whi
 works as a timestamp. octave-camo removes those clues while keeping the picture, voices and the
 overall sound.
 
-> **Proof of concept.** octave-camo is in active development and provides no guarantee of
-> anonymity. It has only been tested on synthetic recordings and needs more testing and
-> independent verification. Don't rely on it to protect your location. See
-> [THREAT_MODEL.md](THREAT_MODEL.md) for what is and isn't covered.
+> **Research prototype.** octave-camo is in active development and provides no guarantee of
+> anonymity. It has been tested on synthetic benchmarks, a limited collection of real recordings
+> and a public corpus of aircraft passes; those experiments don't establish location anonymity in
+> general, and it hasn't been independently validated. Against the strongest attacker we test,
+> cloaked passes still leak more often than chance. Don't rely on it to protect your location. See
+> [THREAT_MODEL.md](THREAT_MODEL.md) for what is and isn't covered, and
+> [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md) for what isn't known yet.
 
 ## What it removes
 

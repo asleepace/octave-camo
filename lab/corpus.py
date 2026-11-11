@@ -12,6 +12,7 @@ precise location; they never go into the repo or CI.
 from __future__ import annotations
 
 import json
+import re
 import math
 import os
 import shutil
@@ -31,8 +32,25 @@ def sessions_dir() -> Path:
     return d
 
 
+SAFE_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,127}")
+
+
+def session_path(sid: str) -> Path:
+    """The folder for a session id, which must be a plain name (letters, digits, '-' and '_'): an
+    id from a bundle's meta.json never reaches outside the sessions folder ('../x', '/tmp/x')."""
+    if not isinstance(sid, str) or not SAFE_ID.fullmatch(sid):
+        raise ValueError(f"unsafe session id: {sid!r}")
+    root = sessions_dir().resolve()
+    d = (root / sid).resolve()
+    if d.parent != root:
+        raise ValueError(f"unsafe session id: {sid!r}")
+    return d
+
+
 def ingest(bundle: str | Path) -> str:
-    """Unpack a recorder zip (or copy a session folder) and index it. Returns the session id."""
+    """Unpack a recorder zip (or copy a session folder) and index it. Returns the session id.
+    The id is checked before anything is touched, and an existing session with the same id is only
+    replaced once the new one has been indexed (restored if indexing fails)."""
     bundle = Path(bundle)
     tmp = DATA / "incoming"
     shutil.rmtree(tmp, ignore_errors=True)
@@ -42,8 +60,7 @@ def ingest(bundle: str | Path) -> str:
     else:
         with zipfile.ZipFile(bundle) as z:
             for m in z.infolist():
-                target = (tmp / m.filename).resolve()
-                if not str(target).startswith(str(tmp.resolve())):      # no path traversal
+                if not (tmp / m.filename).resolve().is_relative_to(tmp.resolve()):   # no path traversal
                     raise ValueError(f"unsafe path in archive: {m.filename}")
             z.extractall(tmp)
     metas = list(tmp.rglob("meta.json"))
@@ -51,11 +68,22 @@ def ingest(bundle: str | Path) -> str:
         raise ValueError(f"expected one meta.json in {bundle}, found {len(metas)}")
     src = metas[0].parent
     sid = json.load(open(src / "meta.json")).get("clip_id") or src.name
-    dst = sessions_dir() / sid
-    shutil.rmtree(dst, ignore_errors=True)
+    dst = session_path(sid)
+    old = dst.with_name(f".replaced-{sid}")
+    shutil.rmtree(old, ignore_errors=True)
+    if dst.exists():
+        dst.rename(old)
     shutil.move(str(src), dst)
-    shutil.rmtree(tmp, ignore_errors=True)
-    index(sid)
+    try:
+        index(sid)
+    except Exception:
+        shutil.rmtree(dst, ignore_errors=True)
+        if old.exists():
+            old.rename(dst)
+        raise
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    shutil.rmtree(old, ignore_errors=True)
     return sid
 
 
@@ -263,6 +291,19 @@ def _heatmap(day: str, half_hour: int) -> list[tuple]:
     return out
 
 
+def half_hours(t_lo: float, t_hi: float) -> list[tuple["datetime.datetime", int]]:
+    """Every UTC half hour that [t_lo, t_hi] touches, as (that half hour's UTC midnight, index
+    0-47), each with its own date: a recording across midnight gets yesterday's 47 and today's 0,
+    a long one every half hour in between."""
+    import datetime
+    out = []
+    for k in range(int(t_lo // 1800), int(t_hi // 1800) + 1):
+        start = datetime.datetime.fromtimestamp(k * 1800, datetime.timezone.utc)
+        midnight = start.replace(hour=0, minute=0, second=0, microsecond=0)
+        out.append((midnight, (start.hour * 60 + start.minute) // 30))
+    return out
+
+
 def archive_files(sid: str, margin_s: float = 240) -> tuple[list[Path], str, float]:
     """The half-hour archive files covering a session (fetched and cached), and the CLI's
     --at (lat,lon,alt on the pressure scale) and --start for it. Never printed."""
@@ -274,9 +315,8 @@ def archive_files(sid: str, margin_s: float = 240) -> tuple[list[Path], str, flo
     loc = meta["location_at_start"]
     alt0, _ = vertical_reference(meta)
     files = []
-    for t in sorted({t0 - margin_s, t0, t1, t1 + margin_s}):
-        day = datetime.datetime.fromtimestamp(t, datetime.timezone.utc)
-        hh = (day.hour * 60 + day.minute) // 30
+    for day, hh in half_hours(t0 - margin_s, t1 + margin_s):
+        t = day.timestamp() + hh * 1800
         f = DATA / "adsb" / "heatmap" / f"{day:%Y-%m-%d}-{hh:02d}.bin"
         # A half hour fetched before it ended (plus ten minutes for adsb.lol to write it) is
         # incomplete: use it, but don't keep it in the cache as if it were final.
@@ -333,10 +373,8 @@ def backfill(sid: str, before_s: float = 240, after_s: float = 240, radius_km: f
                 if lo_t <= ts <= hi_t and e[3] not in ("ground", None):
                     rows.append({"hex": h, "wall_unix": ts, "lat": e[1], "lon": e[2], "alt_ft": e[3]})
     if not rows:                                         # older sessions (or traces unavailable): the archive
-        halves = sorted({int((t - datetime.datetime(day.year, day.month, day.day, tzinfo=datetime.timezone.utc).timestamp()) // 1800)
-                         for t in (lo_t, t0, t1, hi_t)})
-        for hh in halves:
-            for ts, h, la, lo, alt in _heatmap(day.strftime("%Y-%m-%d"), hh):
+        for hday, hh in half_hours(lo_t, hi_t):
+            for ts, h, la, lo, alt in _heatmap(hday.strftime("%Y-%m-%d"), hh):
                 if h in hexes and lo_t <= ts <= hi_t and alt is not None:
                     rows.append({"hex": h, "wall_unix": ts, "lat": la, "lon": lo, "alt_ft": alt})
     with open(d / "adsb_backfill.jsonl", "w") as f:
