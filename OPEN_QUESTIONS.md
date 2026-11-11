@@ -92,16 +92,16 @@ attacker every result is scored against").
   attacker's own statistic it's +0.01 to +0.04. The cause is unknown. It doesn't show up as a mark
   so far, but nobody has checked whether a power-based attacker would see it.
 
-### The engine's stopping test is biased in noise
-- **Known:** in white noise along the test pass, the engine's z (the curve against itself 20–60 s
-  away) averages 0.9 with one line and 1.3 with four, up to 3.2. A fair test would average 0. With
-  the stop at z 1, the fill acts on noise about half the time.
-- **Confirmed on real backgrounds** (`lab blank`): told to expect a pass that isn't there, the fixed
-  stop fills on 30 % of curves, and there the truth drops by 0.12 against the blind preset (−0.03 ±
-  0.01 overall, the bottom 5 % tail about doubled). This is the cloak's main known hole, and the
-  next thing to fix.
-- **Would settle it:** give the verdict wrong places' curves as its null (as `u` uses), then check
-  it averages 0 in noise.
+### The engine's stopping test was biased in noise (fix built, not yet default)
+- **Cause:** it compared the sweeping true curve with its own flat tails (wrong times), and a flat
+  curve gets fewer independent tries at the best rest frequency. In white noise z averaged 1.05; on
+  real backgrounds the stop fired on 30 % of curves nothing follows and left a hole (−0.029 ±
+  0.012).
+- **Fix:** `--track-null wrongPlaces` (curves a different geometry gives). In white noise z averages
+  −0.06. On real backgrounds it fires on 14 % and the hole is −0.005 ± 0.009. On the corpus, leaks
+  +0.04 ± 0.04 (not significant).
+- **Open:** whether to make it the default, and whether the null target with fair nulls (remove until
+  the score is a random draw from the wrong places) gets leaks down without bringing the hole back.
 
 ### Is the plane-free pink hole the stop's bias too?
 - **Known:** 24 plane-free pink runs, paired with untouched: the fixed stop is lower by 0.07 ± 0.04

@@ -1181,6 +1181,44 @@ It also found the README still said "only tested on synthetic recordings" (corre
 keeping three claims apart (a line removed, a track's score lowered, the place protected; now in
 THREAT_MODEL.md) and scoring after a real codec and export (now an open question).
 
+## A fair stopping test
+
+**Why the old one was biased.** The engine's verdict compared the pass's curve with the same curve
+moved 20–60 s. Across the ±25 s window those copies are mostly the pass's flat tails. The verdict
+takes the best of ~1,800 rest frequencies, and on the log-frequency grid neighbouring rests fall in
+the same FFT bin. Along a flat curve they stay in the same bin every frame (strongly correlated,
+fewer independent tries, a lower best); along a sweeping one they decorrelate (more tries, a higher
+best). So the true curve beat its own copies in pure noise.
+
+**The fix** (`--track-null wrongPlaces`, experimental): compare with curves a different geometry
+would give: the pass's own swing scaled in depth (log factor) and duration by 0.6, 1 or 1.6 (not
+both 1), centred −6…+6 s from its closest approach, each with the same ±6 s timing slack as the
+truth. They sweep like the truth, so the best-of-many advantage cancels.
+
+| verdict in white noise (16 seeds) | mean z | fires (z ≥ 1) | tone z at 5 / 8 / 11 dB |
+| --- | ---: | ---: | --- |
+| wrong times, 1 line | +1.05 | 8/16 | 4.3 / 4.1 / 10.9 |
+| wrong times, 4 lines | +1.38 | 10/16 | 1.6 / 1.7 / 4.8 |
+| wrong places, 1 line | −0.06 | 1/16 | 1.7 / 1.6 / 6.2 |
+| wrong places, 4 lines | +0.15 | 3/16 | 0.3 / 0.4 / 5.0 |
+
+A faint pass scores lower: partly the bias that's gone, partly real (similar geometries partly
+match a real line, as they do for the attacker's own `u`).
+
+**On real backgrounds** (`lab blank`, 91 placements, against the blind preset, 4 lines): fires on 14 %
+of curves nothing follows (30 % before), and the hole goes from −0.029 ± 0.012 to −0.005 ± 0.009.
+
+**On the corpus** (tuning half, two seeds, 34 copies): mean u 0.81 and 13 leaks with four lines,
+against 0.76 and 12 for the fixed stop (per pass +0.04 ± 0.04; one line +0.07 ± 0.04). Not
+significant, and in the expected direction: the old stop's bias also removed faint real lines that a
+fair test calls chance.
+
+So the fair stop fixes the hole and costs little or nothing on leaks. Leaks are still the bigger
+problem (12–13 of 34, chance ~2), and removing more (deeper) helps them only by also firing more on
+noise. A stop that doesn't trade one for the other is the null target with fair nulls: remove until
+the pass's score is a random draw from its wrong places (no raising). The earlier null target used
+the biased wrong-times nulls. Not yet the default; next to test.
+
 ## Next experiments
 
 0. **The place as the metric** (envelope term, holdouts, stopping, the public corpus and the
