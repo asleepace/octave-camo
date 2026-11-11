@@ -63,6 +63,8 @@ def shape(p: dict) -> tuple[np.ndarray, np.ndarray, float]:
     """(times from the curve's start, factor = smoothed frequency over its median, time of the
     steepest fall)."""
     from scipy.ndimage import median_filter, uniform_filter1d
+    if "fac" in p:                       # an exact curve (lab/geometry.py): nothing to clean
+        return p["t"], p["fac"] / np.median(p["fac"]), float(p["tc"])
     # A traced ridge can jump to another line for a moment (one pass drops from ~300 to 61 Hz):
     # points more than 10 % from the running median over ~5 s, or outside 0.55–1.8 times the
     # curve's median (beyond any subsonic swing; a 150 m/s jet's real swing spans 1.25 kHz to

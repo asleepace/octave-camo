@@ -167,6 +167,38 @@ final class TrackFillTests: XCTestCase {
         XCTAssertGreaterThan(Self.verdict(LineFillTests.fanTone(rate: Self.rate, snr: 11).mono, s)?.z ?? 0, 3)
     }
 
+    /// A physical flight's Doppler factor: falls monotonically and stays within 1/(1 ± v/c). Heard
+    /// in reception time it falls fastest a little before the closest approach (approaching sound
+    /// arrives compressed: df/dt = factor · df/dτ), so the factor there is just above 1, more so the
+    /// faster the flight.
+    func testFlightCurveIsPhysical() {
+        for (v, d) in [(60.0, 400.0), (130.0, 1_500.0), (230.0, 5_000.0)] {
+            let f = TrackFill.flight(speed: v, distance: d)
+            XCTAssertEqual(f.count, 1_801)
+            XCTAssertTrue(zip(f, f.dropFirst()).allSatisfy { $0.0 >= $0.1 - 1e-12 }, "v \(v) d \(d): not monotone")
+            XCTAssertLessThanOrEqual(f.max()!, 1 / (1 - v / 343) + 1e-9)
+            XCTAssertGreaterThanOrEqual(f.min()!, 1 / (1 + v / 343) - 1e-9)
+            XCTAssertGreaterThanOrEqual(f[900], 1, "v \(v) d \(d): the steepest fall is on the approaching side")
+            if v <= 60 { XCTAssertLessThan(f[900], 1.05, "slow flight: steepest fall near the closest approach") }
+        }
+    }
+
+    /// Against physical wrong places (the default), the verdict is fairer in noise than against
+    /// wrong times, and a real pass still stands out.
+    func testLibraryNullIsFairerInNoise() {
+        func noise(_ null: TrackFill.Null) -> [Double] {
+            var s = Self.stage([Self.expected()])
+            s.null = null
+            return (1...12).compactMap { Self.verdict(DetectionScenes.white(Self.rate * 60, seed: UInt64($0)), s)?.z }
+        }
+        let lib = noise(.library), times = noise(.wrongTimes)
+        let mean = { (v: [Double]) in v.reduce(0, +) / Double(v.count) }
+        XCTAssertEqual(lib.count, 12)
+        XCTAssertLessThan(mean(lib), 0.6, "library: \(lib)")
+        XCTAssertLessThan(mean(lib), mean(times) - 0.4, "library \(lib) against wrong times \(times)")
+        XCTAssertGreaterThan(Self.verdict(LineFillTests.fanTone(rate: Self.rate, snr: 11).mono, Self.stage([Self.expected()]))?.z ?? 0, 3)
+    }
+
     /// `harmonics` 1 means none: with one tone allowed, the null target touches nothing above the
     /// fundamental's sweep (870–2,090 Hz here); with 3 it also fills ×2 and ×3 there.
     func testHarmonicsOneFillsNoMultiples() {
@@ -184,12 +216,12 @@ final class TrackFillTests: XCTestCase {
         XCTAssertEqual(TrackFill().harmonics, 1, "off by default: tuned on a synthetic ×2/×3 engine")
     }
 
-    /// The defaults are the shipped behaviour: the fixed stop on one line against wrong places.
+    /// The defaults are the shipped behaviour: the fixed stop on one line against physical wrong places.
     func testDefaultsAreTheFixedStopOnOneLine() {
         let s = TrackFill()
         XCTAssertEqual(s.target, .fixed)
         XCTAssertEqual(s.lines, 1)
-        XCTAssertEqual(s.null, .wrongPlaces)
+        XCTAssertEqual(s.null, .library)
         XCTAssertEqual(TrackFill.reach(toleranceHz: 0, binHz: 7.8), 2)
         XCTAssertEqual(TrackFill.reach(toleranceHz: 39, binHz: 7.8), 5)
     }
@@ -248,6 +280,7 @@ final class TrackFillTests: XCTestCase {
         for seed in 1...6 {
             var stage = Self.stage([Self.expected()])
             stage.target = .null
+            stage.null = .wrongTimes        // the mechanics, on the comparison these seeds were chosen for
             stage.seed = UInt64(seed)
             let x = DetectionScenes.white(Self.rate * 60, seed: UInt64(seed))
             let r = stage.process(x, sampleRate: Self.rate)

@@ -444,6 +444,27 @@ class ReviewFindings(unittest.TestCase):
         self.assertAlmostEqual(p(Zi, True), p(Zi, False), delta=0.01)
 
 
+class FlightGeometry(unittest.TestCase):
+    """lab/geometry.py: the physical wrong places (the same formula as TrackFill.flight)."""
+
+    def test_flight_curves_are_physical_and_pass_through_shape(self):
+        from lab import geometry
+        for v, d in ((60.0, 400.0), (130.0, 1500.0), (230.0, 5000.0)):
+            t, f, tc = geometry.curve(v, d)
+            self.assertTrue(np.all(np.diff(f) <= 1e-12))                          # falls monotonically
+            self.assertLessEqual(f.max(), 1 / (1 - v / geometry.C) + 1e-9)
+            self.assertGreaterEqual(f.min(), 1 / (1 + v / geometry.C) - 1e-9)
+            self.assertEqual(tc, 0.0)
+            self.assertAlmostEqual(t[np.argmin(np.gradient(f, t))], 0.0, delta=0.11)   # aligned on the steepest fall
+            self.assertGreaterEqual(f[np.argmin(np.abs(t))], 1.0)                 # just before closest approach
+        lib = geometry.library()
+        self.assertEqual(len(lib), len(geometry.SPEEDS) * len(geometry.DISTANCES))
+        t, fac, tc = zenodo.shape(lib[-1])                                        # exact: not cleaned or cut
+        self.assertEqual(len(t), len(lib[-1]["t"]))
+        self.assertAlmostEqual(np.median(fac), 1.0)
+        self.assertEqual(tc, 100.0)
+
+
 class SyntheticEngine(unittest.TestCase):
     """lab/nulltest.py's engine: the public corpus's kind (a few unrelated lines, similar levels)."""
 

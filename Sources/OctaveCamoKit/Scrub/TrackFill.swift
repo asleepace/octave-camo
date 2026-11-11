@@ -96,11 +96,52 @@ public struct TrackFill {
     /// - `wrongPlaces`: curves a different geometry would give, as the attacker's wrong answers are:
     ///   the pass's own curve with its swing's depth (in log factor) and duration scaled by
     ///   `placeScales` (not both 1), centred `placeOffsets` s from the truth's closest approach.
-    ///   They sweep like the truth, so the best-of-many advantage cancels. The default: in white
-    ///   noise z averages −0.06 (1.05 against wrong times), and on real backgrounds it leaves no
-    ///   measurable hole where nothing passed (docs/EXPERIMENTS.md, "A fair stopping test").
-    public enum Null: String { case wrongTimes, wrongPlaces }
-    public var null = Null.wrongPlaces
+    ///   They sweep like the truth, so the best-of-many advantage cancels: in white noise z averages
+    ///   −0.06 (1.05 against wrong times). But they sit on a real line near the closest approach and
+    ///   share its credit, so a real pass scores low (docs/EXPERIMENTS.md, "A fair stopping test").
+    /// - `library`: physical wrong places: the Doppler curves of straight, level, constant-speed
+    ///   flight past a listener at other closest distances and speeds (`librarySpeeds` ×
+    ///   `libraryDistances`), centred `placeOffsets` s from the pass's closest approach. Other places
+    ///   along a flight hear exactly such curves, so these are wrong answers like the attacker's
+    ///   (lab/geometry.py, the same formula). The default: on the public corpus's shapes it
+    ///   separates real passes from white noise best of the three (median z 1.40 against noise's
+    ///   +0.35, spread 1.3; wrong times 2.70 against +1.50, scaled copies 1.10 against +0.41).
+    public enum Null: String { case wrongTimes, wrongPlaces, library }
+    public var librarySpeeds: [Double] = [60, 90, 130, 180, 230]
+    public var libraryDistances: [Double] = [400, 800, 1_500, 3_000, 5_000]
+
+    /// The Doppler factor heard from straight, level flight at `speed` m/s whose closest slant
+    /// distance is `distance` m, sampled every `step` s of reception time from −`half` to +`half`
+    /// s about its steepest fall: factor = 1 / (1 + v·s / (r·c)), s = v·τ, r = √(d² + s²), heard
+    /// at t = τ + r/c.
+    static func flight(speed v: Double, distance d: Double, half: Double = 90, step: Double = 0.1) -> [Double] {
+        let c = 343.0, fine = step / 4
+        var t: [Double] = [], f: [Double] = []
+        var tau = -half - 30
+        while tau <= half + 30 {
+            let sAlong = v * tau, r = (d * d + sAlong * sAlong).squareRoot()
+            t.append(tau + r / c); f.append(1 / (1 + v * sAlong / (r * c)))
+            tau += fine
+        }
+        var steepest = 0, slope = Double.infinity
+        for i in 1..<(t.count - 1) {
+            let g = (f[i + 1] - f[i - 1]) / (t[i + 1] - t[i - 1])
+            if g < slope { slope = g; steepest = i }
+        }
+        let t0 = t[steepest]
+        var out: [Double] = [], j = 0
+        var q = -half
+        while q <= half + 1e-9 {
+            let want = t0 + q
+            while j + 1 < t.count && t[j + 1] < want { j += 1 }
+            let a = t[j], b = t[min(j + 1, t.count - 1)]
+            let w = b > a ? (want - a) / (b - a) : 0
+            out.append(f[j] + (f[min(j + 1, f.count - 1)] - f[j]) * min(max(w, 0), 1))
+            q += step
+        }
+        return out
+    }
+    public var null = Null.library
     public var placeScales: [Double] = [0.6, 1, 1.6]
     public var placeOffsets: [Double] = [-6, -3, 0, 3, 6]
     /// The search looks this far either side of the closest approach, s (where the pass is loud).
@@ -491,8 +532,28 @@ public struct TrackFill {
         if null == .wrongPlaces {
             for a in placeScales { for b in placeScales where !(a == 1 && b == 1) { shapes.append((a, b)) } }
         }
+        // Under `library`, shapes 1… are physical flights; their factor is relative to its median,
+        // as the expected pass's is to its own (only the shape matters: the rest frequency is free).
+        var flights: [[Double]] = []
+        if null == .library {
+            for v in librarySpeeds {
+                for d in libraryDistances {
+                    let f = Self.flight(speed: v, distance: d)
+                    let med = f.sorted()[f.count / 2]
+                    flights.append(f.map { $0 / med })
+                    shapes.append((0, 0))
+                }
+            }
+        }
         let limit = log(1.95)
         func factor(_ shape: Int, _ t: Double) -> Double? {
+            if null == .library && shape > 0 {
+                let f = flights[shape - 1], i = (t - c) / 0.1 + 900
+                guard i >= 0, i <= Double(f.count - 1) else { return nil }
+                let k = Int(i), w = i - Double(k)
+                let v = f[k] + (f[min(k + 1, f.count - 1)] - f[k]) * w
+                return exp(min(max(log(v), -limit), limit))
+            }
             let (a, b) = shapes[shape]
             if a == 1 && b == 1 { return pass.factor(at: t) }
             guard let f = pass.factor(at: c + (t - c) / b) else { return nil }
@@ -551,7 +612,7 @@ public struct TrackFill {
         switch null {
         case .wrongTimes:
             nulls = nullShifts.map { best(shift: $0).score }.filter(\.isFinite)
-        case .wrongPlaces:
+        case .wrongPlaces, .library:
             nulls = (1..<shapes.count).flatMap { sh in placeOffsets.map { best(shift: $0, shape: sh).score } }.filter(\.isFinite)
         }
         guard nulls.count >= 6 else { return nil }
