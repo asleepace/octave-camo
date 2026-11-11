@@ -352,6 +352,22 @@ class Invariants(unittest.TestCase):
         self.assertEqual(zenodo.ATTACKER_LINES, 4)                             # what THREAT_MODEL.md scores with
 
 
+class BlankTest(unittest.TestCase):
+    """lab/blank.py's pure parts (no session data)."""
+
+    def test_expected_at_puts_the_closest_approach_where_asked(self):
+        from lab import blank
+        t = np.arange(0, 50, 0.1707)
+        p = {"case": "c0", "t": t, "f": 300 * (1 + 0.15 - 0.3 / (1 + np.exp(-(t - 25) / 4)))}
+        e = blank.expected_at(p, centre=70.0, duration=150.0)
+        self.assertEqual(e["closest"], 70.0)
+        ts, fs = np.array(e["times"]), np.array(e["factors"])
+        steep = ts[np.argmin(np.gradient(fs, ts))]
+        self.assertAlmostEqual(steep, 70.0, delta=0.5)                # the fall is at the centre
+        self.assertTrue(ts[0] <= -59 and ts[-1] >= 209)                # covers the audio and the null shifts
+        self.assertTrue(np.all((fs > 0.5) & (fs < 2)))                 # what the engine accepts
+
+
 class SyntheticEngine(unittest.TestCase):
     """lab/nulltest.py's engine: the public corpus's kind (a few unrelated lines, similar levels)."""
 

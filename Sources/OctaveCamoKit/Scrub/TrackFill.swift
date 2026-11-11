@@ -114,6 +114,8 @@ public struct TrackFill {
     /// (where the curve's factor is below 1 the observed gap is that much narrower, up to 0.5×).
     /// Not shown to beat removing deeper on the public corpus (docs/EXPERIMENTS.md); off by default.
     public var lines = 1
+    /// How the fill reads its level (LineFill.Level; experimental, OPEN_QUESTIONS.md).
+    public var fillLevel = LineFill.Level.median
     public var seed: UInt64 = .random(in: 1...UInt64.max)
 
     public init() {}
@@ -195,6 +197,7 @@ public struct TrackFill {
         var fill = LineFill()
         fill.marginHz = marginHz
         fill.relativeMargin = relativeMargin
+        fill.level = fillLevel
         var filled: [Tone] = [], open = Set(usable.indices), count = [Int](repeating: 0, count: usable.count)
         var first = [Double?](repeating: nil, count: usable.count), last = first, goal = first
         var firstScore = first, lastScore = first

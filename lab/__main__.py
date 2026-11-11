@@ -14,6 +14,7 @@
   check <session> [audio …]             the page's check (the real wasm build) on the session and
                                         on other audio of it: counts and flyby passes
   zenodo [--holdout | --all] [--limit N] [-- scrub options for the track-removal copy]
+  blank [--seeds 7,8] [--variant name="scrub options" ...]   the cloak's mark where nothing passed
                                         the public corpus, tone removal (tuning half by default)
   locate <session> [audio …] [--envelope]   the place-searching attacker: rank of the true position
                                         (--envelope: the loudness swell too, alone and combined)
@@ -353,6 +354,38 @@ def cmd_trackfill(sid: str, presets: list[str]):
             print(dst)
 
 
+def cmd_blank(args: list[str]):
+    """lab/blank.py: the cloak's mark on real recordings along a curve nothing follows."""
+    from concurrent.futures import ProcessPoolExecutor
+    from . import blank
+    seeds = [int(s) for s in (args[args.index("--seeds") + 1] if "--seeds" in args else "7,8").split(",")]
+    variants = {"fixed": []}
+    for i, a in enumerate(args):
+        if a == "--variant":
+            name, _, rest = args[i + 1].partition("=")
+            variants[name] = rest.split()
+    jobs = []
+    for sid in corpus.all_ids():                       # tuning sessions only
+        try:
+            cs = blank.placements(sid)
+        except Exception as e:                          # a session without usable tracks
+            print(f"skip {sid[-6:]}: {type(e).__name__}")
+            continue
+        jobs += [(sid, c, len(jobs), variants, seeds) for c in cs]
+    print(f"{len(jobs)} placements; variants {list(variants)}; seeds {seeds}", flush=True)
+    t = time.time()
+    with ProcessPoolExecutor(2) as pool:
+        rows = list(pool.map(blank.trial, jobs))
+    print(f"({time.time() - t:.0f} s)\n{zenodo_citation()}\n{blank.summarize(rows, variants, seeds)}")
+    tag = "-".join(variants)
+    save_result(f"blank-{tag}", rows)
+
+
+def zenodo_citation() -> str:
+    from . import zenodo
+    return zenodo.CITATION
+
+
 def cmd_zenodo(args: list[str]):
     """The public 40-flight corpus as a tone-removal holdout (lab/zenodo.py). Scored once."""
     from concurrent.futures import ProcessPoolExecutor
@@ -452,6 +485,8 @@ def main(argv):
         cmd_ml(rest)
     elif cmd == "zenodo":
         cmd_zenodo(rest)
+    elif cmd == "blank":
+        cmd_blank(rest)
     elif cmd == "bench":
         cmd_bench(rest)
     elif cmd == "trackfill":
