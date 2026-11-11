@@ -146,6 +146,27 @@ final class TrackFillTests: XCTestCase {
         XCTAssertLessThan(Self.verdict(r.output, one)?.z ?? 0, one.stopZ + 0.5, r.summary)
     }
 
+    /// The verdict against wrong places is fair in noise: over 12 seeds of white noise its z
+    /// averages about 0 and rarely reaches the stop. Against wrong times (the pass's flat tails,
+    /// fewer independent tries at the best rest frequency) it averages about 1. A real pass still
+    /// stands out.
+    func testWrongPlacesNullIsFairInNoise() {
+        func noise(_ null: TrackFill.Null) -> [Double] {
+            var s = Self.stage([Self.expected()])
+            s.null = null
+            return (1...12).compactMap { Self.verdict(DetectionScenes.white(Self.rate * 60, seed: UInt64($0)), s)?.z }
+        }
+        let places = noise(.wrongPlaces), times = noise(.wrongTimes)
+        let mean = { (v: [Double]) in v.reduce(0, +) / Double(v.count) }
+        XCTAssertEqual(places.count, 12)
+        XCTAssertLessThan(abs(mean(places)), 0.5, "wrong places: \(places)")
+        XCTAssertLessThanOrEqual(places.filter { $0 >= 1 }.count, 3, "wrong places fire on noise: \(places)")
+        XCTAssertGreaterThan(mean(times), 0.5, "the wrong-times bias this replaces: \(times)")
+        var s = Self.stage([Self.expected()])
+        s.null = .wrongPlaces
+        XCTAssertGreaterThan(Self.verdict(LineFillTests.fanTone(rate: Self.rate, snr: 11).mono, s)?.z ?? 0, 3)
+    }
+
     /// `harmonics` 1 means none: with one tone allowed, the null target touches nothing above the
     /// fundamental's sweep (870–2,090 Hz here); with 3 it also fills ×2 and ×3 there.
     func testHarmonicsOneFillsNoMultiples() {
@@ -167,6 +188,7 @@ final class TrackFillTests: XCTestCase {
         let s = TrackFill()
         XCTAssertEqual(s.target, .fixed)
         XCTAssertEqual(s.lines, 1)
+        XCTAssertEqual(s.null, .wrongTimes)
         XCTAssertEqual(TrackFill.reach(toleranceHz: 0, binHz: 7.8), 2)
         XCTAssertEqual(TrackFill.reach(toleranceHz: 39, binHz: 7.8), 5)
     }

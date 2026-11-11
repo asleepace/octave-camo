@@ -87,6 +87,20 @@ public struct TrackFill {
     public var offsetStep = 0.5
     /// Where the null curves go: ±20–60 s, every 5 s.
     public var nullShifts: [Double] = stride(from: 20.0, through: 60, by: 5).flatMap { [-$0, $0] }
+    /// What the verdict compares the pass's curve with.
+    /// - `wrongTimes`: the same curve moved `nullShifts`. Across the window those copies are mostly
+    ///   the pass's flat tails, and a flat curve gets fewer independent tries at the best rest
+    ///   frequency (neighbouring rests stay on the same bin every frame) than a sweeping one, so in
+    ///   noise the truth wins by default: z averages ~1 in white noise, and told to expect a pass that
+    ///   isn't there the fill acts on 30 % of real backgrounds and leaves a hole (docs/EXPERIMENTS.md).
+    /// - `wrongPlaces`: curves a different geometry would give, as the attacker's wrong answers are:
+    ///   the pass's own curve with its swing's depth (in log factor) and duration scaled by
+    ///   `placeScales` (not both 1), centred `placeOffsets` s from the truth's closest approach.
+    ///   They sweep like the truth, so the best-of-many advantage cancels. Experimental.
+    public enum Null: String { case wrongTimes, wrongPlaces }
+    public var null = Null.wrongTimes
+    public var placeScales: [Double] = [0.6, 1, 1.6]
+    public var placeOffsets: [Double] = [-6, -3, 0, 3, 6]
     /// The search looks this far either side of the closest approach, s (where the pass is loud).
     public var halfWindow = 25.0
     /// Rest frequencies searched, in 0.2 % steps.
@@ -469,16 +483,29 @@ public struct TrackFill {
         let width = Double(2 * Self.reach(toleranceHz: toleranceHz, binHz: g.binHz) + 1) * g.binHz
         var cache: [Int: (score: Double, rest: Double)] = [:]
         let unit = offsetStep
-        /// The best mean excess with the curve moved by `tau` s.
-        func best(_ tau: Double) -> (score: Double, rest: Double) {
-            let key = Int((tau / unit).rounded())
+        // Shape 0 is the pass's curve; under `wrongPlaces`, the others are its swing scaled in depth
+        // (a, in log factor) and duration (b) about its closest approach.
+        var shapes: [(a: Double, b: Double)] = [(1, 1)]
+        if null == .wrongPlaces {
+            for a in placeScales { for b in placeScales where !(a == 1 && b == 1) { shapes.append((a, b)) } }
+        }
+        let limit = log(1.95)
+        func factor(_ shape: Int, _ t: Double) -> Double? {
+            let (a, b) = shapes[shape]
+            if a == 1 && b == 1 { return pass.factor(at: t) }
+            guard let f = pass.factor(at: c + (t - c) / b) else { return nil }
+            return exp(min(max(a * log(f), -limit), limit))
+        }
+        /// The best mean excess with shape `shape` moved by `tau` s.
+        func best(_ tau: Double, shape: Int = 0) -> (score: Double, rest: Double) {
+            let key = Int((tau / unit).rounded()) &* 64 &+ shape
             if let hit = cache[key] { return hit }
             for i in 0..<R { acc[i] = 0 }
             var known = 0
             acc.withUnsafeMutableBufferPointer { out in
                 rows.withUnsafeBufferPointer { src in
                     for (i, m) in frames.enumerated() {
-                        guard let f = pass.factor(at: g.time(m) - tau) else { continue }
+                        guard let f = factor(shape, g.time(m) - tau) else { continue }
                         known += 1
                         let start = i * J + Int((log(f) / lr).rounded()) - p.jLo
                         let row = src.baseAddress! + start
@@ -507,17 +534,24 @@ public struct TrackFill {
             return top
         }
         let offsets = Array(stride(from: -maxOffset, through: maxOffset + 1e-9, by: offsetStep))
-        func best(shift: Double) -> (score: Double, rest: Double, offset: Double) {
+        // Every curve, true or wrong, gets the same timing slack: the best over `offsets`.
+        func best(shift: Double, shape: Int = 0) -> (score: Double, rest: Double, offset: Double) {
             var top = (score: -Double.infinity, rest: 0.0, offset: 0.0)
             for o in offsets {
-                let b = best(shift + o)
+                let b = best(shift + o, shape: shape)
                 if b.score > top.score { top = (b.score, b.rest, o) }
             }
             return top
         }
         let real = best(shift: 0)
         guard real.score.isFinite else { return nil }
-        let nulls = nullShifts.map { best(shift: $0).score }.filter(\.isFinite)
+        let nulls: [Double]
+        switch null {
+        case .wrongTimes:
+            nulls = nullShifts.map { best(shift: $0).score }.filter(\.isFinite)
+        case .wrongPlaces:
+            nulls = (1..<shapes.count).flatMap { sh in placeOffsets.map { best(shift: $0, shape: sh).score } }.filter(\.isFinite)
+        }
         guard nulls.count >= 6 else { return nil }
         let mean = DSP.mean(nulls), sd = max(DSP.standardDeviation(nulls), 1e-3)
         return Tone(pass: pi, rest: real.rest, offset: real.offset, z: (real.score - mean) / sd, effect: real.score - mean, score: real.score, sd: sd, nulls: nulls)
