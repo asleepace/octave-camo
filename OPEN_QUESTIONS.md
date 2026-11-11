@@ -92,27 +92,18 @@ attacker every result is scored against").
   attacker's own statistic it's +0.01 to +0.04. The cause is unknown. It doesn't show up as a mark
   so far, but nobody has checked whether a power-based attacker would see it.
 
-### The engine's stopping test was biased in noise (fixed; the fair stop is the default)
-- **Cause:** it compared the sweeping true curve with its own flat tails (wrong times), and a flat
-  curve gets fewer independent tries at the best rest frequency. In white noise z averaged 1.05; on
-  real backgrounds the stop fired on 30 % of curves nothing follows and left a hole (−0.029 ±
-  0.012).
-- **Fix:** `--track-null wrongPlaces` (curves a different geometry gives). In white noise z averages
-  −0.06. On real backgrounds it fires on 14 % and the hole is −0.005 ± 0.009. On the corpus, leaks
-  +0.04 ± 0.04 (not significant).
-- **Open: the fair stop is fairer but weaker.** On the corpus's own shapes at 48 kHz (`--track-stop
-  999`, nothing filled), the engine's z on real passes against white noise along the same shapes:
-  wrong times 2.70 against +1.50 (a gap of 1.2), wrong places 1.10 against +0.41 (a gap of 0.7),
-  both with a spread of ~1.5. Wider scale families (0.4–2.5) didn't separate them better. The
-  attacker's own u separates the same passes far better (0.92 against 0.5): its wrong answers are
-  other geometries, while the engine's are scaled copies of its own curve, which sit on the real
-  line near the closest approach and share its credit.
-- **Would settle it:** give the engine wrong places like the attacker's, a fixed library of physical
-  Doppler shapes (speeds, closest distances, altitudes), placed at the pass's moment ±6 s, and score
-  the pass's rank among them as u does. Check that it averages 0.5 in noise and on `lab blank`, and
-  that it ranks the corpus's untouched passes as high as u.
-- The null target with fair nulls depends on this: with the current family its target comes out
-  high and it stops early (N913TC: 2 tones filled where the fixed stop fills 7).
+### Leaks or holes: is there a stop that avoids both?
+- **Known:** the default stop is biased in noise (it compares the sweeping true curve with its own
+  flat tails). The bias works as extra removal: it fires on 30 % of real backgrounds where nothing
+  passed and leaves a hole (−0.029 ± 0.012), but on the corpus it leaks least of the fair-ish
+  options. Fair comparisons (`--track-null wrongPlaces`, `library`) fix the hole (−0.005 ± 0.009)
+  and leak more (13 and 17 of 34 against 12). Removing deeper leaks least (8) and fires more.
+- **Why:** leaks and holes both come from how much is removed along the true curve, and a real
+  pass's faint lines are about as strong as chance matches along it. A per-pass stop moves along
+  one line between the two.
+- **Would settle it:** removal that isn't specific to the truth. Remove along the true curve deeply,
+  and along a few wrong places' curves with the same rule, so the most-cleaned place isn't the true
+  one. Check that `lab blank` shows no hole and the corpus leaks no more than "deeper" (8 of 34).
 
 ### Is the plane-free pink hole the stop's bias too?
 - **Known:** 24 plane-free pink runs, paired with untouched: the fixed stop is lower by 0.07 ± 0.04

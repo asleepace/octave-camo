@@ -103,9 +103,13 @@ public struct TrackFill {
     ///   flight past a listener at other closest distances and speeds (`librarySpeeds` ×
     ///   `libraryDistances`), centred `placeOffsets` s from the pass's closest approach. Other places
     ///   along a flight hear exactly such curves, so these are wrong answers like the attacker's
-    ///   (lab/geometry.py, the same formula). The default: on the public corpus's shapes it
+    ///   (lab/geometry.py, the same formula). Experimental: on the public corpus's shapes it
     ///   separates real passes from white noise best of the three (median z 1.40 against noise's
-    ///   +0.35, spread 1.3; wrong times 2.70 against +1.50, scaled copies 1.10 against +0.41).
+    ///   +0.35, spread 1.3; wrong times 2.70 against +1.50, scaled copies 1.10 against +0.41), but
+    ///   as the stop it removes less than wrong times and the corpus leaks more (17 of 34 against
+    ///   12, docs/EXPERIMENTS.md): the old stop's bias works as extra removal.
+    ///
+    /// The default stays `wrongTimes`: fair stops remove less, which helps holes and hurts leaks.
     public enum Null: String { case wrongTimes, wrongPlaces, library }
     public var librarySpeeds: [Double] = [60, 90, 130, 180, 230]
     public var libraryDistances: [Double] = [400, 800, 1_500, 3_000, 5_000]
@@ -141,7 +145,7 @@ public struct TrackFill {
         }
         return out
     }
-    public var null = Null.library
+    public var null = Null.wrongTimes
     public var placeScales: [Double] = [0.6, 1, 1.6]
     public var placeOffsets: [Double] = [-6, -3, 0, 3, 6]
     /// The search looks this far either side of the closest approach, s (where the pass is loud).

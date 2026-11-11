@@ -1217,8 +1217,47 @@ So the fair stop fixes the hole and costs little or nothing on leaks. Leaks are 
 problem (12–13 of 34, chance ~2), and removing more (deeper) helps them only by also firing more on
 noise. A stop that doesn't trade one for the other is the null target with fair nulls: remove until
 the pass's score is a random draw from its wrong places (no raising). The earlier null target used
-the biased wrong-times nulls. The fair stop is now the default (`TrackFill.null = .wrongPlaces`);
-the null target with fair nulls is next.
+the biased wrong-times nulls.
+
+**Fair, but weaker.** On the corpus's own shapes at 48 kHz, nothing filled (`--track-stop 999`), the
+engine's z on the 17 untouched passes against white noise along the same shapes:
+
+| comparison | real passes, median z (≥ 1) | white noise, mean z (≥ 1) |
+| --- | ---: | ---: |
+| wrong times | 2.70 (17/17) | +1.50 (10/17) |
+| scaled copies (`wrongPlaces`; 0.4–2.5 families no better) | 1.10 (11/17) | +0.41 (7/17) |
+| physical library (`library`) | 1.40 (12/17) | +0.35 (4/17) |
+
+(Spreads 1.3–1.6. A median-and-MAD z didn't help.) The scaled copies sit on a real line near the
+closest approach and share its credit. The library (`lab/geometry.py`, `TrackFill.flight`: the
+Doppler curves of straight, level flight at 5 speeds × 5 closest distances, aligned on their
+steepest fall) is the attacker's kind of wrong answer. As wrong places for `u` it nearly matches the
+other passes' shapes on the untouched corpus (mean 0.89/0.93 against 0.92/0.94; top 5 % 10/12 of
+17 against 11/14).
+
+**As the stop, on the corpus** (34 copies, four lines):
+
+| | mean u | leaks | against the old stop |
+| --- | ---: | ---: | ---: |
+| wrong times (default) | 0.76 | 12 | |
+| deeper (wrong times, stop −0.5) | 0.63 | 8 | −0.13 ± 0.05 |
+| scaled copies | 0.81 | 13 | +0.04 ± 0.04 |
+| library | 0.83 | 17 | +0.07 ± 0.05 |
+| library, null target (no raising) | 0.83 | 17 | +0.07 ± 0.05 |
+
+**The trade-off.** The old stop's bias worked as extra removal: it helped against leaks and made the
+hole. A fair stop removes less, which fixes the hole and costs leaks. Every stop seen so far sits on
+one line between the two, because both come from how much is removed along the true curve, and a
+real pass's faint lines are about as strong as chance matches along it. No per-pass stopping rule
+removes the one without the other. The default stays `wrongTimes`; the fair comparisons stay as
+options.
+
+**What follows: remove along wrong places too.** A hole gives the place away only if it's specific to
+the truth. If the cloak removes along the true curve as deeply as it likes (deeper had the fewest
+leaks) and also, with the same rule, along a few wrong places' curves, an attacker looking for the
+most-cleaned place finds several. The truth's removal stops being evidence. The cost is more fill
+(sound change so far 0.5–1.2 dB). Untested.
+
 
 ## Next experiments
 

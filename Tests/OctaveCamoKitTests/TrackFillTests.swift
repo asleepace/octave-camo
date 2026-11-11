@@ -183,8 +183,8 @@ final class TrackFillTests: XCTestCase {
         }
     }
 
-    /// Against physical wrong places (the default), the verdict is fairer in noise than against
-    /// wrong times, and a real pass still stands out.
+    /// Against physical wrong places, the verdict is fairer in noise than against wrong times, and
+    /// a real pass still stands out.
     func testLibraryNullIsFairerInNoise() {
         func noise(_ null: TrackFill.Null) -> [Double] {
             var s = Self.stage([Self.expected()])
@@ -196,7 +196,9 @@ final class TrackFillTests: XCTestCase {
         XCTAssertEqual(lib.count, 12)
         XCTAssertLessThan(mean(lib), 0.6, "library: \(lib)")
         XCTAssertLessThan(mean(lib), mean(times) - 0.4, "library \(lib) against wrong times \(times)")
-        XCTAssertGreaterThan(Self.verdict(LineFillTests.fanTone(rate: Self.rate, snr: 11).mono, Self.stage([Self.expected()]))?.z ?? 0, 3)
+        var s = Self.stage([Self.expected()])
+        s.null = .library
+        XCTAssertGreaterThan(Self.verdict(LineFillTests.fanTone(rate: Self.rate, snr: 11).mono, s)?.z ?? 0, 3)
     }
 
     /// `harmonics` 1 means none: with one tone allowed, the null target touches nothing above the
@@ -216,12 +218,12 @@ final class TrackFillTests: XCTestCase {
         XCTAssertEqual(TrackFill().harmonics, 1, "off by default: tuned on a synthetic ×2/×3 engine")
     }
 
-    /// The defaults are the shipped behaviour: the fixed stop on one line against physical wrong places.
+    /// The defaults are the shipped behaviour: the fixed stop on one line against wrong times.
     func testDefaultsAreTheFixedStopOnOneLine() {
         let s = TrackFill()
         XCTAssertEqual(s.target, .fixed)
         XCTAssertEqual(s.lines, 1)
-        XCTAssertEqual(s.null, .library)
+        XCTAssertEqual(s.null, .wrongTimes)
         XCTAssertEqual(TrackFill.reach(toleranceHz: 0, binHz: 7.8), 2)
         XCTAssertEqual(TrackFill.reach(toleranceHz: 39, binHz: 7.8), 5)
     }

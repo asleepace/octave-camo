@@ -9,17 +9,15 @@ are grouped by milestone, newest first, with the commits that made them.
 
 ## [Unreleased]
 
-### A fair stopping test, now the default
+### Fair stopping tests, as options
 
-- **The track step's stop compares a pass with physical wrong places, not wrong times**
-  (`TrackFill.null = .library`: the Doppler curves of straight, level flight at other closest
-  distances and speeds, the attacker's kind of wrong answer; `--track-null wrongTimes` restores the
-  old one, `wrongPlaces` uses scaled copies of the pass's own curve). The old comparison set the
-  pass's sweeping curve against its own flat tails, which in noise made the truth win by default
-  (z 1.05 in white noise; on real backgrounds the stop acted on 30 % of curves where nothing passed
-  and left a hole). On the corpus's shapes the library separates real passes from noise best of the
-  three (median z 1.40 against noise's +0.35; wrong times 2.70 against +1.50; scaled copies 1.10
-  against +0.41). docs/EXPERIMENTS.md, "A fair stopping test".
+- **`--track-null library` and `--track-null wrongPlaces`**, experimental: the track step's stop
+  compares a pass with physical wrong places (the Doppler curves of straight, level flight at other
+  closest distances and speeds) or with scaled copies of its own curve, instead of with its own
+  flat tails. Both are fair in noise (white-noise z −0.06 to +0.35 against 1.05 to 1.50), and on
+  real backgrounds the scaled copies leave no measurable hole where nothing passed. But both remove
+  less, and the public corpus leaks more (library 17 of 34 against 12), so the default stays.
+  docs/EXPERIMENTS.md, "A fair stopping test".
 
 ### Scoring against one attacker, and a review
 
