@@ -9,16 +9,14 @@ attacker every result is scored against").
 
 ## Scoring
 
-### Is the corpus score fair on real audio with no plane in it?
-- **Known:** `u` (the truth's rank among wrong places' curves) averages 0.49–0.56 with about 5 % in
-  each tail on *synthetic* plane-free audio (room noise, music, pink noise), for 1, 2, 4 and 8
-  lines. `lab/tests` checks the rank itself is uniform when the truth is one more draw.
-- **Not known:** whether that holds on real plane-free recordings, where the background isn't
-  stationary or smooth.
-- **Why it matters:** every corpus number assumes it. If real backgrounds push u off 0.5, leaks
-  and holes are miscounted.
-- **Would settle it:** u on plane-free real stretches (quiet windows of our own sessions with no
-  aircraft in the saved tracks, or a public recording known to be aircraft-free).
+### Is the corpus score fair on real audio with no plane in it? (answered: yes, in aggregate)
+- Answered in [docs/EXPERIMENTS.md](docs/EXPERIMENTS.md) ("Real backgrounds"). Every tuning-half
+  shape was placed as the truth at 91 moments in 16 of our sessions where no tracked aircraft came
+  within 4 km. Over 1,547 scores, u averages 0.494–0.496 (per-session means 0.49–0.51 ± 0.007), with
+  5.4–6.6 % in each 5 % tail.
+- **Left open:** single shapes carry a baseline of their own with nothing there (0.33 to 0.59
+  across shapes). A single pass's u should be read against its shape's baseline; aggregates are
+  fair.
 
 ### Do the corpus's wrong answers make it easier or harder than the place search?
 - **Known:** the corpus's wrong places are the other passes' traced shapes, with their closest
