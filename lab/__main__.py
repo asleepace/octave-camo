@@ -370,7 +370,7 @@ def cmd_zenodo(args: list[str]):
         rows = list(pool.map(zenodo.run_pass, ps, [PRESET_ARGS] * len(ps), [extra] * len(ps), [ps] * len(ps)))
     print(f"{zenodo.CITATION}\n{len(rows)} passes ({time.time() - t:.0f} s)\n")
     # u decides (THREAT_MODEL.md, "The score"): the traced curve's rank among wrong places'
-    # curves; z (six wrong times) is kept as a diagnostic.
+    # curves, the four-line attacker; z (six wrong times) is kept as a diagnostic.
     print("| case | category | closest | u / z original | Full | Experimental | Full + perfect curve | blind check: original / Full |")
     print("| --- | --- | ---: | ---: | ---: | ---: | ---: | --- |")
     nan = float("nan")

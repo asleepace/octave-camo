@@ -115,20 +115,24 @@ def z(scene: locate.Scene, p: dict, offset: float) -> tuple[float, float]:
 
 
 PLACE_OFFSETS_S = np.arange(-6.0, 6.01, 1.5)   # a wrong place's closest approach, around this one's
+ATTACKER_LINES = 4                              # the scoring attacker adds up four lines (THREAT_MODEL.md)
 
 
-def u(scene: locate.Scene, p: dict, others: list[dict], offset: float, lines: int = 1) -> tuple[float, int]:
+def u(scene: locate.Scene, p: dict, others: list[dict], offset: float, lines: int = ATTACKER_LINES) -> tuple[float, int]:
     """(where the traced shape ranks among wrong places' curves, how many). The wrong places'
     curves are the other passes' traced shapes with their closest approach put at this one's,
     ±6 s: the shapes a different geometry gives, scored on the same frames with every rest
     frequency free. With no plane in the audio this is uniform (mean 0.5, checked on synthetic
-    room noise, music and pink noise); the top 5 % is a leak, the bottom 5 % a hole. Uses only
-    curve shapes, never a position. `lines`: how many of the pass's lines the attacker adds up
-    (locate.Scene.lines_of)."""
+    room noise, music and pink noise; not yet on plane-free real audio); the top 5 % is a leak, the
+    bottom 5 % a hole. Uses only curve shapes, never a position. `lines`: how many of the pass's
+    lines the attacker adds up (locate.Scene.lines_of). NaN when the truth can't be scored (its
+    curve leaves the band); wrong curves that can't be are left out."""
     t, fac, tc = shape(p)
     tcl = tc + offset
     j = np.flatnonzero(np.abs(scene.t - tcl) <= locate.HALF_WINDOW_S)
     s0 = scene._best(j, flat_interp(scene.t[j], t + offset, fac), lines)
+    if not np.isfinite(s0):
+        return float("nan"), 0
     nulls = []
     for q in others:
         if q["case"] == p["case"]:
@@ -137,7 +141,9 @@ def u(scene: locate.Scene, p: dict, others: list[dict], offset: float, lines: in
         nulls += [scene._best(j, flat_interp(scene.t[j] - (tcl + o - tcq), tq, fq), lines) for o in PLACE_OFFSETS_S]
     n = np.array(nulls)
     n = n[np.isfinite(n)]
-    return float(np.mean(n < s0) + 0.5 * np.mean(n == s0)), len(n)
+    if len(n) == 0:
+        return float("nan"), 0
+    return locate.rank(s0, n), len(n)
 
 
 def expected_pass(p: dict, offset: float, duration: float) -> dict:
@@ -210,7 +216,9 @@ def run_pass(p: dict, preset_args: dict, extra: list[str] | None = None, others:
             zz, eff = z(sc, p, OFFSET_S)
             out[name] = {"z": round(zz, 2), "excess": round(eff, 3)}
             if others:
-                out[name]["u"] = round(u(sc, p, others, OFFSET_S)[0], 3)
+                out[name]["u"] = round(u(sc, p, others, OFFSET_S)[0], 3)            # four lines: decides
+                out[name]["u1"] = round(u(sc, p, others, OFFSET_S, lines=1)[0], 3)  # one line
+
             if name != "original":
                 out[name]["change_db"] = round(level_change(x, y, sr), 2)
             if name in ("original", "full") and not extra:

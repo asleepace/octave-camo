@@ -146,6 +146,31 @@ final class TrackFillTests: XCTestCase {
         XCTAssertLessThan(Self.verdict(r.output, one)?.z ?? 0, one.stopZ + 0.5, r.summary)
     }
 
+    /// `harmonics` 1 means none: with one tone allowed, the null target touches nothing above the
+    /// fundamental's sweep (870–2,090 Hz here); with 3 it also fills ×2 and ×3 there.
+    func testHarmonicsOneFillsNoMultiples() {
+        let x = LineFillTests.fanTone(rate: Self.rate, snr: 20).mono
+        func above(_ harmonics: Int) -> Double {
+            var s = Self.stage([Self.expected()])
+            s.target = .null; s.harmonics = harmonics; s.maxTones = 1
+            let y = s.process(x, sampleRate: Self.rate).output
+            return Self.bandPower(zip(y, x).map { $0 - $1 }, (2_300, 7_000))
+        }
+        let none = above(1), three = above(3)
+        XCTAssertGreaterThan(three, 0, "×2 and ×3 should have been filled")
+        XCTAssertLessThan(none, 1e-9 * max(three, 1e-300), "harmonics 1 still changed the band above the fundamental")
+        XCTAssertEqual(TrackFill().harmonics, 1, "off by default: tuned on a synthetic ×2/×3 engine")
+    }
+
+    /// The defaults are the shipped behaviour: the fixed stop on one line, no raising in effect.
+    func testDefaultsAreTheFixedStopOnOneLine() {
+        let s = TrackFill()
+        XCTAssertEqual(s.target, .fixed)
+        XCTAssertEqual(s.lines, 1)
+        XCTAssertEqual(TrackFill.reach(toleranceHz: 0, binHz: 7.8), 2)
+        XCTAssertEqual(TrackFill.reach(toleranceHz: 39, binHz: 7.8), 5)
+    }
+
     /// Summing four lines, noise alone: the fill doesn't raise the verdict. (Before any fill, the
     /// four-line z in white noise runs higher than one line's, mean 1.3 against 0.9 over 16 seeds,
     /// up to 3.2: the wrong times this verdict compares with, the same curve 20–60 s away, aren't

@@ -36,6 +36,16 @@ NULL_SHIFTS_S = (-40.0, -32.0, -24.0, 24.0, 32.0, 40.0)   # the same curve at wr
 MAX_RANGE_KM = 10.0           # a point farther than this from an aircraft doesn't hear it
 
 
+def rank(s0: float, nulls: np.ndarray) -> float:
+    """Where s0 falls among the wrong answers, ties halved: uniform on 0..1 when s0 is one more draw
+    of the same thing. NaN when s0 or every null is."""
+    nulls = np.asarray(nulls, dtype=float)
+    nulls = nulls[np.isfinite(nulls)]
+    if not np.isfinite(s0) or len(nulls) == 0:
+        return float("nan")
+    return float(np.mean(nulls < s0) + 0.5 * np.mean(nulls == s0))
+
+
 class Scene:
     """One audio's spectrogram, prepared for scoring curves."""
 
@@ -91,16 +101,22 @@ class Scene:
         (2·TOL_BINS + 1 bins) from the others, summed: one line counts once, however many rest
         frequencies its bins reach, and the lines needn't be harmonics of each other (a turbofan's
         fan and shaft tones aren't)."""
+        return float(sum(v for _, v in self.line_picks(total, lines))) if np.isfinite(total).any() else float("nan")
+
+    def line_picks(self, total: np.ndarray, lines: int) -> list[tuple[float, float]]:
+        """The (rest frequency, mean excess) `lines_of` adds up, best first; fewer if the profile
+        runs out of separate finite rest frequencies. Separate in rest frequency: where the curve's
+        factor is below 1 the observed gap is that much narrower."""
         v = np.where(np.isfinite(total), total, -np.inf)
         width = (2 * TOL_BINS + 1) * self.df
-        out = 0.0
+        picks = []
         for _ in range(lines):
             i = int(np.argmax(v))
             if not np.isfinite(v[i]):
                 break
-            out += v[i]
+            picks.append((float(F0S[i]), float(v[i])))
             v[np.abs(F0S - F0S[i]) < width] = -np.inf
-        return float(out)
+        return picks
 
     def _profile(self, j: np.ndarray, fac: np.ndarray) -> np.ndarray | None:
         """Mean excess along f0·fac for every rest frequency f0 (NaN where the curve leaves the band)."""

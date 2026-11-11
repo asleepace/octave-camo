@@ -9,6 +9,22 @@ are grouped by milestone, newest first, with the commits that made them.
 
 ## [Unreleased]
 
+### Scoring against one attacker, and a review
+
+- **One attacker and one score** (THREAT_MODEL.md): the truth's rank among wrong answers, read at
+  both ends (top 5 % a leak, bottom 5 % a hole), against an attacker that adds up an engine's best
+  four separate lines. On the public corpus (Pathak 2026, CC BY 4.0) the corpus is scored by `u`,
+  the traced curve against the other passes' curves at the same moment; the six-wrong-times z is
+  now a diagnostic. Against four lines, cloaked passes leak far more than the one-line score showed.
+- **Fixes:** a line exactly on an FFT bin centre was never filled (an off-by-one skipped every
+  frame); under the null target `harmonics` 1 still filled ×2. Ranks with an unscorable truth or
+  wrong answers come out NaN instead of a hole.
+- **Experimental, off by default:** `--track-lines` (the stopping test adds up lines),
+  `--track-target null` with `--track-max-raises`, `LineFill.level` (`.logMean`, `.binTime`); the
+  null target's harmonic fill is now off (it was tuned on a synthetic engine real ones don't
+  match). None is shown better than the defaults yet.
+- **OPEN_QUESTIONS.md:** what isn't known yet, and the pitfalls that misled earlier conclusions.
+
 ### Track removal: up to 24 tones per pass
 
 - **Removal now fills up to 24 tones per pass** (was 8). On the public 40-flight corpus (Pathak

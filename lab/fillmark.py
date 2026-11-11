@@ -52,14 +52,10 @@ def scrub(x: np.ndarray, sr: int, args: list[str]) -> np.ndarray:
 
 
 def per_rest(scene: locate.Scene, j: np.ndarray, fac: np.ndarray) -> np.ndarray:
-    """Mean excess along f0 · fac for every rest frequency (the place search's sum, per rest)."""
-    ok = np.isfinite(fac) & (fac > 0.5) & (fac < 2)
-    jj, s = j[ok], np.rint(np.log(fac[ok]) / locate.STEP).astype(np.int64)
-    G = np.diff(scene.C, axis=0)
-    tot = np.zeros(len(locate.F0S))
-    for a, b in zip(jj, s):
-        tot += G[a, locate.FAC_ROWS + b: locate.FAC_ROWS + b + len(locate.F0S)]
-    return tot / max(len(jj), 1)
+    """Mean excess along f0 · fac for every rest frequency (the place search's sum, per rest):
+    locate.Scene._profile, NaN everywhere when too few frames are usable."""
+    prof = scene._profile(j, fac)
+    return prof if prof is not None else np.full(len(locate.F0S), np.nan)
 
 
 def profiles(y: np.ndarray, sr: int, tc: float, window: float, name: str):

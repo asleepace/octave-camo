@@ -3,7 +3,8 @@ leaves the dip".) On plane-free audio (synthetic room noise, music, pink noise; 
 predicted pass at a random time; the clip cloaked with track removal (fixed stop, or the null
 target) and left alone. Scored the attacker's way: the best mean excess along the true curve over
 every rest frequency, as a percentile among the same curve centred at 28 other times, each scored
-on its own stretch (50-85 s away, clear of anything removal touched). The same shape at another
+on its own stretch (50-85 s away, clear of anything removal touched; the 28 stretches overlap each
+other, so they're fewer than 28 independent draws). The same shape at another
 time, as a wrong place's curve would be; not the curve moved within one stretch, which puts its fall
 outside it and leaves a flat curve that scores differently in noise and higher on held notes. With
 no plane there is nothing to find, so a clean cloak leaves that percentile uniform (mean 0.5):
@@ -45,7 +46,8 @@ def percentile(y: np.ndarray, sr: int, tc: float, depth: float, name: str) -> di
     out = {}
     for k in LINES:
         s0, nulls = sc.lines_of(p0, k), np.array([sc.lines_of(p, k) for p in ps])
-        out[k] = float(np.mean(nulls < s0) + 0.5 * np.mean(nulls == s0))
+        nulls = nulls[np.isfinite(nulls)]
+        out[k] = locate.rank(s0, nulls)
     return out
 
 

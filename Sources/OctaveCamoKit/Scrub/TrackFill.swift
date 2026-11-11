@@ -110,7 +110,9 @@ public struct TrackFill {
     /// THREAT_MODEL.md). Every line an engine makes follows the same Doppler factor, harmonic or
     /// not, so lines too faint to stand out one at a time still add up; with more than one, the
     /// fill keeps going while their sum stands out, the strongest line first. Separate: at least
-    /// the tolerance's width (2·reach + 1 bins) apart, so one line counts once.
+    /// the tolerance's width (2·reach + 1 bins) apart in rest frequency, so one line counts once
+    /// (where the curve's factor is below 1 the observed gap is that much narrower, up to 0.5×).
+    /// Not shown to beat removing deeper on the public corpus (docs/EXPERIMENTS.md); off by default.
     public var lines = 1
     public var seed: UInt64 = .random(in: 1...UInt64.max)
 
@@ -134,10 +136,12 @@ public struct TrackFill {
     /// a hole at the true place, however clean the fill (docs/EXPERIMENTS.md, "What leaves the
     /// dip"). `.null`: a target drawn for each pass from the attacker's own null (the best mean
     /// excess of the same curve centred at a random other time, on its own stretch); removal while
-    /// the pass's best mean excess is above
-    /// it, and while it's below, the strip along the best tone's curve raised (the sound already
-    /// there, louder) up to it. The true curve's score is then a draw from the null whatever was
-    /// there: neither a bump nor a hole.
+    /// the pass's best mean excess is above it, and while it's below, the strip along the best
+    /// tone's curve raised (the sound already there, louder) up to it. Meant to leave the true
+    /// curve's score a draw from the null, neither a bump nor a hole; on synthetic scenes it comes
+    /// close, but on the public corpus raising rebuilds what's left of a plane along the true curve
+    /// and, scored against wrong places' curves, `.null` is no better than `.fixed`
+    /// (docs/EXPERIMENTS.md). Experimental.
     public enum Target: String, Sendable { case fixed, null }
     public var target: Target = .fixed
     /// How close to its target a pass's score has to get, raising (in wrong-time spreads).
@@ -147,8 +151,10 @@ public struct TrackFill {
     public var maxGainDB = 10.0
     /// Under the null target, removal goes on while z is at least this, whatever the score.
     public var strongZ = 3.0
-    /// Under the null target, each filled tone's multiples up to this one are filled with it.
-    public var harmonics = 3
+    /// Under the null target, each filled tone's multiples up to this one are filled with it (1:
+    /// none). Off: it was tuned on a synthetic engine with ×2 and ×3, and real engines' other lines
+    /// are mostly not harmonics of the strongest (docs/EXPERIMENTS.md, "What real engines carry").
+    public var harmonics = 1
 
     var search: PathSearch { search(window: windows.first ?? 0.17) }
 
@@ -243,14 +249,14 @@ public struct TrackFill {
                         filled.append(tone)
                         count[pi] += 1
                         previous[pi] = tone
-                        // An engine's tone comes with its harmonics, each along the same curve, and
-                        // the search finds whichever is left (a plane's second or third harmonic
-                        // stood out after its fundamental went: null-test room percentile 0.96).
+                        // An engine's tone may come with harmonics, each along the same curve, and
+                        // the search finds whichever is left (with the synthetic ×2/×3 engine, the
+                        // second or third stood out after the fundamental went: room 0.96).
                         // Filled with it, unscored: if the tone was background, its multiples are
                         // just other background (other rests, not the best ones), which leaves
                         // no hole.
-                        if target == .null {
-                            for h in 2...max(2, harmonics) where tone.rest * Double(h) <= restRange.upperBound {
+                        if target == .null, harmonics >= 2 {
+                            for h in 2...harmonics where tone.rest * Double(h) <= restRange.upperBound {
                                 let up = Tone(pass: tone.pass, rest: tone.rest * Double(h), offset: tone.offset, z: tone.z, effect: tone.effect)
                                 if let line = stage.track(up, sampleRate: sampleRate, count: y.count) {
                                     _ = fill.fill(&y, line, sampleRate: sampleRate, rng: &rng)
@@ -297,6 +303,9 @@ public struct TrackFill {
                     + (target == .null ? ", raised \(lifts) pass(es)" : "")
                     + (scores.isEmpty ? "" : "; attacker z \(scores)"))
     }
+
+    /// How many bins either side the verdict's best-of-neighbours reaches (at least 2: the Hann lobe).
+    static func reach(toleranceHz: Double, binHz: Double) -> Int { max(2, Int((toleranceHz / binHz).rounded())) }
 
     static func one(_ z: Double) -> String { "\((z * 10).rounded() / 10)" }
     static func two(_ x: Double) -> String { "\((x * 100).rounded() / 100)" }
@@ -374,7 +383,7 @@ public struct TrackFill {
         let mean = a.reduce(0, +) / Float(a.count)
         for i in a.indices { a[i] -= mean }
         var am = a
-        let reach = max(2, Int((toleranceHz / g.binHz).rounded()))
+        let reach = Self.reach(toleranceHz: toleranceHz, binHz: g.binHz)
         for m in 0..<g.frames {
             let row = m * g.bins
             for k in 0..<g.bins {
@@ -454,7 +463,7 @@ public struct TrackFill {
             }
         }
         var acc = [Float](repeating: 0, count: R)
-        let width = Double(2 * max(2, Int((toleranceHz / g.binHz).rounded())) + 1) * g.binHz
+        let width = Double(2 * Self.reach(toleranceHz: toleranceHz, binHz: g.binHz) + 1) * g.binHz
         var cache: [Int: (score: Double, rest: Double)] = [:]
         let unit = offsetStep
         /// The best mean excess with the curve moved by `tau` s.

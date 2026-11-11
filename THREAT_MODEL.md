@@ -39,13 +39,15 @@ every number that decides a design is about this one (docs/EXPERIMENTS.md and th
   the curve (`locate.Scene.lines_of`): every line an engine makes follows the same Doppler factor,
   harmonic or not, so lines too faint to stand out one at a time still add up. (The best single
   line, the lab's first statistic, is a weaker attacker: on the public corpus's passes cloaked with
-  the fixed stop it found 3 leaks in 34 where the four-line one finds 12.)
+  the fixed stop it found 3 leaks in 34 where the four-line one finds 12. Four is a choice, not an
+  optimum: eight finds about as many, OPEN_QUESTIONS.md.)
 - **Wins** if the true place stands out from the places that carry no information about it, in
   either direction:
   - **a leak:** the truth ranks in the top 5 % (p ≤ 0.05 against the no-information baseline);
   - **a hole:** the truth ranks in the bottom 5 %. An attacker who knows the defense removes
     evidence can look for the place that looks most cleaned, so a cloak that leaves its truth
-    unusually empty gives the place away as surely as one that leaves the plane.
+    unusually empty can give the place away too. (How well a real attacker could use a hole isn't
+    measured; it's counted as a loss to be safe.)
 - **Doesn't yet:** weight the lines (a learned or likelihood-ratio statistic would beat a plain
   sum); use silence (a place that should have heard a plane the audio doesn't have); average
   several renders; search over the time (gap 5). Each is a way this attacker is weaker than a real
@@ -68,7 +70,11 @@ what's known about the clip:
 
 The corpus can't be scored by place without its position, so it's scored on the one question the
 place search asks of each aircraft: does this curve, rather than a curve from somewhere else, fit
-the audio.
+the audio. The three sets of wrong answers differ, so a number from one row isn't directly
+comparable with another's: the corpus's keeps wrong places' closest approach within ±6 s of the
+truth's (real wrong places in a 16 km box can be tens of seconds off), and a geometry close to the
+truth's scores about as well as the truth. Both make it a narrower question than the place
+search's; which way that biases it isn't measured (OPEN_QUESTIONS.md).
 
 Other numbers in the notebook are diagnostics, not verdicts: the engine's own z (TrackFill's
 stopping test), the known-path z (`lab attack`, one aircraft against wrong times), the benchmark
@@ -236,6 +242,9 @@ segment of frames, or a frame rate so high (about 200 fps and up) that a 100/120
 cycle per frame and looks like a gradient.
 
 ## Known gaps
+
+Open questions about the measurements themselves (is the score fair on real plane-free audio, is
+the fill neutral, is the engine's stop fair) are in [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md).
 
 In order of how much we think they matter:
 

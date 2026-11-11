@@ -911,7 +911,8 @@ six times; with 75 s curves in 85 s clips the moved copies keep under half the s
 values make a fragile spread. It's now scored by **u**: the traced curve's rank among wrong
 places' curves, the other passes' traced shapes with their closest approach at this clip's ±6 s
 (144 per pass on the tuning half). With no plane (synthetic room noise, music, pink noise, 17
-shapes each) u averages 0.53, 0.52 and 0.52, with one or two of 17 in each tail: calibrated.
+shapes each) u averages 0.53, 0.52 and 0.52, with one or two of 17 in each tail: calibrated on
+synthetic backgrounds (not yet checked on plane-free real audio; OPEN_QUESTIONS.md).
 Untouched, the corpus's tuning half averages 0.92 (11 of 17 at u ≥ 0.95): the planes are there,
 as they should be. One lesson from the test: a geometry close to the truth's (fall 0.35 deep
 against 0.30) scores as well as the truth. Nearby places do, so u asks "this pass or a different
@@ -948,12 +949,15 @@ two, from none to six. Their frequencies are mostly not harmonics of the stronge
 and 2086 Hz, 225 and 450 Hz), and they're about as strong as the strongest (0.3–2.4 times its
 excess). So a real pass is a few unrelated lines at similar levels, not a tone and its ×2 and ×3:
 the synthetic engine was wrong in kind more than in count, and the engine's harmonic fill
-(TrackFill's ×2 and ×3) mostly aims at lines that aren't there.
+(TrackFill's ×2 and ×3, under the null target) often aims at lines that aren't there (now off by
+default). Caveat: the per-rest z here is against wrong places' curves on the same clip, and those
+are lifted near a strong line they cross (see "What the leaks are made of"), so faint lines
+next to strong ones may be undercounted.
 
 **The multi-line attacker.** Every line of one engine follows the same Doppler factor, so an
 attacker can add up the best few separate lines along a curve (`locate.Scene.lines_of`; separate
 meaning at least the tolerance's 5 bins apart, so one line counts once). On plane-free audio
-(synthetic room noise, music, pink noise; 17 shapes each) it stays calibrated: mean u 0.49–0.56 for
+(synthetic room noise, music, pink noise; 17 shapes each) it stays calibrated there: mean u 0.49–0.56 for
 2, 4 or 8 lines. On the untouched corpus it finds 14–15 of 17 passes in the top 5 % (one line: 11).
 
 **Cloaked, against it** (tuning half, Full + the traced curve, kept copies in
@@ -1002,8 +1006,9 @@ far ahead of the fixed stop (0.43–0.57 against 0.63–0.93), which the corpus 
 the corpus's kind of engine the two come out level, as on the corpus (−0.03 ± 0.05). The synthetic
 residual is smaller than the corpus's (0.61–0.64 against 0.76–0.79 with four lines), and the
 four-line attacker gains less over one line here (why isn't settled; the synthetic levels and
-backgrounds aren't fitted to the corpus's). Good enough to rank variants with; the corpus still
-decides.
+backgrounds aren't fitted to the corpus's). It agreed with the corpus on the one comparison
+checked (fixed against no-raise); one agreement isn't enough to rank variants by it, so the corpus
+still decides.
 
 With no plane (`lab nulltest 12`; music and pink rerun with `--kinds`, so their draws differ from a
 full run's), each cloak against untouched, four lines:
@@ -1029,7 +1034,7 @@ than the first 12 runs suggested, still likely real.
 **The engine's own z isn't fair in noise.** Over 16 seeds of white noise along the test pass, the
 engine's verdict (the curve against itself 20–60 s away) averages z 0.9 with one line and 1.3 with
 four, up to 3.2; a fair null would average 0. With the stop at z 1 the fill acts on noise about half
-the time, which is the likeliest source of the pink hole.
+the time: a plausible source of the pink hole, not yet tested (OPEN_QUESTIONS.md).
 
 **`--track-lines 4`** (the verdict adds up the best four separate lines; the fill keeps going
 while the sum stands out, the strongest line first; 48 tones). Corpus tuning half, 34 cloaked
@@ -1062,16 +1067,45 @@ attacker's statistic: on synthetic white and pink noise (16 and 48 kHz) the chan
 +0.04 (lines are ~0.4). On the corpus clips it is −0.5 below 600 Hz through the attacker's best of ±2
 bins and about 0 above, for every fill level tried (`LineFill.level`: the median fill, a log-mean,
 a quadratic fit across the sides, resampled side bins, the same bin at other moments; the levels
-themselves differ by up to 1 dB in the fill's own spectrum). But those clips aren't plane-free:
+themselves differ by up to 1 dB in the fill's own spectrum). The quadratic fit and resampling were
+dropped afterwards (resampling read worse, nothing favoured the fit); the log-mean and same-bin
+levels stay as options, off, until a plane-free test can judge them, and the same-bin level's cap on
+what it copies was raised from 4× to 10× the bin's median (4× threw away 1 in 16 noise draws and
+left the fill ~0.9 dB quiet, so its run above is biased low). But those clips aren't plane-free:
 the wrong curves cross the clip's own engine lines, strongest below 600 Hz, and filling removes those
 crossings, the same confound. So there's no clean evidence yet of a fill bias on real audio; it
 needs plane-free real backgrounds to measure.
 
 **What's settled:** the four-line attacker finds 8–12 of 34 cloaked passes; removing deeper helps a
-third; a four-line stop doesn't beat it; the engine's stopping test is biased in noise (z mean
-~1). What isn't: why the rest leak, between faint real lines the engine never reaches (its biased
+third; a four-line stop doesn't beat it (both on 34 copies of 17 passes, so "settled" means for
+this half of this corpus); the engine's stopping test is biased in noise (z mean ~1 on synthetic
+white noise). What isn't: why the rest leak, between faint real lines the engine never reaches (its biased
 stop, its tolerance) and the fill. Next: the fill on plane-free real audio, and a fair null for the
 engine.
+
+## A review of the above
+
+A pass over the code and claims since "One attacker, one score". What changed, and what it does
+to the numbers recorded above:
+
+- **A line exactly on an FFT bin centre was never filled** (LineFill's guard was `c > side` where
+  the band puts the centre at exactly `side`): every frame skipped. Real lines almost never sit
+  exactly on a bin, so no corpus or session number above should move; synthetic tests at round
+  frequencies could have.
+- **`harmonics` 1 still filled ×2** under the null target; now 1 means none, and it's the default.
+  The null-target rows above were run with ×2 and ×3 filled.
+- **The same-bin fill level capped its copies at 4× the bin's median**, which drops 1 in 16 noise
+  draws and leaves the fill ~0.9 dB quiet; now 10×. Only the fill probe above used it.
+- **Ranks with an unscorable truth came out 0** (a hole) instead of NaN; none of the runs above hit
+  it (every pass scored), but a curve leaving the band would have.
+- **`lab zenodo` scored with one line** while the scoring attacker adds four; it now reports both
+  (u: four lines, u1: one).
+- **The fill is a little loud in plain noise:** along a line sweeping 10 Hz/s in white noise,
+  +0.4 dB in mean power over 6 seeds (+0.2 dB in log power); the attacker's statistic sees
+  +0.01–0.04. The old test ("strip vs beside within 2.5 dB") couldn't see it. Cause open.
+
+What isn't known, and the pitfalls that misled earlier entries (few wrong answers, the synthetic
+×2/×3 engine, the crossing lift, single seeds, loose tolerances): [OPEN_QUESTIONS.md](../OPEN_QUESTIONS.md).
 
 ## Next experiments
 

@@ -124,6 +124,82 @@ final class LineFillTests: XCTestCase {
         XCTAssertFalse(ScrubPipeline().steps.contains(.lines))
     }
 
+    /// Power along a moving line: frames of 4,096, the bins within ±`half` Hz of `f(t)`, over [t0, t1].
+    private func alongPower(_ x: [Double], rate: Int, f: (Double) -> Double, half: Double, from t0: Double, to t1: Double) -> Double {
+        let n = 4_096, fft = RealFFT(size: n), w = DSP.hann(n)
+        var re = [Double](repeating: 0, count: n / 2 + 1), im = re, total = 0.0
+        for start in stride(from: Int(t0 * Double(rate)), to: Int(t1 * Double(rate)) - n, by: n / 2) {
+            fft.forward((0..<n).map { x[start + $0] * w[$0] }, &re, &im)
+            let fc = f((Double(start) + Double(n) / 2) / Double(rate))
+            for k in Int(((fc - half) * Double(n) / Double(rate)).rounded(.up))...Int((fc + half) * Double(n) / Double(rate)) {
+                total += re[k] * re[k] + im[k] * im[k]
+            }
+        }
+        return total
+    }
+
+    /// Every fill level leaves plain noise about plain: in white noise, a strip filled along a
+    /// sweeping line (900 → 1,100 Hz over 20 s) keeps its power along the line, averaged over six
+    /// seeds, within 0.6 dB, and nothing away from it changes. One seed alone swings ±0.5 dB; the
+    /// mean for the median fill was +0.4 dB (OPEN_QUESTIONS.md, "Is the fill neutral?"), so this
+    /// guards against a gross bias, not a fine one.
+    func testEveryLevelKeepsNoiseAtItsLevel() {
+        let rate = 16_000
+        let times = Array(stride(from: 5.0, through: 25.0, by: 0.05))
+        let sweep = { (t: Double) in 900 + 10 * (min(max(t, 5), 25) - 5) }
+        let line = Track(times: times, frequencies: times.map(sweep), levels: times.map { _ in 0 })
+        for level in [LineFill.Level.median, .logMean, .binTime] {
+            var along: [Double] = []
+            for seed in 1...6 {
+                let x = DetectionScenes.white(rate * 30, seed: UInt64(40 + seed))
+                var f = LineFill()
+                f.level = level
+                var y = x, rng = SeededRNG(seed: UInt64(seed))
+                XCTAssertTrue(f.fill(&y, line, sampleRate: rate, rng: &rng), "\(level)")
+                along.append(db(alongPower(y, rate: rate, f: sweep, half: 8, from: 7, to: 23).squareRoot(),
+                                alongPower(x, rate: rate, f: sweep, half: 8, from: 7, to: 23).squareRoot()))
+                XCTAssertLessThan(abs(db(bandRMS(y, 300, 800, rate: rate), bandRMS(x, 300, 800, rate: rate))), 0.05, "\(level)")
+                XCTAssertLessThan(abs(db(bandRMS(y, 1_300, 4_000, rate: rate), bandRMS(x, 1_300, 4_000, rate: rate))), 0.05, "\(level)")
+            }
+            let mean = along.reduce(0, +) / Double(along.count)
+            XCTAssertLessThan(abs(mean), 0.6, "\(level): along the line \(along)")
+        }
+    }
+
+    /// A line exactly on a bin centre (1,000 Hz is bin 256 at 16 kHz) is filled: the band starts
+    /// `side` bins below it, so its centre sits at exactly `side` (a strict test there skipped
+    /// every frame).
+    func testALineOnABinCentreIsFilled() {
+        let rate = 16_000
+        let x = DetectionScenes.steady(hz: 1_000, snr: 12, rate: rate, seed: 4).mono
+        let times = Array(stride(from: 2.0, through: 18.0, by: 0.05))
+        let line = Track(times: times, frequencies: times.map { _ in 1_000 }, levels: times.map { _ in 0 })
+        var y = x, rng = SeededRNG(seed: 2)
+        XCTAssertTrue(LineFill().fill(&y, line, sampleRate: rate, rng: &rng))
+        // The tone (12 dB over a hertz of noise) was 4 dB over the noise in these 10 Hz; gone, the
+        // strip is the noise beside it.
+        let seg = Array(y[(4 * rate)..<(16 * rate)]), orig = Array(x[(4 * rate)..<(16 * rate)])
+        XCTAssertLessThan(db(bandRMS(seg, 995, 1_005, rate: rate), bandRMS(orig, 995, 1_005, rate: rate)), -3, "the tone should be gone")
+        XCTAssertLessThan(abs(db(bandRMS(seg, 995, 1_005, rate: rate), bandRMS(seg, 1_095, 1_105, rate: rate))), 1.5, "strip vs beside")
+    }
+
+    /// The same-bin level copies only from outside the strip, and never more than its cap.
+    func testSameBinCopiesOnlyFromOutsideTheStripAndUnderTheCap() {
+        let W = 20, F = 200, half = 3
+        var power = [Double](repeating: 1, count: W * F)
+        for m in 0..<F where m % 7 == 0 { for k in 0..<W { power[m * W + k] = 50 } }   // loud frames: over the cap
+        let centre = (0..<F).map { m in m >= 80 && m < 120 ? 10.0 : Double.nan }         // the strip, bins 6–14
+        for m in 0..<F { for k in 0..<W where abs(Double(k) - centre[m]) <= Double(half + 1) { power[m * W + k] = 999 } }
+        var rng = SeededRNG(seed: 1)
+        for _ in 0..<2_000 {
+            let k = Int(rng.uniform(0...1) * Double(W - 1)), m = 80 + Int(rng.uniform(0...1) * 39)
+            if let p = LineFill.sameBin(k, m, power: power, W: W, F: F, centre: centre, half: half, median: 1, reach: 60, cap: 10, rng: &rng) {
+                XCTAssertNotEqual(p, 999, "copied from inside the strip")
+                XCTAssertLessThanOrEqual(p, 10)
+            }
+        }
+    }
+
     func testFFTSizeAndInterpolation() {
         XCTAssertEqual(LineFill.fftSize(sampleRate: 48_000), 8_192)
         XCTAssertEqual(LineFill.fftSize(sampleRate: 16_000), 4_096)

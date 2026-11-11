@@ -7,6 +7,7 @@ The research and planning behind octave-camo. The user-facing overview is the
 | --- | --- |
 | [ACOUSTICS.md](ACOUSTICS.md) | How the check finds tones, and why: windows, integration, thresholds, measured sensitivity |
 | [EXPERIMENTS.md](EXPERIMENTS.md) | The lab notebook: each experiment, its numbers, what it changed |
+| [OPEN_QUESTIONS.md](../OPEN_QUESTIONS.md) | What isn't known yet, what would settle it, and pitfalls that misled us before |
 | [PLAN.md](PLAN.md) | The order of work: done, now, next |
 | [IDEAS.md](IDEAS.md) | The backlog, and sparks from the data |
 | [RESEARCH.md](RESEARCH.md) | A survey of related work and what it means for us |

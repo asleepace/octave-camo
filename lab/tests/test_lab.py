@@ -274,6 +274,84 @@ class PublicCorpus(unittest.TestCase):
         self.assertGreater(np.mean(noise), 0.15)
 
 
+class Invariants(unittest.TestCase):
+    """Properties the scoring relies on, on made-up numbers (no audio)."""
+
+    def test_rank_is_uniform_when_the_truth_is_one_more_draw(self):
+        rng = np.random.default_rng(0)
+        u = np.array([locate.rank(rng.normal(), rng.normal(size=144)) for _ in range(4000)])
+        self.assertAlmostEqual(u.mean(), 0.5, delta=0.02)
+        self.assertAlmostEqual(np.mean(u >= 0.95), 0.05, delta=0.015)   # a 5 % tail is 5 % of clips
+        self.assertAlmostEqual(np.mean(u <= 0.05), 0.05, delta=0.015)
+        # Discrete draws (ties): halving them keeps it centred.
+        d = np.array([locate.rank(float(rng.integers(3)), rng.integers(3, size=40).astype(float)) for _ in range(4000)])
+        self.assertAlmostEqual(d.mean(), 0.5, delta=0.02)
+
+    def test_rank_edges(self):
+        self.assertTrue(np.isnan(locate.rank(np.nan, np.arange(5.0))))
+        self.assertTrue(np.isnan(locate.rank(1.0, np.array([np.nan, np.nan]))))
+        self.assertEqual(locate.rank(10.0, np.array([1.0, 2.0, np.nan])), 1.0)   # unscorable nulls don't count
+        self.assertEqual(locate.rank(0.0, np.array([1.0, 2.0])), 0.0)
+        self.assertEqual(locate.rank(1.5, np.array([1.0, 2.0])), 0.5)
+        r = [locate.rank(s0, np.array([0.0, 1.0, 2.0, 3.0])) for s0 in (-1, 0.5, 1.5, 2.5, 4)]
+        self.assertEqual(r, sorted(r))                                          # monotone in the truth
+
+    def scene(self):
+        sc = object.__new__(locate.Scene)
+        sc.df = 5.86                                                            # Hz per bin, as at 48 kHz
+        return sc
+
+    def test_lines_of_picks_separate_lines_best_first(self):
+        sc, F = self.scene(), locate.F0S
+        prof = np.zeros(len(F))
+        near = lambda f: int(np.argmin(np.abs(F - f)))
+        for f, v in ((500, 3.0), (505, 2.9), (900, 2.0), (1500, 1.0)):            # 505 is inside 500's width
+            prof[near(f)] = v
+        picks = sc.line_picks(prof, 3)
+        self.assertEqual([round(v, 1) for _, v in picks], [3.0, 2.0, 1.0])     # 505 Hz counted with 500
+        width = (2 * locate.TOL_BINS + 1) * sc.df
+        fs = [f for f, _ in picks]
+        self.assertTrue(all(abs(a - b) >= width for i, a in enumerate(fs) for b in fs[i + 1:]))
+        self.assertAlmostEqual(sc.lines_of(prof, 1), np.nanmax(prof))
+        self.assertAlmostEqual(sc.lines_of(prof, 3), 6.0)
+        # Each pick is no better than the one before (greedy, best first).
+        vals = [v for _, v in sc.line_picks(np.random.default_rng(1).normal(size=len(F)), 8)]
+        self.assertEqual(vals, sorted(vals, reverse=True))
+
+    def test_lines_of_shifts_with_a_constant_and_is_nan_when_empty(self):
+        sc = self.scene()
+        prof = np.random.default_rng(2).normal(size=len(locate.F0S))
+        for k in (1, 4):                       # a constant offset moves every curve alike: ranks hold
+            self.assertAlmostEqual(sc.lines_of(prof + 0.7, k), sc.lines_of(prof, k) + 0.7 * k, places=9)
+        self.assertTrue(np.isnan(sc.lines_of(np.full(len(locate.F0S), np.nan), 4)))
+
+    def test_per_rest_is_the_scene_profile(self):
+        from lab import fillmark, synth
+        x = synth.room(30, seed=5)[: int(30 * synth.SR)]
+        sc = locate.Scene(x, synth.SR, "test:inv:profile")
+        j = np.flatnonzero(np.abs(sc.t - 15) <= 10)
+        fac = fillmark.factor(sc.t[j], 15)
+        np.testing.assert_array_equal(fillmark.per_rest(sc, j, fac), sc._profile(j, fac))
+        self.assertTrue(np.isnan(fillmark.per_rest(sc, j[:5], fac[:5])).all())   # too few frames: nothing
+
+    def test_corpus_halves_are_fixed_by_the_id_alone(self):
+        ids = [f"N{k}XY_R{k % 70:02d}" for k in range(400)]
+        halves = [zenodo.half(c) for c in ids]
+        self.assertEqual(halves, [zenodo.half(c) for c in ids])               # same answer every time
+        self.assertEqual(set(halves), {"tune", "holdout"})
+        self.assertAlmostEqual(halves.count("tune") / len(ids), 0.5, delta=0.08)
+
+    def test_u_is_nan_when_the_truth_cant_be_scored(self):
+        t = np.arange(0, 50, 0.1707)
+        ps = [{"case": f"c{k}", "t": t, "f": 300 * (1 + d / 2 - d / (1 + np.exp(-(t - 25) / 4)))} for k, d in enumerate((0.3, 0.1, 0.5))]
+        x = np.random.default_rng(3).normal(0, 1, int(SR * 60))
+        sc = locate.Scene(x, SR, "test:inv:u")
+        u, n = zenodo.u(sc, ps[0], ps, offset=200.0)                          # the curve is past the audio's end
+        self.assertTrue(np.isnan(u))
+        self.assertEqual(n, 0)
+        self.assertEqual(zenodo.ATTACKER_LINES, 4)                             # what THREAT_MODEL.md scores with
+
+
 class SyntheticEngine(unittest.TestCase):
     """lab/nulltest.py's engine: the public corpus's kind (a few unrelated lines, similar levels)."""
 
@@ -292,6 +370,8 @@ class SyntheticEngine(unittest.TestCase):
             self.assertTrue(all(10 ** (-6 / 20) - 1e-9 <= a <= 10 ** (3 / 20) + 1e-9 for _, a in e[1:]))
         h = nulltest.engine(rng, "harmonic")
         self.assertEqual([round(f / h[0][0], 6) for f, _ in h], [1.0, 2.0, 3.0])
+        # The same seed gives the same engine (runs pair across variants by seed).
+        self.assertEqual(nulltest.engine(np.random.default_rng(9)), nulltest.engine(np.random.default_rng(9)))
 
 
 class Holdout(unittest.TestCase):
