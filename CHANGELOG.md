@@ -9,6 +9,15 @@ are grouped by milestone, newest first, with the commits that made them.
 
 ## [Unreleased]
 
+### A fair stopping test, now the default
+
+- **The track step's stop compares a pass with wrong places, not wrong times** (`TrackFill.null =
+  .wrongPlaces`; `--track-null wrongTimes` restores the old one). The old comparison set the pass's
+  sweeping curve against its own flat tails, which in noise made the truth win by default: z
+  averaged 1.05 in white noise and the stop acted on 30 % of real backgrounds where nothing passed,
+  leaving a hole. Now: z −0.06, and no measurable hole (−0.005 ± 0.009). On the public corpus leaks
+  move +0.04 ± 0.04 (not significant). docs/EXPERIMENTS.md, "A fair stopping test".
+
 ### Scoring against one attacker, and a review
 
 - **One attacker and one score** (THREAT_MODEL.md): the truth's rank among wrong answers, read at

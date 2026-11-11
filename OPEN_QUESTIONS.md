@@ -92,7 +92,7 @@ attacker every result is scored against").
   attacker's own statistic it's +0.01 to +0.04. The cause is unknown. It doesn't show up as a mark
   so far, but nobody has checked whether a power-based attacker would see it.
 
-### The engine's stopping test was biased in noise (fix built, not yet default)
+### The engine's stopping test was biased in noise (fixed; the fair stop is the default)
 - **Cause:** it compared the sweeping true curve with its own flat tails (wrong times), and a flat
   curve gets fewer independent tries at the best rest frequency. In white noise z averaged 1.05; on
   real backgrounds the stop fired on 30 % of curves nothing follows and left a hole (−0.029 ±
@@ -100,8 +100,8 @@ attacker every result is scored against").
 - **Fix:** `--track-null wrongPlaces` (curves a different geometry gives). In white noise z averages
   −0.06. On real backgrounds it fires on 14 % and the hole is −0.005 ± 0.009. On the corpus, leaks
   +0.04 ± 0.04 (not significant).
-- **Open:** whether to make it the default, and whether the null target with fair nulls (remove until
-  the score is a random draw from the wrong places) gets leaks down without bringing the hole back.
+- **Open:** whether the null target with fair nulls (remove until the score is a random draw from the
+  wrong places) gets leaks down without bringing the hole back.
 
 ### Is the plane-free pink hole the stop's bias too?
 - **Known:** 24 plane-free pink runs, paired with untouched: the fixed stop is lower by 0.07 ± 0.04

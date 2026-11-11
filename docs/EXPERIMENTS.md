@@ -1217,7 +1217,8 @@ So the fair stop fixes the hole and costs little or nothing on leaks. Leaks are 
 problem (12–13 of 34, chance ~2), and removing more (deeper) helps them only by also firing more on
 noise. A stop that doesn't trade one for the other is the null target with fair nulls: remove until
 the pass's score is a random draw from its wrong places (no raising). The earlier null target used
-the biased wrong-times nulls. Not yet the default; next to test.
+the biased wrong-times nulls. The fair stop is now the default (`TrackFill.null = .wrongPlaces`);
+the null target with fair nulls is next.
 
 ## Next experiments
 

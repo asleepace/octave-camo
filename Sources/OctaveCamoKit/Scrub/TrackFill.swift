@@ -96,9 +96,11 @@ public struct TrackFill {
     /// - `wrongPlaces`: curves a different geometry would give, as the attacker's wrong answers are:
     ///   the pass's own curve with its swing's depth (in log factor) and duration scaled by
     ///   `placeScales` (not both 1), centred `placeOffsets` s from the truth's closest approach.
-    ///   They sweep like the truth, so the best-of-many advantage cancels. Experimental.
+    ///   They sweep like the truth, so the best-of-many advantage cancels. The default: in white
+    ///   noise z averages −0.06 (1.05 against wrong times), and on real backgrounds it leaves no
+    ///   measurable hole where nothing passed (docs/EXPERIMENTS.md, "A fair stopping test").
     public enum Null: String { case wrongTimes, wrongPlaces }
-    public var null = Null.wrongTimes
+    public var null = Null.wrongPlaces
     public var placeScales: [Double] = [0.6, 1, 1.6]
     public var placeOffsets: [Double] = [-6, -3, 0, 3, 6]
     /// The search looks this far either side of the closest approach, s (where the pass is loud).

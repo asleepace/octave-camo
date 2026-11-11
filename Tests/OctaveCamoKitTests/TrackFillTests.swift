@@ -174,6 +174,7 @@ final class TrackFillTests: XCTestCase {
         func above(_ harmonics: Int) -> Double {
             var s = Self.stage([Self.expected()])
             s.target = .null; s.harmonics = harmonics; s.maxTones = 1
+            s.maxRaises = 0                 // only the fill and its multiples, no raising after it
             let y = s.process(x, sampleRate: Self.rate).output
             return Self.bandPower(zip(y, x).map { $0 - $1 }, (2_300, 7_000))
         }
@@ -183,12 +184,12 @@ final class TrackFillTests: XCTestCase {
         XCTAssertEqual(TrackFill().harmonics, 1, "off by default: tuned on a synthetic ×2/×3 engine")
     }
 
-    /// The defaults are the shipped behaviour: the fixed stop on one line, no raising in effect.
+    /// The defaults are the shipped behaviour: the fixed stop on one line against wrong places.
     func testDefaultsAreTheFixedStopOnOneLine() {
         let s = TrackFill()
         XCTAssertEqual(s.target, .fixed)
         XCTAssertEqual(s.lines, 1)
-        XCTAssertEqual(s.null, .wrongTimes)
+        XCTAssertEqual(s.null, .wrongPlaces)
         XCTAssertEqual(TrackFill.reach(toleranceHz: 0, binHz: 7.8), 2)
         XCTAssertEqual(TrackFill.reach(toleranceHz: 39, binHz: 7.8), 5)
     }
