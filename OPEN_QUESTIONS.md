@@ -100,8 +100,19 @@ attacker every result is scored against").
 - **Fix:** `--track-null wrongPlaces` (curves a different geometry gives). In white noise z averages
   −0.06. On real backgrounds it fires on 14 % and the hole is −0.005 ± 0.009. On the corpus, leaks
   +0.04 ± 0.04 (not significant).
-- **Open:** whether the null target with fair nulls (remove until the score is a random draw from the
-  wrong places) gets leaks down without bringing the hole back.
+- **Open: the fair stop is fairer but weaker.** On the corpus's own shapes at 48 kHz (`--track-stop
+  999`, nothing filled), the engine's z on real passes against white noise along the same shapes:
+  wrong times 2.70 against +1.50 (a gap of 1.2), wrong places 1.10 against +0.41 (a gap of 0.7),
+  both with a spread of ~1.5. Wider scale families (0.4–2.5) didn't separate them better. The
+  attacker's own u separates the same passes far better (0.92 against 0.5): its wrong answers are
+  other geometries, while the engine's are scaled copies of its own curve, which sit on the real
+  line near the closest approach and share its credit.
+- **Would settle it:** give the engine wrong places like the attacker's, a fixed library of physical
+  Doppler shapes (speeds, closest distances, altitudes), placed at the pass's moment ±6 s, and score
+  the pass's rank among them as u does. Check that it averages 0.5 in noise and on `lab blank`, and
+  that it ranks the corpus's untouched passes as high as u.
+- The null target with fair nulls depends on this: with the current family its target comes out
+  high and it stops early (N913TC: 2 tones filled where the fixed stop fills 7).
 
 ### Is the plane-free pink hole the stop's bias too?
 - **Known:** 24 plane-free pink runs, paired with untouched: the fixed stop is lower by 0.07 ± 0.04
