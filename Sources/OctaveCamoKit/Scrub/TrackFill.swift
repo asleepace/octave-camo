@@ -48,6 +48,14 @@ public struct ExpectedPass: Codable, Equatable {
     /// Where the search centres: the closest approach when given, else the steepest fall.
     var center: Double { closest ?? steepest }
 
+    /// The same pass reshaped as the scoring attacker's scaled wrong places are: factor^a, time
+    /// stretched by b about its centre, centred `offset` later.
+    public func scaled(a: Double, b: Double, offset: Double) -> ExpectedPass {
+        let c = center
+        return ExpectedPass(times: times.map { c + offset + ($0 - c) * b },
+                            factors: factors.map { exp(a * log($0)) }, closest: c + offset)
+    }
+
     func factor(at t: Double) -> Double? {
         guard let first = times.first, let last = times.last, t >= first, t <= last, times.count == factors.count else { return nil }
         var lo = 0, hi = times.count - 1
@@ -214,6 +222,12 @@ public struct TrackFill {
     public var actAbove = 0.9
     public var rankRounds = 24
     public var rankWrong = Attacker.Wrong.scaled
+    /// Experimental: each line filled along a pass is also filled, at the same rest frequency, along
+    /// this many decoy curves (the pass reshaped as the attacker's scaled wrong places are, drawn once
+    /// per pass). Filling only along the truth changes cells that wrong places' curves cross and the
+    /// truth's own best lines, parallel to the strips, never do (docs/EXPERIMENTS.md); decoys give the
+    /// wrong places the same treatment.
+    public var decoys = 0
     /// Raising: rounds per pass, and the most any strip is raised in all, dB.
     public var maxRaises = 6
     public var maxGainDB = 10.0
@@ -269,14 +283,18 @@ public struct TrackFill {
         fill.relativeMargin = relativeMargin
         fill.level = fillLevel
         if !forcedRests.isEmpty {
-            var done: [String] = []
+            var done: [String] = [], along = 0
+            var picker = SeededRNG(seed: seed ^ 0x6465_636f_7973)
+            let decoyPasses = stage.decoyPasses(for: usable[0], rng: &picker)
             for r in forcedRests {
                 let tone = Tone(pass: 0, rest: r, offset: 0, z: 0, effect: 0)
                 if let line = stage.track(tone, sampleRate: sampleRate, count: y.count), fill.fill(&y, line, sampleRate: sampleRate, rng: &rng) {
                     done.append("\(Int(r.rounded())) Hz")
+                    along += stage.fillDecoys(decoyPasses, rest: r, &y, sampleRate: sampleRate, fill: fill, rng: &rng)
                 }
             }
-            return (y, "tracks: forced, filled \(done.count) tone(s)\(done.isEmpty ? "" : " (" + done.joined(separator: ", ") + ")")")
+            return (y, "tracks: forced, filled \(done.count) tone(s)\(done.isEmpty ? "" : " (" + done.joined(separator: ", ") + ")")"
+                        + (decoys > 0 ? ", and \(along) along \(decoyPasses.count) decoy(s)" : ""))
         }
         if target == .rank { return stage.rankStop(y, sampleRate: sampleRate, fill: &fill, rng: &rng) }
         var filled: [Tone] = [], open = Set(usable.indices), count = [Int](repeating: 0, count: usable.count)
@@ -398,6 +416,36 @@ public struct TrackFill {
     var fillHalfWindow: Double { halfWindow + maxOffset }
 
     /// The predicted tone as a track around the closest approach (where it was tested).
+    /// `decoys` curves for a pass, drawn without replacement from the scaled wrong places' shapes
+    /// and timings (Attacker's scales and offsets).
+    func decoyPasses(for pass: ExpectedPass, rng: inout SeededRNG) -> [ExpectedPass] {
+        guard decoys > 0 else { return [] }
+        let attacker = Attacker()
+        var all: [(Double, Double, Double)] = []
+        for a in attacker.scales { for b in attacker.scales where !(a == 1 && b == 1) { for o in attacker.offsets { all.append((a, b, o)) } } }
+        var chosen: [ExpectedPass] = []
+        while chosen.count < min(decoys, all.count) {
+            let i = Int(rng.uniform(0...1) * Double(all.count)) % all.count
+            let (a, b, o) = all.remove(at: i)
+            let d = pass.scaled(a: a, b: b, offset: o)
+            if d.isValid { chosen.append(d) }
+            if all.isEmpty { break }
+        }
+        return chosen
+    }
+
+    /// Fills `rest` along each decoy curve; how many took.
+    func fillDecoys(_ passes: [ExpectedPass], rest: Double, _ y: inout [Double], sampleRate: Int, fill: LineFill, rng: inout SeededRNG) -> Int {
+        var n = 0
+        for d in passes {
+            var one = self
+            one.expected = [d]
+            if let line = one.track(Tone(pass: 0, rest: rest, offset: 0, z: 0, effect: 0), sampleRate: sampleRate, count: y.count),
+               fill.fill(&y, line, sampleRate: sampleRate, rng: &rng) { n += 1 }
+        }
+        return n
+    }
+
     func track(_ tone: Tone, sampleRate: Int, count: Int) -> Track? {
         let pass = expected[tone.pass], end = Double(count) / Double(sampleRate), c = pass.center + tone.offset
         var times: [Double] = [], freqs: [Double] = []

@@ -215,6 +215,48 @@ final class TrackFillTests: XCTestCase {
         XCTAssertLessThan(Self.bandPower(diff, (2_300, 7_000)), 1e-9 * max(Self.bandPower(diff, (800, 2_200)), 1e-300))
     }
 
+    /// A scaled pass is the attacker's scaled wrong place: factor^a, time stretched by b about the
+    /// centre, centred `offset` later.
+    func testScaledPassMatchesTheAttackersWrongPlace() {
+        let p = Self.expected()
+        let c = p.center
+        for (a, b, o) in [(1.0, 1.0, 3.0), (0.6, 1.6, -4.5), (1.6, 0.6, 1.5)] {
+            let d = p.scaled(a: a, b: b, offset: o)
+            // A fast pass's factor^1.6 can leave the physical range (decoyPasses skips those).
+            XCTAssertEqual(d.isValid, d.factors.allSatisfy { $0 > 0.5 && $0 < 2 })
+            XCTAssertEqual(d.center, c + o, accuracy: 1e-9)
+            for t in stride(from: c - 20, through: c + 20, by: 2.5) {
+                guard let want = p.factor(at: c + (t - c - o) / b).map({ exp(a * log($0)) }), let got = d.factor(at: t) else { continue }
+                // Raised then interpolated against interpolated then raised: equal to second order in the grid step.
+                XCTAssertEqual(got, want, accuracy: 1e-5, "a \(a) b \(b) o \(o) t \(t)")
+            }
+        }
+    }
+
+    /// Decoys: K distinct valid curves, none the truth, the same for the same seed; with decoys each
+    /// forced fill is also made along every decoy.
+    func testDecoysAreDistinctWrongPlacesAndAreFilled() {
+        var s = Self.stage([Self.expected()])
+        s.decoys = 6
+        var r1 = SeededRNG(seed: 11), r2 = SeededRNG(seed: 11)
+        let a = s.decoyPasses(for: Self.expected(), rng: &r1), b = s.decoyPasses(for: Self.expected(), rng: &r2)
+        XCTAssertEqual(a.count, 6)
+        XCTAssertEqual(a, b)
+        XCTAssertEqual(Set(a.map { $0.factors.prefix(50).map { ($0 * 1e9).rounded() } + [($0.center * 1e6).rounded()] }).count, 6)
+        XCTAssertFalse(a.contains(Self.expected()))
+        let x = LineFillTests.fanTone(rate: Self.rate, snr: 20).mono
+        s.forcedRests = [1_234]
+        let r = s.process(x, sampleRate: Self.rate)
+        XCTAssertTrue(r.summary.contains("forced, filled 1 tone(s) (1234 Hz), and 6 along 6 decoy(s)"), r.summary)
+        // The decoy strips change audio beyond the truth's strip: the change carries more energy
+        // than one fill alone (the six decoy strips, each about as much as the truth's minus its tone).
+        var plain = Self.stage([Self.expected()])
+        plain.forcedRests = [1_234]
+        let one = plain.process(x, sampleRate: Self.rate).output
+        let energy = { (y: [Double]) in zip(y, x).reduce(0) { $0 + ($1.0 - $1.1) * ($1.0 - $1.1) } }
+        XCTAssertGreaterThan(energy(r.output), 1.5 * energy(one))
+    }
+
     /// `harmonics` 1 means none: with one tone allowed, the null target touches nothing above the
     /// fundamental's sweep (870–2,090 Hz here); with 3 it also fills ×2 and ×3 there.
     func testHarmonicsOneFillsNoMultiples() {

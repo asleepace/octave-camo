@@ -362,13 +362,16 @@ extension TrackFill {
         for i in stride(from: 0, to: x.count, by: max(1, x.count / 4_096)) { mix(x[i].bitPattern) }
         for p in expected { mix(p.center.bitPattern) }
         var draws = SeededRNG(seed: seed ^ 0x7261_6e6b ^ h)
-        var filled: [Double] = [], notes: [String] = []
+        var filled: [Double] = [], notes: [String] = [], along = 0, decoyCount = 0
         func three(_ v: Double) -> String { "\((v * 1000).rounded() / 1000)" }
         for (pi, pass) in expected.enumerated() {
             let goal = Double.random(in: 0..<1, using: &draws)  // drawn for every pass, so passes keep their draws
             guard var v = attacker.judge(y, sampleRate: sampleRate, pass: pass) else { notes.append("untestable"); continue }
             let start = v.rank
             guard start >= actAbove else { notes.append("\(three(start)) (left alone)"); continue }
+            var picker = SeededRNG(seed: seed ^ 0x6465_636f_7973 ^ h &+ UInt64(pi))
+            let decoyPasses = decoyPasses(for: pass, rng: &picker)
+            decoyCount += decoyPasses.count
             var mine: [Double] = [], attempts = 0, why = ""
             while v.rank > goal {
                 guard attempts < rankRounds else { why = rankRounds > 0 ? " out of fills" : ""; break }
@@ -382,6 +385,7 @@ extension TrackFill {
                 guard let line = track(tone, sampleRate: sampleRate, count: y.count),
                       fill.fill(&y, line, sampleRate: sampleRate, rng: &rng) else { continue }
                 filled.append(pick.rest)
+                along += fillDecoys(decoyPasses, rest: pick.rest, &y, sampleRate: sampleRate, fill: fill, rng: &rng)
                 guard let next = attacker.judge(y, sampleRate: sampleRate, pass: pass) else { why = " untestable"; break }
                 v = next
             }
@@ -389,6 +393,7 @@ extension TrackFill {
         }
         let list = filled.map { "\(Int($0.rounded())) Hz" }.joined(separator: ", ")
         return (y, "tracks: rank target, \(expected.count) expected pass(es), filled \(filled.count) tone(s)"
-                    + (list.isEmpty ? "" : " (" + list + ")") + "; attacker rank " + notes.joined(separator: ", "))
+                    + (list.isEmpty ? "" : " (" + list + ")") + (decoys > 0 ? ", and \(along) along \(decoyCount) decoy(s)" : "")
+                    + "; attacker rank " + notes.joined(separator: ", "))
     }
 }
