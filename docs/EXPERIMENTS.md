@@ -1297,6 +1297,61 @@ engine noise whose spectral shape moves with the Doppler factor. Every rest freq
 follows the curve, so ~30 Hz strips filled a few at a time can't finish it. It needs band-level
 treatment along the pass (a stronger, time-varying flatten in the pass's window) or decoys.
 
+## The cloak judges like the attacker
+
+**The port.** `Attacker` (Sources/OctaveCamoKit/Scrub/Attacker.swift) is the lab's scoring
+statistic in the engine: the lab's whitening (scipy-framed STFT, exact 15 s running median), the best
+four separate lines along a curve, and the truth's rank among wrong places, ties halved. On the
+public corpus's 17 tuning passes its ranks equal the lab's to three places, against both wrong-place
+sets below (17 of 17 each; lab/tests `EngineAttacker` checks it on synthetic passes).
+
+**Which wrong places.** The cloak can't see the other passes the corpus ranks against, so it needs
+wrong places of its own. Two sets, compared on the 17 passes after the blind preset and on 37
+plane-free real-background placements:
+
+| wrong places | agrees with corpus u (corr.) | corpus leaks it ranks ≥ 0.9 | blank: mean rank | blank: ≥ 0.9 |
+| --- | ---: | ---: | ---: | ---: |
+| the truth's curve scaled (factor^a, time ×b, a, b ∈ {0.6, 1, 1.6}) × 9 offsets: 72 | 0.99 | all | 0.49 | 5.4 % |
+| physical flights (5 speeds × 5 distances) × 9 offsets: 225 | 0.93 | 73 % | 0.47 | 0 % |
+
+Physical flights are too easy to beat: the far, flat ones match a real background's steady lines, so
+the truth rarely stands out among them. The scaled truth is the default (`--track-rank-null`).
+
+**The stop** (`--track-target rank`). Judge the pass; if it ranks below 0.9, leave the audio alone.
+Otherwise draw a target g uniformly from 0 to 1 (seeded, mixed with a hash of the clip), and fill the
+attacker's best line on the current audio, one at a time, re-judging after each, until the rank is at
+or below g (at most 24 fills, each rest at most twice). Under the null only the top 10 % is touched
+and it's spread over 0…1, so by the cloak's own measure it can't leave a hole beyond about 0.5 % of
+copies.
+
+**Corpus tuning half** (17 passes × 2 seeds, four lines):
+
+| | leaks of 34 | holes | mean u | tones filled per copy | sound change |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| default stop | 12 | 2 | 0.76 | 5.2 | 0.98 dB |
+| deeper (stop −0.5, 48 tones) | 8 | 2 | 0.63 | 14.5 | 1.24 dB |
+| rank, physical flights | 8 | 2 | 0.76 | 8.1 | 1.00 dB |
+| **rank, scaled truth** | **5** | **3** | **0.63** | **9.8** | **1.16 dB** |
+
+Two of the holes are N373DF in both seeds, which the stop leaves alone (it ranks 0.01 before
+anything is filled); the third, N231DT s7 (u 0.05), is new. The five leaks:
+- N413AK_R05, both seeds: the loop gives up (1.0 → 0.90 and 1.0 → 1.0) before its target.
+- N784MB s8 (1.0 → 0.89, target 0.60) and N60RS s7 (1.0 → 0.93): stopped short too; N60RS is one
+  of the two broadband humps.
+- N621KS s8: the cloak ranks it 0.85 and leaves it alone, but the corpus's wrong places put it at
+  1.00.
+
+**After cloaking the two scores part ways.** Before the cloak the engine's rank and corpus u agree
+(0.99); after it, a copy the cloak lowered to 0.11 can still read 0.54, and one left at 0.85 reads
+1.00. The cloak optimizes against its own wrong places, and what it learns doesn't fully carry over
+to different ones. That's the expected cost of a cloak judging itself, and why it's scored against
+the corpus's.
+
+**Real backgrounds** (`lab blank`, 91 placements in 16 sessions, two seeds, against the preset
+blind to the curve): (partial: 63 placements in 13 sessions so far,
+four lines) the rank stop fires on 2 % of copies (the default on 25 %), and its effect is
+−0.002 ± 0.002 (the default's −0.017 ± 0.012). Final numbers to follow.
+
 ## Next experiments
 
 0. **The place as the metric** (envelope term, holdouts, stopping, the public corpus and the
