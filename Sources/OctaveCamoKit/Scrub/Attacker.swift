@@ -20,7 +20,8 @@ import WASILibc
 /// - ranked against physical wrong places (lab/geometry.py's library, at lab/zenodo.py's ±6 s
 ///   offsets), ties halved.
 ///
-/// That is `zenodo.u(scene, p, [p] + geometry.library(), offset, 4)`. The lab subtracts the whole
+/// With `wrong = .library` that is `zenodo.u(scene, p, [p] + geometry.library(), offset, 4)`; with
+/// `.scaled` (the default), the same against `geometry.scaled(p)`. The lab subtracts the whole
 /// clip's mean excess first; that shifts every curve's score alike and leaves ranks and picks
 /// unchanged, so the scene here is only the stretch around the pass.
 public struct Attacker {
@@ -33,6 +34,14 @@ public struct Attacker {
     public var minFrames = 80
     public var speeds: [Double] = [60, 90, 130, 180, 230]
     public var distances: [Double] = [400, 800, 1_500, 3_000, 5_000]
+    /// Which wrong places the truth is ranked against: physical flights (`library`), or the truth's
+    /// own flight as other places hear it, its swing scaled in depth and duration about the closest
+    /// approach (`scaled`; lab/geometry.py's `scaled`). The scaled set tracks the scoring
+    /// attacker's corpus ranks far better on real audio (docs/EXPERIMENTS.md, "The cloak judges
+    /// like the attacker"): the library's far, flat flights match a real background's steady lines.
+    public enum Wrong: String, Sendable { case library, scaled }
+    public var wrong = Wrong.scaled
+    public var scales: [Double] = [0.6, 1, 1.6]
     /// A wrong place's closest approach, around the truth's (numpy's arange(-6, 6.01, 1.5)).
     public var offsets: [Double] = (0...8).map { -6 + 1.5 * Double($0) }
 
@@ -312,11 +321,19 @@ public struct Attacker {
         guard !top.isEmpty else { return nil }
         let s0 = top.reduce(0) { $0 + $1.value }
         var nulls: [Double] = []
-        for shape in shapes() {
-            for o in offsets {
-                guard let p = profile(s, r, factor: { Self.interp($0 - c - o, shape.t, shape.f) }) else { continue }
-                let q = picks(p, df: s.df)
-                if !q.isEmpty { nulls.append(q.reduce(0) { $0 + $1.value }) }
+        func add(_ factor: (Double) -> Double?) {
+            guard let p = profile(s, r, factor: factor) else { return }
+            let q = picks(p, df: s.df)
+            if !q.isEmpty { nulls.append(q.reduce(0) { $0 + $1.value }) }
+        }
+        switch wrong {
+        case .library:
+            for shape in shapes() { for o in offsets { add { Self.interp($0 - c - o, shape.t, shape.f) } } }
+        case .scaled:
+            for a in scales {
+                for b in scales where !(a == 1 && b == 1) {
+                    for o in offsets { add { t in pass.factor(at: c + (t - c - o) / b).map { exp(a * log($0)) } } }
+                }
             }
         }
         guard !nulls.isEmpty else { return nil }
@@ -335,8 +352,16 @@ extension TrackFill {
     /// nothing there only the top (1 − `actAbove`) is touched, and it's spread over 0…1.
     func rankStop(_ x: [Double], sampleRate: Int, fill: inout LineFill, rng: inout SeededRNG) -> (output: [Double], summary: String) {
         var y = x
-        let attacker = Attacker()
-        var draws = SeededRNG(seed: seed ^ 0x7261_6e6b)          // targets apart from the fill's noise
+        var attacker = Attacker()
+        attacker.wrong = rankWrong
+        // Targets apart from the fill's noise, and different for every clip even under one fixed
+        // seed: a seed reused across videos must not land them all at the same rank.
+        var h: UInt64 = 0xcbf2_9ce4_8422_2325
+        func mix(_ v: UInt64) { h = (h ^ v) &* 0x100_0000_01b3 }
+        mix(UInt64(x.count))
+        for i in stride(from: 0, to: x.count, by: max(1, x.count / 4_096)) { mix(x[i].bitPattern) }
+        for p in expected { mix(p.center.bitPattern) }
+        var draws = SeededRNG(seed: seed ^ 0x7261_6e6b ^ h)
         var filled: [Double] = [], notes: [String] = []
         func three(_ v: Double) -> String { "\((v * 1000).rounded() / 1000)" }
         for (pi, pass) in expected.enumerated() {

@@ -66,7 +66,7 @@ final class AttackerTests: XCTestCase {
         guard let v = Self.judge(x) else { return XCTFail("no verdict") }
         XCTAssertGreaterThanOrEqual(v.rank, 0.99)
         XCTAssertEqual(v.picks.first?.rest ?? 0, 1_234, accuracy: 1_234 * 0.015)
-        XCTAssertEqual(v.nulls, 225)
+        XCTAssertEqual(v.nulls, 72)                    // 8 scaled versions × 9 timings
         let noise = (1...6).compactMap { Self.judge(DetectionScenes.white(Self.rate * 60, seed: UInt64($0)))?.rank }
         XCTAssertEqual(noise.count, 6)
         let mean = noise.reduce(0, +) / Double(noise.count)

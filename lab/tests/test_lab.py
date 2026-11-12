@@ -467,7 +467,7 @@ class FlightGeometry(unittest.TestCase):
 
 class EngineAttacker(unittest.TestCase):
     """The engine's port of the scoring attacker (Attacker.swift, `--track-target rank`) gives the
-    lab's rank: `zenodo.u` against the physical library, four lines. Needs the release build."""
+    lab's rank: `zenodo.u` against the physical library or the scaled truth, four lines. Needs the release build."""
 
     def test_engine_rank_equals_lab_rank(self):
         import json, re, subprocess, tempfile
@@ -491,18 +491,20 @@ class EngineAttacker(unittest.TestCase):
                 x = rng.standard_normal(len(t))
                 for f0 in (700.0, 1130.0):
                     x += amp * np.sqrt(2) * 10 * np.sin(2 * np.pi * np.cumsum(f0 * fac) / sr)
-                lab_u, n = zenodo.u(locate.Scene(x, sr, f"engine-{seed}"), p, [p] + lib, 0.0, 4)
-                with tempfile.TemporaryDirectory() as tmp:
-                    src, exp = Path(tmp) / "in.wav", Path(tmp) / "e.json"
-                    sf.write(src, x / 8, sr, subtype="FLOAT")                 # level-blind: ranks don't move
-                    exp.write_text(json.dumps([zenodo.expected_pass(p, 0.0, dur)]))
-                    r = subprocess.run([str(cli), "scrub", str(src), str(Path(tmp) / "o.wav"), "--steps", "mono",
-                                        "--expect", str(exp), "--track-target", "rank", "--track-rank-rounds", "0"],
-                                       capture_output=True, text=True, check=True)
-                m = re.search(r"attacker rank ([0-9.]+)", r.stdout + r.stderr)
-                self.assertIsNotNone(m, r.stdout + r.stderr)
-                self.assertEqual(n, 225)
-                self.assertAlmostEqual(float(m.group(1)), round(lab_u, 3), delta=0.0011, msg=f"seed {seed}")
+                sc = locate.Scene(x, sr, f"engine-{seed}")
+                want = {"library": zenodo.u(sc, p, [p] + lib, 0.0, 4), "scaled": zenodo.u(sc, p, [p] + geometry.scaled(p), 0.0, 4)}
+                for null, (lab_u, n) in want.items():
+                    with tempfile.TemporaryDirectory() as tmp:
+                        src, exp = Path(tmp) / "in.wav", Path(tmp) / "e.json"
+                        sf.write(src, x / 8, sr, subtype="FLOAT")             # level-blind: ranks don't move
+                        exp.write_text(json.dumps([zenodo.expected_pass(p, 0.0, dur)]))
+                        r = subprocess.run([str(cli), "scrub", str(src), str(Path(tmp) / "o.wav"), "--steps", "mono",
+                                            "--expect", str(exp), "--track-target", "rank", "--track-rank-rounds", "0",
+                                            "--track-rank-null", null], capture_output=True, text=True, check=True)
+                    m = re.search(r"attacker rank ([0-9.]+)", r.stdout + r.stderr)
+                    self.assertIsNotNone(m, r.stdout + r.stderr)
+                    self.assertEqual(n, 225 if null == "library" else 72)
+                    self.assertAlmostEqual(float(m.group(1)), round(lab_u, 3), delta=0.0011, msg=f"seed {seed}, {null}")
         finally:
             locate.whitened = old
 

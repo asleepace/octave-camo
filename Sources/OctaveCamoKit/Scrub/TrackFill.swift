@@ -213,6 +213,7 @@ public struct TrackFill {
     /// places, and fill at most this many lines per pass (0: judge only, for checking).
     public var actAbove = 0.9
     public var rankRounds = 24
+    public var rankWrong = Attacker.Wrong.scaled
     /// Raising: rounds per pass, and the most any strip is raised in all, dB.
     public var maxRaises = 6
     public var maxGainDB = 10.0

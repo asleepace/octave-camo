@@ -14,7 +14,7 @@ let commands = [
             flags: ["hard"], run: synth),
     Command(name: "analyze", options: ["threshold"], flags: ["json"], run: analyze),
     Command(name: "scrub", options: ["steps", "mains", "passes", "cutoff", "lowband-mode", "flatten", "depth", "wobble-top", "seed", "expect",
-                                     "archive", "at", "start", "temp", "track-stop", "track-max-tones", "track-tolerance-hz", "track-tolerance", "track-windows", "track-target", "track-max-raises", "track-lines", "track-fill-level", "track-null", "track-place-scales", "track-rests", "track-act-above", "track-rank-rounds"],
+                                     "archive", "at", "start", "temp", "track-stop", "track-max-tones", "track-tolerance-hz", "track-tolerance", "track-windows", "track-target", "track-max-raises", "track-lines", "track-fill-level", "track-null", "track-place-scales", "track-rests", "track-act-above", "track-rank-rounds", "track-rank-null"],
             flags: ["no-keep-voice"], run: scrub),
     Command(name: "predict", options: ["at", "start", "duration", "temp"], flags: [], run: predict),
 ]
@@ -38,7 +38,7 @@ USAGE
                         (or predict those curves from adsb.lol's half-hour archive: where and
                         when the audio starts, alt in metres on the pressure-altitude scale)
                         [--track-stop 1] (remove until each pass's attacker z is below this)
-                        [--track-max-tones 24] [--track-tolerance-hz 0] [--track-tolerance 0] [--track-windows 0.17] [--track-target fixed|null|rank] [--track-act-above 0.9] [--track-rank-rounds 24] [--track-max-raises 6] [--track-lines 1] [--track-fill-level median|logMean|binTime] [--track-null wrongTimes|wrongPlaces|library] [--track-place-scales 0.6,1,1.6] [--track-rests 450,1070 (diagnostic)]
+                        [--track-max-tones 24] [--track-tolerance-hz 0] [--track-tolerance 0] [--track-windows 0.17] [--track-target fixed|null|rank] [--track-act-above 0.9] [--track-rank-rounds 24] [--track-rank-null scaled|library] [--track-max-raises 6] [--track-lines 1] [--track-fill-level median|logMean|binTime] [--track-null wrongTimes|wrongPlaces|library] [--track-place-scales 0.6,1,1.6] [--track-rests 450,1070 (diagnostic)]
                         (tones per pass; the stopping test's slack off the curve, Hz and fraction)
   octave-camo predict <heatmap.bin> --at lat,lon[,alt] --start unix --duration s [--temp 15]
   octave-camo --version
@@ -157,6 +157,10 @@ func scrub(_ args: Arguments) throws {
     if let w = args.string("track-act-above") {
         guard let v = Double(w), (0...1).contains(v) else { throw UsageError("--track-act-above takes a rank, 0-1") }
         pipeline.tracks.actAbove = v
+    }
+    if let w = args.string("track-rank-null") {
+        guard let v = Attacker.Wrong(rawValue: w) else { throw UsageError("--track-rank-null takes scaled or library") }
+        pipeline.tracks.rankWrong = v
     }
     if let w = args.string("track-rank-rounds") {
         guard let v = Int(w), (0...64).contains(v) else { throw UsageError("--track-rank-rounds takes 0-64") }

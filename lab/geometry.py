@@ -41,3 +41,16 @@ def library(speeds=SPEEDS, distances=DISTANCES) -> list[dict]:
             t, f, _ = curve(v, d)
             out.append({"case": f"lib-v{int(v)}-d{int(d)}", "t": t + 100.0, "fac": f, "tc": 100.0})
     return out
+
+
+SCALES = (0.6, 1.0, 1.6)
+
+
+def scaled(p: dict, scales=SCALES) -> list[dict]:
+    """Wrong places for a pass from its own flight: the curve's swing scaled in depth (a, in log
+    factor) and duration (b) about its closest approach, every pair but (1, 1). The engine's rank
+    target ranks against these by default (Attacker.swift, `.scaled`)."""
+    from . import zenodo
+    t, fac, tc = zenodo.shape(p)
+    return [{"case": f"{p['case']}-scaled-{a}-{b}", "t": tc + (t - tc) * b, "fac": np.exp(a * np.log(fac)), "tc": tc}
+            for a in scales for b in scales if (a, b) != (1.0, 1.0)]
