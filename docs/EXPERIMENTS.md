@@ -1456,12 +1456,32 @@ decoy curves.
 
 ## Decoys: the same fill along wrong places' curves
 
-**What it does** (`--track-decoys K`, experimental). For each pass the cloak draws K of the
-attacker's own wrong places (the truth's curve scaled, factor^a and time ×b with a, b ∈ {0.6, 1,
-1.6}, not (1, 1), at one of the nine offsets; seeded, without replacement). Every time it fills a
-rest along the truth, it fills the same rest along each decoy curve with the same rule. The
-processing is then no longer confined to the truth's family, so the trace above lands on the
-decoys as well as the truth.
+**What it does** (`--track-decoys K`, experimental). For each pass the cloak draws K decoy curves:
+the truth's curve reshaped as the attacker's wrong places are (factor^a, time stretched ×b about the
+closest approach, moved by an offset). Every time it fills a rest along the truth, it fills the
+same rest along each decoy curve with the same rule. The processing is then no longer confined to
+the truth's family, so the trace above lands on the decoys as well as the truth.
+
+**The decoys mustn't point back to the truth.** Assume the attacker has read the code. The first
+version drew decoys from the attacker's own grid (a, b ∈ {0.6, 1, 1.6}, not (1, 1), nine offsets),
+which surrounds the truth: given every processed curve, the one nearest the set's centroid is the
+truth 94 % of the time (85 % for the one nearest the others in all), against 11 % by chance. Now the
+truth and its decoys are drawn alike: reshaping composes by adding (log a, log b, offset), so the
+cloak draws K + 1 points independently (log a and log b uniform within ±0.5, the offset within
+±5 s), the truth takes the first, and each decoy is the truth moved by its point's difference from
+the first. Any member is then equally likely to be the truth, whatever rule picks it
+(`testDecoysDontPointBackToThePass`: nearest the centroid, nearest the others, widest Doppler swing,
+each about one in nine). Nothing is redrawn: a second try kept only decoys whose factors stay within
+0.5–2, which kept the ones on one side of a fast pass and left the truth at an edge (the centre 34
+of 600 times, not 67). A decoy is filled wherever its curve is in the band.
+
+What this doesn't hide: the decoys are reshaped copies of the truth, so some imply speeds or
+distances no real flight has. An attacker who can find the processed curves and judge which are
+plausible flights could still pick out the truth more often than one in K + 1. Finding them takes a
+blind search for the fill's own trace, which with 8 decoys is below what we can measure (below).
+
+The results below were run with the first version except the empty-audio and corpus rows marked
+"8, drawn alike".
 
 **Empty audio** (40 strips, as above, 12 seeds, rank change):
 
@@ -1470,6 +1490,7 @@ decoys as well as the truth.
 | 0 | +0.18 ± 0.07 | +0.48 ± 0.03 |
 | 4 | +0.18 ± 0.07 | +0.14 ± 0.08 |
 | 8 | +0.06 ± 0.10 | +0.04 ± 0.09 |
+| 8, drawn alike | −0.10 ± 0.11 | −0.07 ± 0.09 |
 
 With 8 the trace is no longer measurable in either scene.
 
@@ -1481,6 +1502,7 @@ With 8 the trace is no longer measurable in either scene.
 | rank, no decoys | 5 | 3 | 0.63 | 9.8 | 1.16 dB |
 | rank, 4 decoys | 1 | 2 | 0.53 | 6.2 | 1.31 dB |
 | rank, 8 decoys | 2 | 3 | 0.50 | 5.9 | 1.39 dB |
+| rank, 8 decoys, drawn alike | 1 | 3 | 0.51 | 5.6 | 1.31 dB |
 
 The passes that were stuck now reach their targets with fewer fills: N413AK_R05 (1.0 → 0.03–0.67),
 N784MB (1.0 → 0.07–0.53), N60RS. What remains is by design or not the fill:
@@ -1491,7 +1513,10 @@ N784MB (1.0 → 0.07–0.53), N60RS. What remains is by design or not the fill:
   the fill.
 - 8 decoys' extra leak (N60RS s7, target 0.955) and extra hole (N413AK s8, target 0.092) are
   the drawn targets, which a uniform target puts above 0.95 or below 0.05 one time in ten.
-So between 4 and 8 the corpus can't tell. Sound change goes up by 0.15–0.23 dB over no decoys.
+- Drawn alike, the one leak is N621KS s8 again, and the third hole is N4004R s7 (rank 1.0 → 0.06
+  against a target of 0.22: one fill overshot).
+So between 4 and 8, or the two ways of drawing them, the corpus can't tell. Sound change goes up by
+0.15–0.23 dB over no decoys.
 
 **Real backgrounds** (`lab blank`, 86 scorable placements in 16 sessions, two seeds, against the
 preset blind to the curve, four lines):
@@ -1503,12 +1528,14 @@ preset blind to the curve, four lines):
 | rank, 8 decoys | 3 % | −0.012 ± 0.007 | −0.48 ± 0.09 | 17 | +0.01 dB |
 
 Decoys don't change what happens with no plane: the rank stop fires on the same 3 % and moves those
-copies to a uniform target, as designed.
+copies to a uniform target, as designed. (First version only. Drawing them alike changes only what
+is filled where the stop fires, so it wasn't rerun.)
 
 **Verdict.** Decoys fix what stopped the rank stop short: leaks fall from 5 of 34 to 1–2, with no
-new mark on real backgrounds, for about 0.2 dB more sound change. 8 decoys is the candidate for
-the holdout: on the corpus it can't be told from 4, and it's the one that removes the trace on empty
-audio. The holdout, scored once, decides whether it becomes the default.
+new mark on real backgrounds, for about 0.2 dB more sound change. 8 decoys drawn alike is the
+candidate for the holdout: on the corpus it can't be told from 4, it's the one that removes the
+trace on empty audio, and its decoys don't give the truth away. The holdout, scored once, decides
+whether it becomes the default.
 
 ## Next experiments
 

@@ -16,6 +16,9 @@ are grouped by milestone, newest first, with the commits that made them.
   stop on the corpus tuning half: leaks 1–2 of 34 (no decoys 5, default 12), at 1.31–1.39 dB sound
   change. 8 decoys removes the empty-audio trace. Real backgrounds: no change from the rank stop.
   docs/EXPERIMENTS.md, "Decoys".
+- The truth and its decoys are drawn alike, so someone who finds every processed curve can't tell
+  which is the pass from how they're arranged. Decoys taken from the attacker's grid had the truth
+  at their centre 85–94 % of the time.
 
 ### Deep filling leaves a trace (finding)
 

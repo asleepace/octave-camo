@@ -114,7 +114,13 @@ attacker every result is scored against").
   steady tones; docs/EXPERIMENTS.md, "Decoys").
 - **Open:**
   - is 8 decoys enough against an attacker with more wrong places, or different ones? The decoys
-    are drawn from the attacker's own set; a corpus-style attacker's places aren't among them.
+    are the truth reshaped, as our attacker's wrong places are; a corpus-style attacker's places
+    (other flights) aren't among them.
+  - can an attacker find the processed curves blindly, and then pick the truth as the most
+    plausible flight among them? The decoys are drawn so their arrangement says nothing
+    (`testDecoysDontPointBackToThePass`), but some imply speeds or distances no real flight has.
+    Decoys drawn from real flights' shapes would close that, at the risk of matching our wrong
+    places less well (physical flights were too easy to beat as the stop's null).
   - why does one removal raise its neighbouring rests by up to +1.5 (N784MB)? Not the flat parts.
     The per-bin 15 s reference is the suspect, unconfirmed.
   - how much of the corpus leakage after cloaking is this, and not lines left unfilled?
