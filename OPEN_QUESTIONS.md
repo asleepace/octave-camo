@@ -84,10 +84,13 @@ attacker every result is scored against").
 - **Still open:**
   - some passes can't reach their drawn target. **Answered:** they run out of fills (all 24 used
     on 24 rests), and filling more partly writes its own trace (docs/EXPERIMENTS.md, "Deep filling
-    leaves a trace of its own"); see "Is the fill neutral?" below.
+    leaves a trace of its own"); see "Is the fill neutral?" below. **Done since:** decoy fills
+    (`--track-decoys`) let them reach it: 1–2 leaks of 34 (docs/EXPERIMENTS.md, "Decoys").
   - after cloaking, the cloak's rank and the corpus's u part ways (0.11 against 0.54; 0.85 against
     1.00). How much of the remaining leak is the cloak's wrong places not being the attacker's?
-    Would judging against both sets, or more varied ones, help?
+    Would judging against both sets, or more varied ones, help? With decoys, N621KS s8 (left alone
+    at 0.85, corpus 1.00) is the one leak left on the tuning half: the act threshold, or the two
+    wrong-place sets, decide it.
   - band-level treatment for the broadband hump.
 
 ### Can broadband Doppler-shifted noise be removed?
@@ -95,7 +98,7 @@ attacker every result is scored against").
   follows the Doppler factor. Filling strips doesn't converge.
 - Candidates:
   - a time-varying flatten across the band during the pass window, so the hump doesn't move;
-  - decoy passes.
+  - decoy passes (decoy fills are in: they bring N60RS down to its target, but that's one pass).
 - How many real recordings have this isn't known (2 of 17 here).
 
 ### Is the fill neutral? (no, when there's a lot of it)
@@ -105,11 +108,13 @@ attacker every result is scored against").
   same median, a fatter upper tail. `--track-fill-level shift` (copy the same bins from another
   moment) clears the tones scene but not white noise (+0.32), where the scaled-truth null's spread
   is only 0.1 dB in four lines' sum.
+- **Answered, by not needing one:** subtracting the tracked line isn't the way out (docs/EXPERIMENTS.md,
+  "Subtracting the line instead"). Filling along decoy curves too (`--track-decoys 8`) takes the
+  empty-audio trace below what 12 seeds can see (+0.06 ± 0.10 on white noise, +0.04 ± 0.09 over
+  steady tones; docs/EXPERIMENTS.md, "Decoys").
 - **Open:**
-  - is there a fill neutral to ~0.01 dB per line? Subtracting the tracked line isn't the way out
-    (docs/EXPERIMENTS.md, "Subtracting the line instead"): it leaves the same kind of trace and
-    doesn't remove real passes' evidence. Untried: the same removal along decoy curves, so the
-    processing isn't confined to the truth's family.
+  - is 8 decoys enough against an attacker with more wrong places, or different ones? The decoys
+    are drawn from the attacker's own set; a corpus-style attacker's places aren't among them.
   - why does one removal raise its neighbouring rests by up to +1.5 (N784MB)? Not the flat parts.
     The per-bin 15 s reference is the suspect, unconfirmed.
   - how much of the corpus leakage after cloaking is this, and not lines left unfilled?
@@ -127,7 +132,10 @@ attacker every result is scored against").
   so far, but nobody has checked whether a power-based attacker would see it.
 
 ### Leaks or holes: is there a stop that avoids both? (partly answered: the rank stop)
-- **Answered, on the tuning half:** the rank stop leaks 5 of 34 and, on real backgrounds, fires on
+- **Answered, on the tuning half:** with decoy fills (`--track-decoys 4` or `8`) the rank stop
+  leaks 1–2 of 34, and on real backgrounds fires on the same 3 % as without them. What's left is
+  the drawn targets and one pass left alone. The holdout decides.
+- Before decoys: the rank stop leaks 5 of 34 and, on real backgrounds, fires on
   3 % of copies with an effect of −0.011 ± 0.007 against the default's −0.026 ± 0.012. Its mean
   shift is what a uniform target gives by design. Not settled: one seed pair, a worn tuning half,
   and a bottom tail too small to compare (18 against 19 of 176). The holdout decides.

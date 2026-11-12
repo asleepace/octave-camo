@@ -9,6 +9,14 @@ are grouped by milestone, newest first, with the commits that made them.
 
 ## [Unreleased]
 
+### Decoy fills (experimental)
+
+- **`--track-decoys K`** (0–32): every fill along the truth is repeated along K of the attacker's
+  own wrong places, so deep filling no longer leaves a trace only along the truth. With the rank
+  stop on the corpus tuning half: leaks 1–2 of 34 (no decoys 5, default 12), at 1.31–1.39 dB sound
+  change. 8 decoys removes the empty-audio trace. Real backgrounds: no change from the rank stop.
+  docs/EXPERIMENTS.md, "Decoys".
+
 ### Deep filling leaves a trace (finding)
 
 - With no plane present, filling 40 strips along a curve raises the attacker's rank (+0.18 on white

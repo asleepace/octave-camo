@@ -1454,6 +1454,62 @@ the wrong places and not the truth's untouched lines, and against wrong places t
 0.1 dB it shows. That points to processing that isn't confined to the truth: the same removal along
 decoy curves.
 
+## Decoys: the same fill along wrong places' curves
+
+**What it does** (`--track-decoys K`, experimental). For each pass the cloak draws K of the
+attacker's own wrong places (the truth's curve scaled, factor^a and time ×b with a, b ∈ {0.6, 1,
+1.6}, not (1, 1), at one of the nine offsets; seeded, without replacement). Every time it fills a
+rest along the truth, it fills the same rest along each decoy curve with the same rule. The
+processing is then no longer confined to the truth's family, so the trace above lands on the
+decoys as well as the truth.
+
+**Empty audio** (40 strips, as above, 12 seeds, rank change):
+
+| decoys | white noise | noise + steady tones (35–45 dB) |
+| ---: | ---: | ---: |
+| 0 | +0.18 ± 0.07 | +0.48 ± 0.03 |
+| 4 | +0.18 ± 0.07 | +0.14 ± 0.08 |
+| 8 | +0.06 ± 0.10 | +0.04 ± 0.09 |
+
+With 8 the trace is no longer measurable in either scene.
+
+**Corpus tuning half** (17 passes × 2 seeds, rank stop, four lines):
+
+| | leaks of 34 | holes | mean u | tones filled per copy | sound change |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| default stop | 12 | 2 | 0.76 | 5.2 | 0.98 dB |
+| rank, no decoys | 5 | 3 | 0.63 | 9.8 | 1.16 dB |
+| rank, 4 decoys | 1 | 2 | 0.53 | 6.2 | 1.31 dB |
+| rank, 8 decoys | 2 | 3 | 0.50 | 5.9 | 1.39 dB |
+
+The passes that were stuck now reach their targets with fewer fills: N413AK_R05 (1.0 → 0.03–0.67),
+N784MB (1.0 → 0.07–0.53), N60RS. What remains is by design or not the fill:
+- N373DF, both seeds, is a hole the stop leaves alone (it ranks 0.13–0.18 before anything is
+  filled).
+- N621KS s8 leaks with any number of decoys: the cloak ranks it 0.85 and leaves it alone, and the
+  corpus puts it at 1.00. That's the act threshold and the two wrong-place sets disagreeing, not
+  the fill.
+- 8 decoys' extra leak (N60RS s7, target 0.955) and extra hole (N413AK s8, target 0.092) are
+  the drawn targets, which a uniform target puts above 0.95 or below 0.05 one time in ten.
+So between 4 and 8 the corpus can't tell. Sound change goes up by 0.15–0.23 dB over no decoys.
+
+**Real backgrounds** (`lab blank`, 86 scorable placements in 16 sessions, two seeds, against the
+preset blind to the curve, four lines):
+
+| | fires on | effect against blind | where it fired | bottom 5 % (of 172) | sound change over blind |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| rank, no decoys | 3 % | −0.011 ± 0.007 | −0.45 ± 0.08 | 18 of 176 | +0.00 dB |
+| rank, 4 decoys | 3 % | −0.011 ± 0.006 | −0.43 ± 0.09 | 17 | +0.00 dB |
+| rank, 8 decoys | 3 % | −0.012 ± 0.007 | −0.48 ± 0.09 | 17 | +0.01 dB |
+
+Decoys don't change what happens with no plane: the rank stop fires on the same 3 % and moves those
+copies to a uniform target, as designed.
+
+**Verdict.** Decoys fix what stopped the rank stop short: leaks fall from 5 of 34 to 1–2, with no
+new mark on real backgrounds, for about 0.2 dB more sound change. 8 decoys is the candidate for
+the holdout: on the corpus it can't be told from 4, and it's the one that removes the trace on empty
+audio. The holdout, scored once, decides whether it becomes the default.
+
 ## Next experiments
 
 0. **The place as the metric** (envelope term, holdouts, stopping, the public corpus and the
