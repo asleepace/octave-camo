@@ -218,6 +218,10 @@ public struct TrackFill {
     /// none). Off: it was tuned on a synthetic engine with ×2 and ×3, and real engines' other lines
     /// are mostly not harmonics of the strongest (docs/EXPERIMENTS.md, "What real engines carry").
     public var harmonics = 1
+    /// A diagnostic: when not empty, fill exactly these rest frequencies along the first expected
+    /// pass's curve (no verdict, no stop) and nothing else. For asking "can the fill remove what
+    /// the attacker sees, if told where?" (lab: the attacker in the loop).
+    public var forcedRests: [Double] = []
 
     var search: PathSearch { search(window: windows.first ?? 0.17) }
 
@@ -259,6 +263,16 @@ public struct TrackFill {
         fill.marginHz = marginHz
         fill.relativeMargin = relativeMargin
         fill.level = fillLevel
+        if !forcedRests.isEmpty {
+            var done: [String] = []
+            for r in forcedRests {
+                let tone = Tone(pass: 0, rest: r, offset: 0, z: 0, effect: 0)
+                if let line = stage.track(tone, sampleRate: sampleRate, count: y.count), fill.fill(&y, line, sampleRate: sampleRate, rng: &rng) {
+                    done.append("\(Int(r.rounded())) Hz")
+                }
+            }
+            return (y, "tracks: forced, filled \(done.count) tone(s)\(done.isEmpty ? "" : " (" + done.joined(separator: ", ") + ")")")
+        }
         var filled: [Tone] = [], open = Set(usable.indices), count = [Int](repeating: 0, count: usable.count)
         var first = [Double?](repeating: nil, count: usable.count), last = first, goal = first
         var firstScore = first, lastScore = first

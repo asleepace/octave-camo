@@ -201,6 +201,20 @@ final class TrackFillTests: XCTestCase {
         XCTAssertGreaterThan(Self.verdict(LineFillTests.fanTone(rate: Self.rate, snr: 11).mono, s)?.z ?? 0, 3)
     }
 
+    /// The forced-rests diagnostic fills exactly the given rest frequencies and nothing else.
+    func testForcedRestsFillOnlyThoseLines() {
+        let x = LineFillTests.fanTone(rate: Self.rate, snr: 20).mono
+        var s = Self.stage([Self.expected()])
+        s.forcedRests = [1_234]
+        let r = s.process(x, sampleRate: Self.rate)
+        XCTAssertTrue(r.summary.contains("forced, filled 1 tone(s) (1234 Hz)"), r.summary)
+        let before = Self.verdict(x, Self.stage([Self.expected()]))?.z ?? 0
+        let after = Self.verdict(r.output, Self.stage([Self.expected()]))?.z ?? 99
+        XCTAssertLessThan(after, before / 3, "one fill should take most of the tone: z \(before) → \(after)")
+        let diff = zip(r.output, x).map { $0 - $1 }
+        XCTAssertLessThan(Self.bandPower(diff, (2_300, 7_000)), 1e-9 * max(Self.bandPower(diff, (800, 2_200)), 1e-300))
+    }
+
     /// `harmonics` 1 means none: with one tone allowed, the null target touches nothing above the
     /// fundamental's sweep (870–2,090 Hz here); with 3 it also fills ×2 and ×3 there.
     func testHarmonicsOneFillsNoMultiples() {

@@ -14,7 +14,7 @@ let commands = [
             flags: ["hard"], run: synth),
     Command(name: "analyze", options: ["threshold"], flags: ["json"], run: analyze),
     Command(name: "scrub", options: ["steps", "mains", "passes", "cutoff", "lowband-mode", "flatten", "depth", "wobble-top", "seed", "expect",
-                                     "archive", "at", "start", "temp", "track-stop", "track-max-tones", "track-tolerance-hz", "track-tolerance", "track-windows", "track-target", "track-max-raises", "track-lines", "track-fill-level", "track-null", "track-place-scales"],
+                                     "archive", "at", "start", "temp", "track-stop", "track-max-tones", "track-tolerance-hz", "track-tolerance", "track-windows", "track-target", "track-max-raises", "track-lines", "track-fill-level", "track-null", "track-place-scales", "track-rests"],
             flags: ["no-keep-voice"], run: scrub),
     Command(name: "predict", options: ["at", "start", "duration", "temp"], flags: [], run: predict),
 ]
@@ -38,7 +38,7 @@ USAGE
                         (or predict those curves from adsb.lol's half-hour archive: where and
                         when the audio starts, alt in metres on the pressure-altitude scale)
                         [--track-stop 1] (remove until each pass's attacker z is below this)
-                        [--track-max-tones 24] [--track-tolerance-hz 0] [--track-tolerance 0] [--track-windows 0.17] [--track-target fixed|null] [--track-max-raises 6] [--track-lines 1] [--track-fill-level median|logMean|binTime] [--track-null wrongTimes|wrongPlaces|library] [--track-place-scales 0.6,1,1.6]
+                        [--track-max-tones 24] [--track-tolerance-hz 0] [--track-tolerance 0] [--track-windows 0.17] [--track-target fixed|null] [--track-max-raises 6] [--track-lines 1] [--track-fill-level median|logMean|binTime] [--track-null wrongTimes|wrongPlaces|library] [--track-place-scales 0.6,1,1.6] [--track-rests 450,1070 (diagnostic)]
                         (tones per pass; the stopping test's slack off the curve, Hz and fraction)
   octave-camo predict <heatmap.bin> --at lat,lon[,alt] --start unix --duration s [--temp 15]
   octave-camo --version
@@ -132,6 +132,11 @@ func scrub(_ args: Arguments) throws {
     pipeline.tracks.relativeTolerance = try args.value("track-tolerance", default: pipeline.tracks.relativeTolerance)
     pipeline.tracks.maxRaises = try args.value("track-max-raises", default: pipeline.tracks.maxRaises)
     pipeline.tracks.lines = try args.value("track-lines", default: pipeline.tracks.lines)
+    if let w = args.string("track-rests") {
+        let v = w.split(separator: ",").compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
+        guard !v.isEmpty, v.allSatisfy({ $0 > 20 && $0 < 20_000 }) else { throw UsageError("--track-rests takes rest frequencies in Hz, like 450,1070") }
+        pipeline.tracks.forcedRests = v
+    }
     if let w = args.string("track-place-scales") {
         let v = w.split(separator: ",").compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
         guard !v.isEmpty, v.allSatisfy({ $0 > 0.1 && $0 < 10 }) else { throw UsageError("--track-place-scales takes numbers like 0.6,1,1.6") }
