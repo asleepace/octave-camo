@@ -70,18 +70,27 @@ attacker every result is scored against").
 
 ## The cloak
 
-### Why do the remaining leaks leak?
-- **Known:** after cloaking, the four-line attacker still finds 8–12 of 34 passes (chance: about 2).
-  Of the lines it adds up in leaking copies, about a third were clear lines before cloaking.
-- **Candidates:**
-  - faint real lines the engine never reaches (its stopping test is biased, see below);
-  - lines it fills only partly (tolerance, tracking);
-  - the fill itself (next question).
-- **Pitfall:** a per-line z against wrong places *on the same clip* can't separate these. See
-  "Pitfalls" below.
-- **Would settle it:** for each leak, the truth's four picked rest frequencies against wrong places'
-  values at the same rests on the *cloaked* audio, together with the engine's list of what it
-  filled.
+### Why do the remaining leaks leak? (mostly answered)
+- **Answered** (docs/EXPERIMENTS.md, "What the remaining leaks are made of"):
+  - About 70–90 % of the attacker's evidence in leaking copies comes from lines the cloak never
+    filled. The cloak's own verdict says nothing is left while the attacker's statistic still finds
+    them.
+  - Told exactly which lines to fill (the attacker in the loop), the fill clears most leaks in one to
+    three rounds.
+  - Two of 17 passes leak through broadband engine noise whose spectral shape moves with the Doppler
+    factor, which line fills can't finish.
+- **Next:**
+  - give the cloak the attacker's statistic, with a stop that can't leave a hole (a target drawn
+    from the rank's own null, uniform);
+  - band-level treatment for the broadband hump.
+
+### Can broadband Doppler-shifted noise be removed?
+- Two corpus passes (N60RS, N451EE) carry evidence spread over a band (hundreds of Hz) whose shape
+  follows the Doppler factor. Filling strips doesn't converge.
+- Candidates:
+  - a time-varying flatten across the band during the pass window, so the hump doesn't move;
+  - decoy passes.
+- How many real recordings have this isn't known (2 of 17 here).
 
 ### Is the fill neutral on real backgrounds? (partly answered: its level doesn't matter there)
 - **Answered:** on real backgrounds the fill's level makes no measurable difference to the cloak's

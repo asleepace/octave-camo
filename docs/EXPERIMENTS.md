@@ -1259,6 +1259,44 @@ most-cleaned place finds several. The truth's removal stops being evidence. The 
 (sound change so far 0.5–1.2 dB). Untested.
 
 
+## What the remaining leaks are made of
+
+**Lines the cloak never touches.** Each cloaked copy of the corpus tuning half (current build, two
+seeds) was re-run to get the cloak's own list of filled tones. Each of the four lines the attacker
+adds up on the cloaked audio was then compared with wrong places' values at the same rest frequency
+on the same audio:
+
+| | leaks of 34 | tones filled per copy | attacker's lines in leaking copies the cloak never filled |
+| --- | ---: | ---: | ---: |
+| default stop | 12 | 5.2 | 44 of 48 (92 % of their excess) |
+| deeper (stop −0.5, 48 tones) | 8 | 14.5 | 17 of 32 (69 %) |
+
+Even removing deeper, the cloak stops while its own verdict says nothing is left (best line z <
+−0.5), and the attacker still finds lines at z ≈ 3 against wrong places. They measure differently:
+best single line against wrong times, ±6 s slack, the engine's whitening; against the best four
+lines against other geometries, the lab's whitening. A later stage can't be re-sharpening them:
+the track step runs after every Full stage.
+
+**The attacker in the loop** (`--track-rests`, a diagnostic that fills given rest frequencies only):
+starting from each cloaked copy, up to six rounds of "the attacker's four lines on the current audio
+→ fill exactly those", stopping once u < 0.9.
+
+| | leaks before | after | holes after | sound change |
+| --- | ---: | ---: | ---: | ---: |
+| default stop | 12 | 3 | 2 | 1.18 dB |
+| deeper | 8 | 3 | 2 | 1.38 dB |
+
+Most leaking copies fell below 0.9 within one to three rounds (4–12 more tones): **the fill can remove
+what the attacker uses, if it's told where.** The fix that follows is to give the cloak the
+attacker's own statistic.
+
+**Two passes resist, and they aren't lines.** N60RS and N451EE stay at 0.95–1.00 through six rounds.
+After the first round the attacker's picks crowd into a band and shift every round: N60RS
+1,209, 1,235, 1,255, 1,281, 1,301… and 1,648–1,934 Hz; N451EE across 330–1,320 Hz. That's broadband
+engine noise whose spectral shape moves with the Doppler factor. Every rest frequency in the hump
+follows the curve, so ~30 Hz strips filled a few at a time can't finish it. It needs band-level
+treatment along the pass (a stronger, time-varying flatten in the pass's window) or decoys.
+
 ## Next experiments
 
 0. **The place as the metric** (envelope term, holdouts, stopping, the public corpus and the
