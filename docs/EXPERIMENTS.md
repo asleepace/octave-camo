@@ -1348,9 +1348,25 @@ to different ones. That's the expected cost of a cloak judging itself, and why i
 the corpus's.
 
 **Real backgrounds** (`lab blank`, 91 placements in 16 sessions, two seeds, against the preset
-blind to the curve): (partial: 63 placements in 13 sessions so far,
-four lines) the rank stop fires on 2 % of copies (the default on 25 %), and its effect is
-−0.002 ± 0.002 (the default's −0.017 ± 0.012). Final numbers to follow.
+blind to the curve): 88 scorable placements in 16 sessions,
+four lines:
+
+| | fires on | effect against blind | where it fired | bottom 5 % (of 176) | sound change over blind |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| default stop | 27 % | −0.026 ± 0.012 | −0.11 ± 0.06 | 19 | +0.02 dB |
+| rank stop | 3 % | −0.011 ± 0.007 | −0.45 ± 0.08 | 18 | +0.00 dB |
+
+The rank stop barely touches audio with no plane in it. Where it does fire it's meant to move the
+truth from near the top to a uniform target, about −0.45 on average, and that's what it does. That
+sets its mean effect at about −0.45 × the rate it fires (here 3 %: −0.014), so the −0.011 is the
+design, not a bias. It's under half the default's mark, but at 1.6 standard errors it isn't shown to
+be zero, and the bottom tails (18 against 19 copies) can't be told apart at this size.
+
+**Verdict.** On the tuning half the rank stop leaks least of every option tried (5 of 34 against 12
+for the default and 8 for deeper removal), costs 0.2 dB more sound change than the default, and
+leaves a smaller mark on real backgrounds. It isn't the default yet: the tuning half is worn, and
+one seed pair can't separate 5 from 8. Next: why some passes can't reach their target (the fills
+run out before the rank comes down), then the holdout, scored once.
 
 ## Next experiments
 

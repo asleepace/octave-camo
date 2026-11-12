@@ -79,9 +79,15 @@ attacker every result is scored against").
     three rounds.
   - Two of 17 passes leak through broadband engine noise whose spectral shape moves with the Doppler
     factor, which line fills can't finish.
-- **Next:**
-  - give the cloak the attacker's statistic, with a stop that can't leave a hole (a target drawn
-    from the rank's own null, uniform);
+- **Done since:** the cloak now has the attacker's statistic (`--track-target rank`,
+  docs/EXPERIMENTS.md, "The cloak judges like the attacker"): 5 leaks of 34.
+- **Still open:**
+  - some passes can't reach their drawn target: the fills run out (24 fills, each rest twice)
+    with the rank still near 1 (N413AK_R05, N784MB). Is it the fill cap, the broadband hump, or
+    picks that move every round?
+  - after cloaking, the cloak's rank and the corpus's u part ways (0.11 against 0.54; 0.85 against
+    1.00). How much of the remaining leak is the cloak's wrong places not being the attacker's?
+    Would judging against both sets, or more varied ones, help?
   - band-level treatment for the broadband hump.
 
 ### Can broadband Doppler-shifted noise be removed?
@@ -101,7 +107,12 @@ attacker every result is scored against").
   attacker's own statistic it's +0.01 to +0.04. The cause is unknown. It doesn't show up as a mark
   so far, but nobody has checked whether a power-based attacker would see it.
 
-### Leaks or holes: is there a stop that avoids both?
+### Leaks or holes: is there a stop that avoids both? (partly answered: the rank stop)
+- **Answered, on the tuning half:** the rank stop leaks 5 of 34 and, on real backgrounds, fires on
+  3 % of copies with an effect of −0.011 ± 0.007 against the default's −0.026 ± 0.012. Its mean
+  shift is what a uniform target gives by design. Not settled: one seed pair, a worn tuning half,
+  and a bottom tail too small to compare (18 against 19 of 176). The holdout decides.
+- The earlier reasoning, kept for context:
 - **Known:** the default stop is biased in noise (it compares the sweeping true curve with its own
   flat tails). The bias works as extra removal: it fires on 30 % of real backgrounds where nothing
   passed and leaves a hole (−0.029 ± 0.012), but on the corpus it leaks least of the fair-ish

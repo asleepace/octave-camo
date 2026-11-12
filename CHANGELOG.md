@@ -9,6 +9,18 @@ are grouped by milestone, newest first, with the commits that made them.
 
 ## [Unreleased]
 
+### The cloak judges like the attacker (experimental)
+
+- **`Attacker`**: the lab's scoring attacker (best four lines, the lab's whitening, rank among wrong
+  places) in the engine, equal to the lab's ranks to three places on the public corpus.
+- **`--track-target rank`**, experimental: fill the attacker's best line, one at a time, until the
+  pass's rank falls below a target drawn uniformly from 0 to 1. Passes ranking below 0.9 are left
+  alone. Options `--track-act-above`, `--track-rank-rounds` (0 only measures), and
+  `--track-rank-null scaled|library` (default scaled: the truth's own curve, scaled; physical flights
+  were too easy to beat). On the corpus tuning half it leaks 5 of 34 (default 12, deeper 8) at
+  1.16 dB sound change. On real backgrounds it fires on 3 % of copies and leaves under half the
+  default's mark. docs/EXPERIMENTS.md, "The cloak judges like the attacker".
+
 ### Fair stopping tests, as options
 
 - **`--track-null library` and `--track-null wrongPlaces`**, experimental: the track step's stop
