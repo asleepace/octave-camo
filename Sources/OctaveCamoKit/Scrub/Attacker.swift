@@ -369,20 +369,23 @@ extension TrackFill {
             guard var v = attacker.judge(y, sampleRate: sampleRate, pass: pass) else { notes.append("untestable"); continue }
             let start = v.rank
             guard start >= actAbove else { notes.append("\(three(start)) (left alone)"); continue }
-            var mine: [Double] = [], attempts = 0
-            while v.rank > goal && attempts < rankRounds {
+            var mine: [Double] = [], attempts = 0, why = ""
+            while v.rank > goal {
+                guard attempts < rankRounds else { why = rankRounds > 0 ? " out of fills" : ""; break }
                 // The best line not yet filled twice (a fill that didn't take shows up again nearby).
-                guard let pick = v.picks.first(where: { p in mine.filter { abs($0 / p.rest - 1) < 0.01 }.count < 2 }) else { break }
+                guard let pick = v.picks.first(where: { p in mine.filter { abs($0 / p.rest - 1) < 0.01 }.count < 2 }) else {
+                    why = " out of lines"; break
+                }
                 attempts += 1
                 mine.append(pick.rest)
                 let tone = Tone(pass: pi, rest: pick.rest, offset: 0, z: 0, effect: 0)
                 guard let line = track(tone, sampleRate: sampleRate, count: y.count),
                       fill.fill(&y, line, sampleRate: sampleRate, rng: &rng) else { continue }
                 filled.append(pick.rest)
-                guard let next = attacker.judge(y, sampleRate: sampleRate, pass: pass) else { break }
+                guard let next = attacker.judge(y, sampleRate: sampleRate, pass: pass) else { why = " untestable"; break }
                 v = next
             }
-            notes.append("\(three(start)) → \(three(v.rank)) (target \(three(goal)))")
+            notes.append("\(three(start)) → \(three(v.rank)) (target \(three(goal)))" + why)
         }
         let list = filled.map { "\(Int($0.rounded())) Hz" }.joined(separator: ", ")
         return (y, "tracks: rank target, \(expected.count) expected pass(es), filled \(filled.count) tone(s)"

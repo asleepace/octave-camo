@@ -148,7 +148,7 @@ final class LineFillTests: XCTestCase {
         let times = Array(stride(from: 5.0, through: 25.0, by: 0.05))
         let sweep = { (t: Double) in 900 + 10 * (min(max(t, 5), 25) - 5) }
         let line = Track(times: times, frequencies: times.map(sweep), levels: times.map { _ in 0 })
-        for level in [LineFill.Level.median, .logMean, .binTime] {
+        for level in [LineFill.Level.median, .logMean, .binTime, .shift] {
             var along: [Double] = []
             for seed in 1...6 {
                 let x = DetectionScenes.white(rate * 30, seed: UInt64(40 + seed))
@@ -164,6 +164,31 @@ final class LineFillTests: XCTestCase {
             let mean = along.reduce(0, +) / Double(along.count)
             XCTAssertLessThan(abs(mean), 0.6, "\(level): along the line \(along)")
         }
+    }
+
+    /// `.shift` removes a sweeping tone: it copies the same bins from another moment, never from
+    /// inside the strip, so the tone isn't copied back in.
+    func testShiftRemovesASweepingTone() {
+        let rate = 16_000
+        let times = Array(stride(from: 5.0, through: 25.0, by: 0.05))
+        let sweep = { (t: Double) in 900 + 10 * (min(max(t, 5), 25) - 5) }
+        let line = Track(times: times, frequencies: times.map(sweep), levels: times.map { _ in 0 })
+        let noise = DetectionScenes.white(rate * 30, seed: 9)
+        var phase = 0.0
+        let x = noise.enumerated().map { i, v -> Double in
+            phase += 2 * Double.pi * sweep(Double(i) / Double(rate)) / Double(rate)
+            return v + 0.05 * sin(phase)
+        }
+        var f = LineFill()
+        f.level = .shift
+        var y = x, rng = SeededRNG(seed: 3)
+        XCTAssertTrue(f.fill(&y, line, sampleRate: rate, rng: &rng))
+        let before = db(alongPower(x, rate: rate, f: sweep, half: 8, from: 7, to: 23).squareRoot(),
+                        alongPower(noise, rate: rate, f: sweep, half: 8, from: 7, to: 23).squareRoot())
+        let after = db(alongPower(y, rate: rate, f: sweep, half: 8, from: 7, to: 23).squareRoot(),
+                       alongPower(noise, rate: rate, f: sweep, half: 8, from: 7, to: 23).squareRoot())
+        XCTAssertGreaterThan(before, 6, "the tone should stand out first")
+        XCTAssertLessThan(abs(after), 1, "after: \(after) dB over the noise")
     }
 
     /// A line exactly on a bin centre (1,000 Hz is bin 256 at 16 kHz) is filled: the band starts

@@ -49,7 +49,12 @@ public struct LineFill: ScrubStage {
     /// crossing it later isn't copied in), at a random phase; the attacker scales each bin by its own
     /// median over time, so a bin's own over-time distribution is what it reads as neutral. The cap
     /// drops 0.1 % of plain noise's draws (negligible), and lets through lines under 10 dB.
-    public enum Level: String { case median, logMean, binTime }
+    /// `.shift`: each filled cell takes the same bin's complex value from another moment (about
+    /// `binTimeSeconds` away, outside the strip, under the same cap), so neighbouring filled cells
+    /// keep real noise's correlations. Cells drawn independently (the other levels) read spikier
+    /// than real noise to an attacker with its own STFT: same median, a fatter upper tail (white
+    /// noise, filled cells: 99.9th percentile of the whitened excess 10.0 → 10.4 dB).
+    public enum Level: String { case median, logMean, binTime, shift }
     public var binTimeSeconds = 7.5
     public var level = Level.median
 
@@ -126,7 +131,7 @@ public struct LineFill: ScrubStage {
         // For `.binTime`: where the strip is in each frame, and each bin's median outside it.
         var centre = [Double](repeating: .nan, count: F), binMedian = [Double](repeating: 0, count: W)
         let reachFrames = Int((binTimeSeconds * sr / Double(st.size / 4)).rounded())
-        if level == .binTime {
+        if level == .binTime || level == .shift {
             for m in 0..<F {
                 let t = (Double(a) + Double(band.center(of: m))) / sr
                 if max(t0 - t, t - t1, 0) < fade { centre[m] = Self.interpolate(line, at: min(max(t, t0), t1)) / binHz - Double(lo) }
@@ -140,6 +145,10 @@ public struct LineFill: ScrubStage {
             }
         }
 
+        // For `.shift`: the strip's time offsets to copy from, tried in turn per cell.
+        // (Drawn only for `.shift`, so the other levels keep their outputs.)
+        let lag = level == .shift ? max(1, Int((Double(reachFrames) * (0.5 + 0.5 * rng.uniform(0...1))).rounded())) : 0
+        let lags = [lag, -lag, 2 * lag, -2 * lag, lag / 2, -(lag / 2)].filter { $0 != 0 }
         for m in 0..<F {
             let t = (Double(a) + Double(band.center(of: m))) / sr
             // Weight in time: 1 along the line, a raised cosine to 0 over half a frame beyond its ends.
@@ -170,7 +179,7 @@ public struct LineFill: ScrubStage {
                 for v in sideBins where v > 0 { sum += log(v); n += 1 }
                 guard n > 0 else { continue }
                 meanPower = exp(sum / Double(n) + 0.5772156649015329)
-            case .binTime:
+            case .binTime, .shift:
                 meanPower = DSP.median(sideBins[...]) / log(2.0)   // fallback only
             }
             let amp = (meanPower / 2).squareRoot() * gain
@@ -183,7 +192,12 @@ public struct LineFill: ScrubStage {
                 if w <= 0 { continue }
                 let i = m * W + k
                 let keep = (1 - w).squareRoot(), use = w.squareRoot()
-                if level == .binTime, let p = Self.sameBin(k, m, power: power, W: W, F: F, centre: centre, half: half,
+                if level == .shift, let src = lags.lazy.map({ m + $0 }).first(where: { mm in
+                    mm >= 0 && mm < F && !(abs(Double(k) - centre[mm]) <= Double(half + 1))
+                        && power[mm * W + k] <= 10 * binMedian[k] }) {
+                    outRe[i] = keep * band.re[i] + use * band.re[src * W + k]
+                    outIm[i] = keep * band.im[i] + use * band.im[src * W + k]
+                } else if level == .binTime, let p = Self.sameBin(k, m, power: power, W: W, F: F, centre: centre, half: half,
                                                             median: binMedian[k], reach: reachFrames, rng: &rng) {
                     let mag = p.squareRoot() * gain, phase = 2 * Double.pi * rng.uniform(0...1)
                     outRe[i] = keep * band.re[i] + use * mag * cos(phase)

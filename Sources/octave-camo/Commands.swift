@@ -38,7 +38,7 @@ USAGE
                         (or predict those curves from adsb.lol's half-hour archive: where and
                         when the audio starts, alt in metres on the pressure-altitude scale)
                         [--track-stop 1] (remove until each pass's attacker z is below this)
-                        [--track-max-tones 24] [--track-tolerance-hz 0] [--track-tolerance 0] [--track-windows 0.17] [--track-target fixed|null|rank] [--track-act-above 0.9] [--track-rank-rounds 24] [--track-rank-null scaled|library] [--track-max-raises 6] [--track-lines 1] [--track-fill-level median|logMean|binTime] [--track-null wrongTimes|wrongPlaces|library] [--track-place-scales 0.6,1,1.6] [--track-rests 450,1070 (diagnostic)]
+                        [--track-max-tones 24] [--track-tolerance-hz 0] [--track-tolerance 0] [--track-windows 0.17] [--track-target fixed|null|rank] [--track-act-above 0.9] [--track-rank-rounds 24] [--track-rank-null scaled|library] [--track-max-raises 6] [--track-lines 1] [--track-fill-level median|logMean|binTime|shift] [--track-null wrongTimes|wrongPlaces|library] [--track-place-scales 0.6,1,1.6] [--track-rests 450,1070 (diagnostic)]
                         (tones per pass; the stopping test's slack off the curve, Hz and fraction)
   octave-camo predict <heatmap.bin> --at lat,lon[,alt] --start unix --duration s [--temp 15]
   octave-camo --version
@@ -147,7 +147,7 @@ func scrub(_ args: Arguments) throws {
         pipeline.tracks.null = n
     }
     if let w = args.string("track-fill-level") {
-        guard let l = LineFill.Level(rawValue: w) else { throw UsageError("--track-fill-level takes median, logMean or binTime") }
+        guard let l = LineFill.Level(rawValue: w) else { throw UsageError("--track-fill-level takes median, logMean, binTime or shift") }
         pipeline.tracks.fillLevel = l
     }
     if let w = args.string("track-target") {

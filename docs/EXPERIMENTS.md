@@ -1368,6 +1368,65 @@ leaves a smaller mark on real backgrounds. It isn't the default yet: the tuning 
 one seed pair can't separate 5 from 8. Next: why some passes can't reach their target (the fills
 run out before the rank comes down), then the holdout, scored once.
 
+## Deep filling leaves a trace of its own
+
+**The stuck passes run out of fills, not lines.** Every corpus copy the rank stop left above its
+target had used all 24 fills on 24 different rests. Raising the cap on those seven passes (two
+seeds):
+
+| cap | leaks of 14 | holes | tones per copy | sound change |
+| ---: | ---: | ---: | ---: | ---: |
+| 24 | 4 | 0 | 17.3 | 1.67 dB |
+| 48 | 2 | 1 | 25.4 | 1.77 dB |
+| 64 | 3 | 1 | 26.5 | 1.78 dB |
+
+But more filling made some copies worse: N913TC s7 went from 0.40 (24 fills) to 0.99 (35), and
+N413AK_R05 s8 from 0.72 (48) to 1.00 (63), with the attacker's four lines all within 0.2–0.8 % of
+strips the cloak had filled. After heavy filling the wrong places' scores bunch up (N413AK: spread
+0.84 → 0.15 in the sum of four lines), so a small tilt along the truth decides the rank.
+
+**With nothing there, filling raises the rank.** 40 strips filled along a pass curve (300–2,700 Hz,
+`--track-rests`) on 70 s of noise with no plane, the engine's judge before and after (12 seeds):
+
+| background | fill | rank change | after ≥ 0.9 |
+| --- | --- | ---: | ---: |
+| white noise | median (default) | +0.18 ± 0.07 | 2/12 |
+| white noise | shift | +0.32 ± 0.07 | 4/12 |
+| noise + 30 steady tones (5–15 dB per bin) | median | +0.29 ± 0.10 | 4/12 |
+| noise + 30 steady tones (35–45 dB per bin) | median | +0.48 ± 0.03 | 10/12 |
+| the same | binTime | +0.52 ± 0.04 | 11/12 |
+| the same | logMean | +0.32 ± 0.05 | 3/12 |
+| the same | shift | −0.08 ± 0.03 | 0/12 |
+
+The same pipeline with a fill that changes nothing leaves every rank exactly as it was. Ten strips
+on white noise: +0.09 ± 0.05.
+
+**What it's made of.**
+- **Not refilling:** the same strip filled 1–8 times doesn't build up (+0.01 dB along the curve).
+- **Not cutting off steady tones:** leaving bins with a steady component unfilled changed nothing
+  (+0.48 either way).
+- **A spikier fill:** cells drawn independently (median, logMean, binTime) have real noise's median
+  but a fatter upper tail in the attacker's whitened excess. On white noise the 99.9th percentile
+  goes 10.0 → 10.4 dB; on the tones scene the 99th goes 7.8 → 8.8. This holds along a flat curve as
+  much as along a steep one, so it isn't the sweep. The attacker's ±2-bin max and its best four rests
+  out of ~1,700 pick out exactly that tail.
+- **`--track-fill-level shift`:** copies the same bins' complex values from another moment of the
+  same recording, so filled cells keep real noise's correlations. It takes the tail back to
+  background's (tones scene, 99th percentile 7.9 against 7.8) and clears the tones scene.
+- **What's left on white noise is tiny but decisive.** On white noise `shift` moves the truth's
+  best four up by 0.05 dB and the wrong places' down by 0.07, but there the scaled-truth wrong places
+  spread by only 0.10. Against that null, any processing done only along the truth has to be
+  neutral to about 0.01 dB per line.
+
+**What it means.** Light filling (the default's 0.6 tones per copy on real backgrounds) is
+unaffected. Removal that fills dozens of strips along the true curve partly writes its own trace,
+which a stronger stop can't fix: more fills, more trace. Some of what "lines the cloak never filled"
+measured in leaking copies (above) may be this. Directions:
+- processing that isn't specific to the truth: the same fills along decoy curves;
+- removal that changes nothing where nothing is there: subtracting the tracked line rather than
+  replacing its strip;
+- a cap on total fills.
+
 ## Next experiments
 
 0. **The place as the metric** (envelope term, holdouts, stopping, the public corpus and the

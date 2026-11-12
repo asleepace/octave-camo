@@ -82,9 +82,9 @@ attacker every result is scored against").
 - **Done since:** the cloak now has the attacker's statistic (`--track-target rank`,
   docs/EXPERIMENTS.md, "The cloak judges like the attacker"): 5 leaks of 34.
 - **Still open:**
-  - some passes can't reach their drawn target: the fills run out (24 fills, each rest twice)
-    with the rank still near 1 (N413AK_R05, N784MB). Is it the fill cap, the broadband hump, or
-    picks that move every round?
+  - some passes can't reach their drawn target. **Answered:** they run out of fills (all 24 used
+    on 24 rests), and filling more partly writes its own trace (docs/EXPERIMENTS.md, "Deep filling
+    leaves a trace of its own"); see "Is the fill neutral?" below.
   - after cloaking, the cloak's rank and the corpus's u part ways (0.11 against 0.54; 0.85 against
     1.00). How much of the remaining leak is the cloak's wrong places not being the attacker's?
     Would judging against both sets, or more varied ones, help?
@@ -98,7 +98,22 @@ attacker every result is scored against").
   - decoy passes.
 - How many real recordings have this isn't known (2 of 17 here).
 
-### Is the fill neutral on real backgrounds? (partly answered: its level doesn't matter there)
+### Is the fill neutral? (no, when there's a lot of it)
+- **Answered** (docs/EXPERIMENTS.md, "Deep filling leaves a trace of its own"): filling 40 strips
+  along a curve with no plane raises the attacker's rank, +0.18 on white noise and +0.48 over steady
+  tones. Cells drawn independently are spikier than real noise in the attacker's whitened excess:
+  same median, a fatter upper tail. `--track-fill-level shift` (copy the same bins from another
+  moment) clears the tones scene but not white noise (+0.32), where the scaled-truth null's spread
+  is only 0.1 dB in four lines' sum.
+- **Open:**
+  - is there a fill neutral to ~0.01 dB per line, or must the removal be other than "replace the
+    strip" (subtracting the tracked line; the same fills along decoy curves)?
+  - how much of the corpus leakage after cloaking is this, and not lines left unfilled?
+  - on real backgrounds, with how many fills does it start to matter? `lab blank` only saw the
+    light default (0.6 tones per copy).
+- The level test (`testEveryLevelKeepsNoiseAtItsLevel`, six seeds) reads the median fill's power
+  bias as +0.4 dB with one set of draws and +0.75 with another: its 0.6 dB bound isn't a margin.
+- Earlier, on the fill's level:
 - **Answered:** on real backgrounds the fill's level makes no measurable difference to the cloak's
   mark (`lab blank`: the three levels within 0.01). The hole the cloak leaves comes from *what* it
   removes (chance matches, through the biased stop), not from the fill's level.

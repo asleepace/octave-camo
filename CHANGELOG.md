@@ -9,6 +9,15 @@ are grouped by milestone, newest first, with the commits that made them.
 
 ## [Unreleased]
 
+### Deep filling leaves a trace (finding)
+
+- With no plane present, filling 40 strips along a curve raises the attacker's rank (+0.18 on white
+  noise, +0.48 over steady tones): independently drawn fill cells are spikier than real noise to the
+  attacker. Light filling is unaffected. docs/EXPERIMENTS.md, "Deep filling leaves a trace of its own".
+- **`--track-fill-level shift`**, experimental: copies the same bins from another moment of the
+  recording. It clears the steady-tones case but not white noise.
+- The rank stop's summary now says why it stopped short ("out of fills", "out of lines").
+
 ### The cloak judges like the attacker (experimental)
 
 - **`Attacker`**: the lab's scoring attacker (best four lines, the lab's whitening, rank among wrong
