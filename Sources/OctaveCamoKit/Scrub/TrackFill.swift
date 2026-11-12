@@ -205,10 +205,14 @@ public struct TrackFill {
     /// close, but on the public corpus raising rebuilds what's left of a plane along the true curve
     /// and, scored against wrong places' curves, `.null` is no better than `.fixed`
     /// (docs/EXPERIMENTS.md). Experimental.
-    public enum Target: String, Sendable { case fixed, null }
+    public enum Target: String, Sendable { case fixed, null, rank }
     public var target: Target = .fixed
     /// How close to its target a pass's score has to get, raising (in wrong-time spreads).
     public var targetTolerance = 0.25
+    /// `rank` target: act only on passes the scoring attacker ranks at least this high among wrong
+    /// places, and fill at most this many lines per pass (0: judge only, for checking).
+    public var actAbove = 0.9
+    public var rankRounds = 24
     /// Raising: rounds per pass, and the most any strip is raised in all, dB.
     public var maxRaises = 6
     public var maxGainDB = 10.0
@@ -273,6 +277,7 @@ public struct TrackFill {
             }
             return (y, "tracks: forced, filled \(done.count) tone(s)\(done.isEmpty ? "" : " (" + done.joined(separator: ", ") + ")")")
         }
+        if target == .rank { return stage.rankStop(y, sampleRate: sampleRate, fill: &fill, rng: &rng) }
         var filled: [Tone] = [], open = Set(usable.indices), count = [Int](repeating: 0, count: usable.count)
         var first = [Double?](repeating: nil, count: usable.count), last = first, goal = first
         var firstScore = first, lastScore = first

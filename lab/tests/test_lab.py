@@ -465,6 +465,48 @@ class FlightGeometry(unittest.TestCase):
         self.assertEqual(tc, 100.0)
 
 
+class EngineAttacker(unittest.TestCase):
+    """The engine's port of the scoring attacker (Attacker.swift, `--track-target rank`) gives the
+    lab's rank: `zenodo.u` against the physical library, four lines. Needs the release build."""
+
+    def test_engine_rank_equals_lab_rank(self):
+        import json, re, subprocess, tempfile
+        from pathlib import Path
+        import soundfile as sf
+        from lab import geometry
+        cli = Path(__file__).resolve().parents[2] / ".build/release/octave-camo"
+        if not cli.exists():
+            self.skipTest("no release build")
+        sr, dur = 16000, 70.0
+        tq, fq, _ = geometry.curve(130.0, 1500.0)
+        p = {"case": "truth", "t": tq + 35.0, "fac": fq, "tc": 35.0}
+        lib = geometry.library()
+        old = locate.whitened
+        locate.whitened = lambda name, x, sr_, prm: detect.whiten(x, sr_, prm)
+        try:
+            for seed, amp in ((1, 0.0), (2, 0.02), (3, 0.05)):
+                rng = np.random.default_rng(seed)
+                t = np.arange(int(sr * dur)) / sr
+                fac = np.interp(t, p["t"], fq)
+                x = rng.standard_normal(len(t))
+                for f0 in (700.0, 1130.0):
+                    x += amp * np.sqrt(2) * 10 * np.sin(2 * np.pi * np.cumsum(f0 * fac) / sr)
+                lab_u, n = zenodo.u(locate.Scene(x, sr, f"engine-{seed}"), p, [p] + lib, 0.0, 4)
+                with tempfile.TemporaryDirectory() as tmp:
+                    src, exp = Path(tmp) / "in.wav", Path(tmp) / "e.json"
+                    sf.write(src, x / 8, sr, subtype="FLOAT")                 # level-blind: ranks don't move
+                    exp.write_text(json.dumps([zenodo.expected_pass(p, 0.0, dur)]))
+                    r = subprocess.run([str(cli), "scrub", str(src), str(Path(tmp) / "o.wav"), "--steps", "mono",
+                                        "--expect", str(exp), "--track-target", "rank", "--track-rank-rounds", "0"],
+                                       capture_output=True, text=True, check=True)
+                m = re.search(r"attacker rank ([0-9.]+)", r.stdout + r.stderr)
+                self.assertIsNotNone(m, r.stdout + r.stderr)
+                self.assertEqual(n, 225)
+                self.assertAlmostEqual(float(m.group(1)), round(lab_u, 3), delta=0.0011, msg=f"seed {seed}")
+        finally:
+            locate.whitened = old
+
+
 class SyntheticEngine(unittest.TestCase):
     """lab/nulltest.py's engine: the public corpus's kind (a few unrelated lines, similar levels)."""
 
