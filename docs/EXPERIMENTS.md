@@ -1427,6 +1427,33 @@ measured in leaking copies (above) may be this. Directions:
   replacing its strip;
 - a cap on total fills.
 
+## Subtracting the line instead (a negative result)
+
+A prototype in the lab (not in the engine) removed each of the attacker's picks by subtracting it
+coherently along the traced curve, instead of filling its strip. It heterodynes with the curve's
+phase, averages over L seconds, and subtracts, after a fine search for the line's exact rest
+frequency within ±1.5 %.
+
+- **Empty audio, 40 removals** (as above, lab rank, 12 seeds): it raises the rank like the fill:
+  white noise +0.32 ± 0.07, steady tones +0.54 ± 0.03 (12/12 at ≥ 0.9). Putting matched
+  narrowband noise back after subtracting helps on white noise (+0.15 ± 0.06) but not over steady
+  tones (+0.54).
+- **On the stuck corpus passes it removes nothing that matters:** N784MB stays at rank 1.00 after
+  8–9 removals, with L = 1, 0.2 or 0.05 s (bands of about ±1, ±5 and ±20 Hz). The lines the attacker
+  adds up don't fit a coherent tone along the traced curve. The fill's strip (±20–30 Hz, close to
+  the attacker's own ±2-bin tolerance) catches them.
+- **A removal moves its neighbours.** One ±20 Hz subtraction at 431 Hz on N784MB (no refill) raised
+  every rest from 400 to 424 Hz by +0.6 to +1.5 and lowered 436–440 Hz. That held when only the
+  steep part of the pass was touched, so it isn't the flat approach and recession. The subtraction
+  itself checks out on a synthetic tone (−58 dB on the line, symmetric skirts).
+
+**What the two results share.** Everything tried so far changes cells only along the truth's family
+of curves, on parallel strips. A wrong place's curve crosses those strips; the truth's own best
+rests run parallel to them and never cross. So any change the processing makes, up or down, reaches
+the wrong places and not the truth's untouched lines, and against wrong places that bunch within
+0.1 dB it shows. That points to processing that isn't confined to the truth: the same removal along
+decoy curves.
+
 ## Next experiments
 
 0. **The place as the metric** (envelope term, holdouts, stopping, the public corpus and the

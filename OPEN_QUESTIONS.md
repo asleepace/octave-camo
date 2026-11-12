@@ -106,8 +106,12 @@ attacker every result is scored against").
   moment) clears the tones scene but not white noise (+0.32), where the scaled-truth null's spread
   is only 0.1 dB in four lines' sum.
 - **Open:**
-  - is there a fill neutral to ~0.01 dB per line, or must the removal be other than "replace the
-    strip" (subtracting the tracked line; the same fills along decoy curves)?
+  - is there a fill neutral to ~0.01 dB per line? Subtracting the tracked line isn't the way out
+    (docs/EXPERIMENTS.md, "Subtracting the line instead"): it leaves the same kind of trace and
+    doesn't remove real passes' evidence. Untried: the same removal along decoy curves, so the
+    processing isn't confined to the truth's family.
+  - why does one removal raise its neighbouring rests by up to +1.5 (N784MB)? Not the flat parts.
+    The per-bin 15 s reference is the suspect, unconfirmed.
   - how much of the corpus leakage after cloaking is this, and not lines left unfilled?
   - on real backgrounds, with how many fills does it start to matter? `lab blank` only saw the
     light default (0.6 tones per copy).
