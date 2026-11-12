@@ -257,6 +257,41 @@ final class TrackFillTests: XCTestCase {
         XCTAssertGreaterThan(energy(r.output), 1.5 * energy(one))
     }
 
+    /// An attacker who knows the code and finds every processed curve still can't pick the pass out
+    /// of them: the truth is the centre of the set (nearest its centroid, or nearest the others in
+    /// all) about one time in nine, as any member is. Decoys built around the truth, as the first
+    /// version did, have it at the centre nearly always.
+    func testDecoysDontPointBackToThePass() {
+        let pass = Self.expected()
+        var s = Self.stage([pass]); s.decoys = 8
+        let k = pass.factors.indices.max { abs(log(pass.factors[$0])) < abs(log(pass.factors[$1])) }!
+        let span = pass.times.last! - pass.times.first!
+        // Each member's (log a, log b, offset) relative to the truth, scaled by the known spreads.
+        func coords(_ d: ExpectedPass) -> [Double] {
+            [log(log(d.factors[k]) / log(pass.factors[k])) / TrackFill.decoyLogSpread,
+             log((d.times.last! - d.times.first!) / span) / TrackFill.decoyLogSpread,
+             (d.center - pass.center) / TrackFill.decoyOffset]
+        }
+        func dist(_ x: [Double], _ y: [Double]) -> Double { sqrt(zip(x, y).reduce(0) { $0 + ($1.0 - $1.1) * ($1.0 - $1.1) }) }
+        let trials = 600
+        var nearCentroid = 0, medoid = 0
+        var rng = SeededRNG(seed: 5)
+        for _ in 0..<trials {
+            let d = s.decoyPasses(for: pass, rng: &rng)
+            XCTAssertEqual(d.count, 8)
+            let m = [[0.0, 0, 0]] + d.map(coords)        // the truth first
+            let centroid = (0..<3).map { i in m.reduce(0) { $0 + $1[i] } / Double(m.count) }
+            if m.indices.min(by: { dist(m[$0], centroid) < dist(m[$1], centroid) }) == 0 { nearCentroid += 1 }
+            let total = m.map { x in m.reduce(0) { $0 + dist(x, $1) } }
+            if total.indices.min(by: { total[$0] < total[$1] }) == 0 { medoid += 1 }
+        }
+        // 1/9 of 600 is 67, standard deviation 7.7: within 4 either way.
+        for (rule, hits) in [("nearest the centroid", nearCentroid), ("nearest the others", medoid)] {
+            XCTAssertEqual(Double(hits), Double(trials) / 9, accuracy: 4 * sqrt(Double(trials) * 8 / 81),
+                           "the truth was the one \(rule) \(hits) of \(trials) times")
+        }
+    }
+
     /// `harmonics` 1 means none: with one tone allowed, the null target touches nothing above the
     /// fundamental's sweep (870–2,090 Hz here); with 3 it also fills ×2 and ×3 there.
     func testHarmonicsOneFillsNoMultiples() {

@@ -224,10 +224,12 @@ public struct TrackFill {
     public var rankWrong = Attacker.Wrong.scaled
     /// Experimental: each line filled along a pass is also filled, at the same rest frequency, along
     /// this many decoy curves (the pass reshaped as the attacker's scaled wrong places are, drawn once
-    /// per pass). Filling only along the truth changes cells that wrong places' curves cross and the
-    /// truth's own best lines, parallel to the strips, never do (docs/EXPERIMENTS.md); decoys give the
-    /// wrong places the same treatment.
+    /// per pass, see `decoyPasses`). Filling only along the truth changes cells that wrong places'
+    /// curves cross and the truth's own best lines, parallel to the strips, never do
+    /// (docs/EXPERIMENTS.md); decoys give the wrong places the same treatment.
     public var decoys = 0
+    /// Decoys' spread: log a and log b each uniform within ± this, the offset within ± `decoyOffset` s.
+    static let decoyLogSpread = 0.5, decoyOffset = 5.0
     /// Raising: rounds per pass, and the most any strip is raised in all, dB.
     public var maxRaises = 6
     public var maxGainDB = 10.0
@@ -416,22 +418,23 @@ public struct TrackFill {
     var fillHalfWindow: Double { halfWindow + maxOffset }
 
     /// The predicted tone as a track around the closest approach (where it was tested).
-    /// `decoys` curves for a pass, drawn without replacement from the scaled wrong places' shapes
-    /// and timings (Attacker's scales and offsets).
+    /// `decoys` curves for a pass, drawn so that they don't point back to it. Reshaping composes by
+    /// adding (log a, log b, offset), so the truth and its decoys are drawn alike: `decoys` + 1 points
+    /// drawn independently, the truth taking the first, and each decoy is the pass moved by its point's
+    /// difference from the truth's. Anyone who finds every processed curve then can't tell which is the
+    /// pass: each is the truth equally often (a decoy set built around the truth has the truth at its
+    /// centre). A set with a curve that isn't physical is drawn again whole, which keeps that.
     func decoyPasses(for pass: ExpectedPass, rng: inout SeededRNG) -> [ExpectedPass] {
         guard decoys > 0 else { return [] }
-        let attacker = Attacker()
-        var all: [(Double, Double, Double)] = []
-        for a in attacker.scales { for b in attacker.scales where !(a == 1 && b == 1) { for o in attacker.offsets { all.append((a, b, o)) } } }
-        var chosen: [ExpectedPass] = []
-        while chosen.count < min(decoys, all.count) {
-            let i = Int(rng.uniform(0...1) * Double(all.count)) % all.count
-            let (a, b, o) = all.remove(at: i)
-            let d = pass.scaled(a: a, b: b, offset: o)
-            if d.isValid { chosen.append(d) }
-            if all.isEmpty { break }
+        let l = Self.decoyLogSpread, o = Self.decoyOffset
+        var valid: [ExpectedPass] = []
+        for _ in 0..<64 {
+            let p = (0...decoys).map { _ in (rng.uniform(-l...l), rng.uniform(-l...l), rng.uniform(-o...o)) }
+            let d = p.dropFirst().map { pass.scaled(a: exp($0.0 - p[0].0), b: exp($0.1 - p[0].1), offset: $0.2 - p[0].2) }
+            valid = d.filter(\.isValid)
+            if valid.count == d.count { break }
         }
-        return chosen
+        return valid
     }
 
     /// Fills `rest` along each decoy curve; how many took.
