@@ -422,29 +422,31 @@ public struct TrackFill {
     /// adding (log a, log b, offset), so the truth and its decoys are drawn alike: `decoys` + 1 points
     /// drawn independently, the truth taking the first, and each decoy is the pass moved by its point's
     /// difference from the truth's. Anyone who finds every processed curve then can't tell which is the
-    /// pass: each is the truth equally often (a decoy set built around the truth has the truth at its
-    /// centre). A set with a curve that isn't physical is drawn again whole, which keeps that.
+    /// pass from their arrangement: each is the truth equally often (a decoy set built around the
+    /// truth has the truth at its centre). Nothing is redrawn or dropped: keeping only physical
+    /// decoys would keep the ones on one side of the truth, which points back to it again. A decoy
+    /// is filled wherever its curve is in the band (`fillDecoys`).
     func decoyPasses(for pass: ExpectedPass, rng: inout SeededRNG) -> [ExpectedPass] {
         guard decoys > 0 else { return [] }
         let l = Self.decoyLogSpread, o = Self.decoyOffset
-        var valid: [ExpectedPass] = []
-        for _ in 0..<64 {
-            let p = (0...decoys).map { _ in (rng.uniform(-l...l), rng.uniform(-l...l), rng.uniform(-o...o)) }
-            let d = p.dropFirst().map { pass.scaled(a: exp($0.0 - p[0].0), b: exp($0.1 - p[0].1), offset: $0.2 - p[0].2) }
-            valid = d.filter(\.isValid)
-            if valid.count == d.count { break }
-        }
-        return valid
+        let p = (0...decoys).map { _ in (rng.uniform(-l...l), rng.uniform(-l...l), rng.uniform(-o...o)) }
+        return p.dropFirst().map { pass.scaled(a: exp($0.0 - p[0].0), b: exp($0.1 - p[0].1), offset: $0.2 - p[0].2) }
     }
 
-    /// Fills `rest` along each decoy curve; how many took.
+    /// Fills `rest` along each decoy curve, where it's below 45 % of the sample rate; how many took.
     func fillDecoys(_ passes: [ExpectedPass], rest: Double, _ y: inout [Double], sampleRate: Int, fill: LineFill, rng: inout SeededRNG) -> Int {
         var n = 0
+        let top = 0.45 * Double(sampleRate)
         for d in passes {
             var one = self
             one.expected = [d]
-            if let line = one.track(Tone(pass: 0, rest: rest, offset: 0, z: 0, effect: 0), sampleRate: sampleRate, count: y.count),
-               fill.fill(&y, line, sampleRate: sampleRate, rng: &rng) { n += 1 }
+            guard let full = one.track(Tone(pass: 0, rest: rest, offset: 0, z: 0, effect: 0), sampleRate: sampleRate, count: y.count)
+            else { continue }
+            let keep = full.frequencies.indices.filter { full.frequencies[$0] > 20 && full.frequencies[$0] < top }
+            guard keep.count > 4 else { continue }
+            let line = Track(times: keep.map { full.times[$0] }, frequencies: keep.map { full.frequencies[$0] },
+                             levels: keep.map { full.levels[$0] })
+            if fill.fill(&y, line, sampleRate: sampleRate, rng: &rng) { n += 1 }
         }
         return n
     }

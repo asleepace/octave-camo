@@ -259,8 +259,9 @@ final class TrackFillTests: XCTestCase {
 
     /// An attacker who knows the code and finds every processed curve still can't pick the pass out
     /// of them: the truth is the centre of the set (nearest its centroid, or nearest the others in
-    /// all) about one time in nine, as any member is. Decoys built around the truth, as the first
-    /// version did, have it at the centre nearly always.
+    /// all), or the one with the widest Doppler swing, about one time in nine, as any member is.
+    /// Decoys built around the truth, as the first version did, have it at the centre nearly always;
+    /// keeping only physical ones, as the second did, leaves it at an edge.
     func testDecoysDontPointBackToThePass() {
         let pass = Self.expected()
         var s = Self.stage([pass]); s.decoys = 8
@@ -274,7 +275,7 @@ final class TrackFillTests: XCTestCase {
         }
         func dist(_ x: [Double], _ y: [Double]) -> Double { sqrt(zip(x, y).reduce(0) { $0 + ($1.0 - $1.1) * ($1.0 - $1.1) }) }
         let trials = 600
-        var nearCentroid = 0, medoid = 0
+        var nearCentroid = 0, medoid = 0, widest = 0
         var rng = SeededRNG(seed: 5)
         for _ in 0..<trials {
             let d = s.decoyPasses(for: pass, rng: &rng)
@@ -284,9 +285,10 @@ final class TrackFillTests: XCTestCase {
             if m.indices.min(by: { dist(m[$0], centroid) < dist(m[$1], centroid) }) == 0 { nearCentroid += 1 }
             let total = m.map { x in m.reduce(0) { $0 + dist(x, $1) } }
             if total.indices.min(by: { total[$0] < total[$1] }) == 0 { medoid += 1 }
+            if m.indices.max(by: { m[$0][0] < m[$1][0] }) == 0 { widest += 1 }
         }
         // 1/9 of 600 is 67, standard deviation 7.7: within 4 either way.
-        for (rule, hits) in [("nearest the centroid", nearCentroid), ("nearest the others", medoid)] {
+        for (rule, hits) in [("nearest the centroid", nearCentroid), ("nearest the others", medoid), ("with the widest swing", widest)] {
             XCTAssertEqual(Double(hits), Double(trials) / 9, accuracy: 4 * sqrt(Double(trials) * 8 / 81),
                            "the truth was the one \(rule) \(hits) of \(trials) times")
         }
