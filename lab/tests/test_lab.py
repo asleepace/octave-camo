@@ -850,3 +850,24 @@ class LearnedDetectorPlumbing(unittest.TestCase):
         wins = [(10, 20, 900, 1000, 0.9), (12.5, 22.5, 880, 990, 0.8), (40, 50, 500, 520, 0.95), (60, 70, 300, 320, 0.1)]
         self.assertEqual(ml.group(wins, 0.5), [(10, 22.5, 880, 1000, 0.9)])
         self.assertEqual(len(ml.group(wins, 0.5, min_windows=1)), 2)
+
+
+@unittest.skipUnless(__import__("shutil").which("ffmpeg"), "needs ffmpeg")
+class Codec(unittest.TestCase):
+    def test_every_chain_keeps_time_and_a_tone(self):
+        from lab import codec
+        sr = 48_000
+        rng = np.random.default_rng(0)
+        x = 0.02 * rng.standard_normal(sr * 4)
+        x += 0.1 * np.sin(2 * np.pi * 700.0 * np.arange(len(x)) / sr)
+        x[sr * 2] += 0.9                                  # a click, to find the alignment
+        for chain in codec.CHAINS:
+            y = codec.reencode(x, sr, chain)
+            self.assertEqual(len(y), len(x), chain)
+            lag = int(np.argmax(np.abs(y[sr * 2 - 2000: sr * 2 + 2000]))) - 2000
+            self.assertLessEqual(abs(lag), 2, f"{chain}: sample i out isn't sample i in ({lag})")
+            f = np.fft.rfftfreq(len(y), 1 / sr)
+            P = np.abs(np.fft.rfft(y)) ** 2
+            tone = P[np.abs(f - 700) < 2].sum() / P[np.abs(f - 700) < 2].size
+            near = np.median(P[(np.abs(f - 700) > 20) & (np.abs(f - 700) < 200)])
+            self.assertGreater(tone / near, 1e3, chain)
