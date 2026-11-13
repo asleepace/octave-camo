@@ -1554,6 +1554,37 @@ the tuning half only. This is its first score by u.
   change is within 0.5 dB of the default's. Otherwise the default stays and the result is reported
   as it is.
 
+**Result** (scored once, 18 passes × 2 seeds):
+
+| | leaks | holes | u ≥ 0.9 | u ≤ 0.1 | mean u | median u | tones filled per copy | sound change |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| original | 12 of 18 | 0 | 13 | 0 | 0.95 | 0.99 | 0 | |
+| default stop | 7 of 36 | 0 | 11 | 1 | 0.70 | 0.71 | 4.9 | 0.96 dB |
+| rank stop, 8 decoys | 4 of 36 | 3 | 6 | 5 | 0.50 | 0.51 | 5.2 | 1.43 dB |
+
+Paired by copy, the rank stop with decoys lowers u by 0.20 ± 0.06.
+
+**By the rule above the default stays:** fewer leaks (4 against 7) and sound change within 0.5 dB
+(+0.47), but 3 holes against the default's 0 plus 2.
+
+What the copies show:
+- **The rank stop does what it's designed to:** its u is spread like chance (mean 0.50, median
+  0.51), where the default's sits high (0.70, a quarter of copies at 0.94 or above).
+- **Most of its leaks and holes are its targets.** A uniform target lands above 0.95 or below
+  0.05 one time in ten. Three leaks drew such targets: N394FX s7 (0.991), N61NG s8 (0.953) and
+  N8085W s7 (0.958). One hole did too: N413AK_R16 s7 (0.066).
+- **The other two holes are the cloak and the corpus disagreeing,** as on the tuning half.
+  N563FX_R21 was lowered to 0.19 and 0.25 by the cloak's measure, and the corpus puts it at 0.05
+  and 0.04.
+- **The one leak left alone, N8085W s8,** ranks 0.89 to the cloak (below the 0.9 it acts at) and
+  0.98 to the corpus: N621KS's pattern on the tuning half.
+
+The hole bound was stricter than the design: by itself, a uniform target expects about 5 % of the
+copies it acts on to be holes (here about 1.4 of 28), and the default, which leans high, has
+almost none. That was written before the run and isn't changed after it. Whether a hole at the
+chance rate is a problem is OPEN_QUESTIONS, "Does a hole matter to a real attacker?". The held-out
+half has now been used for this decision and can't settle another one.
+
 ## Next experiments
 
 0. **The place as the metric** (envelope term, holdouts, stopping, the public corpus and the

@@ -9,6 +9,14 @@ are grouped by milestone, newest first, with the commits that made them.
 
 ## [Unreleased]
 
+### Holdout: the default stays (finding)
+
+- The rank stop with 8 decoys, scored once on the corpus's held-out half against the rule written
+  beforehand: 4 leaks of 36 against the default's 7, sound change +0.47 dB, but 3 holes against 0,
+  one more than the rule allowed. The default stays; the rank stop and decoys stay experimental.
+  Its u is spread like chance (mean 0.50), the default's sits high (0.70). docs/EXPERIMENTS.md,
+  "The holdout for the rank stop with decoys".
+
 ### Decoy fills (experimental)
 
 - **`--track-decoys K`** (0–32): every fill along the truth is repeated along K of the attacker's

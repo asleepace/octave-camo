@@ -49,6 +49,10 @@ attacker every result is scored against").
 ### Does a hole matter to a real attacker?
 - A truth that scores unusually *low* is counted as a loss, to be safe. Nobody has measured how well
   an attacker could exploit one. Until then it stays counted.
+- It now decides the default: on the holdout the rank stop with decoys leaked 4 of 36 against 7,
+  and lost on 3 holes against 0. A uniform target makes holes at about the chance rate (5 % of the
+  copies it acts on) by design. If a hole at the chance rate is no tell, the rank stop is the better
+  cloak; settling that needs a new held-out set (the corpus's is spent).
 
 ### Are the lab's scores what a posted video would give?
 - `lab zenodo` and `lab blank` score the cloak's floating-point output. A posted video carries AAC
@@ -140,7 +144,11 @@ attacker every result is scored against").
 ### Leaks or holes: is there a stop that avoids both? (partly answered: the rank stop)
 - **Answered, on the tuning half:** with decoy fills (`--track-decoys 4` or `8`) the rank stop
   leaks 1–2 of 34, and on real backgrounds fires on the same 3 % as without them. What's left is
-  the drawn targets and one pass left alone. The holdout decides.
+  the drawn targets and one pass left alone.
+- **Holdout, scored once:** 4 leaks of 36 (default 7), 3 holes (default 0), mean u 0.50 (default
+  0.70). It failed the rule written beforehand on holes, by one, so the default stays. Three of
+  the four leaks and one hole are targets drawn beyond 0.95 or 0.05; the other two holes
+  (N563FX_R21) are the cloak's and the corpus's wrong places disagreeing.
 - Before decoys: the rank stop leaks 5 of 34 and, on real backgrounds, fires on
   3 % of copies with an effect of −0.011 ± 0.007 against the default's −0.026 ± 0.012. Its mean
   shift is what a uniform target gives by design. Not settled: one seed pair, a worn tuning half,
