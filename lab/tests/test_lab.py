@@ -509,6 +509,27 @@ class EngineAttacker(unittest.TestCase):
             locate.whitened = old
 
 
+class EngineOptions(unittest.TestCase):
+    """Track options that would otherwise be ignored without a word are refused. Needs the release build."""
+
+    def test_ignored_options_are_refused(self):
+        import subprocess, tempfile
+        from pathlib import Path
+        import soundfile as sf
+        cli = Path(__file__).resolve().parents[2] / ".build/release/octave-camo"
+        if not cli.exists():
+            self.skipTest("no release build")
+        with tempfile.TemporaryDirectory() as tmp:
+            src = Path(tmp) / "in.wav"
+            sf.write(src, np.zeros(16000), 16000)
+            for extra, why in ((["--track-decoys", "8"], "needs --track-target rank"),
+                               (["--track-act-above", "0.5"], "needs --track-target rank"),
+                               (["--track-rests", "450,abc"], "takes rest frequencies")):
+                r = subprocess.run([str(cli), "scrub", str(src), str(Path(tmp) / "o.wav"), *extra], capture_output=True, text=True)
+                self.assertNotEqual(r.returncode, 0, extra)
+                self.assertIn(why, r.stdout + r.stderr, extra)
+
+
 class SyntheticEngine(unittest.TestCase):
     """lab/nulltest.py's engine: the public corpus's kind (a few unrelated lines, similar levels)."""
 

@@ -17,11 +17,11 @@ import WASILibc
 /// - lab/locate.py's `Scene._profile` and `lines_of`: the mean excess along f0·factor at every rest
 ///   frequency on a 0.2 % log grid (100–3500 Hz), over the frames within 25 s of the closest
 ///   approach, and the four best separate lines added up;
-/// - ranked against physical wrong places (lab/geometry.py's library, at lab/zenodo.py's ±6 s
-///   offsets), ties halved.
+/// - ranked against wrong places at lab/zenodo.py's ±6 s offsets, ties halved: by default the
+///   truth's own curve scaled (lab/geometry.py's `scaled`), or physical flights (its `library`).
 ///
-/// With `wrong = .library` that is `zenodo.u(scene, p, [p] + geometry.library(), offset, 4)`; with
-/// `.scaled` (the default), the same against `geometry.scaled(p)`. The lab subtracts the whole
+/// With `wrong = .scaled` (the default) that is `zenodo.u(scene, p, [p] + geometry.scaled(p), offset, 4)`;
+/// with `.library`, the same against `geometry.library()`. The lab subtracts the whole
 /// clip's mean excess first; that shifts every curve's score alike and leaves ranks and picks
 /// unchanged, so the scene here is only the stretch around the pass.
 public struct Attacker {

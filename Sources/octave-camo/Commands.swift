@@ -133,13 +133,15 @@ func scrub(_ args: Arguments) throws {
     pipeline.tracks.maxRaises = try args.value("track-max-raises", default: pipeline.tracks.maxRaises)
     pipeline.tracks.lines = try args.value("track-lines", default: pipeline.tracks.lines)
     if let w = args.string("track-rests") {
-        let v = w.split(separator: ",").compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
-        guard !v.isEmpty, v.allSatisfy({ $0 > 20 && $0 < 20_000 }) else { throw UsageError("--track-rests takes rest frequencies in Hz, like 450,1070") }
+        let parts = w.split(separator: ",", omittingEmptySubsequences: false)
+        let v = parts.compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
+        guard !v.isEmpty, v.count == parts.count, v.allSatisfy({ $0 > 20 && $0 < 20_000 }) else { throw UsageError("--track-rests takes rest frequencies in Hz, like 450,1070") }
         pipeline.tracks.forcedRests = v
     }
     if let w = args.string("track-place-scales") {
-        let v = w.split(separator: ",").compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
-        guard !v.isEmpty, v.allSatisfy({ $0 > 0.1 && $0 < 10 }) else { throw UsageError("--track-place-scales takes numbers like 0.6,1,1.6") }
+        let parts = w.split(separator: ",", omittingEmptySubsequences: false)
+        let v = parts.compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
+        guard !v.isEmpty, v.count == parts.count, v.allSatisfy({ $0 > 0.1 && $0 < 10 }) else { throw UsageError("--track-place-scales takes numbers like 0.6,1,1.6") }
         pipeline.tracks.placeScales = v
     }
     if let w = args.string("track-null") {
@@ -169,6 +171,16 @@ func scrub(_ args: Arguments) throws {
     if let w = args.string("track-decoys") {
         guard let v = Int(w), (0...32).contains(v) else { throw UsageError("--track-decoys takes 0-32") }
         pipeline.tracks.decoys = v
+    }
+    // Options only the rank target reads, and decoys (rank target or --track-rests), would
+    // otherwise be ignored without a word.
+    if pipeline.tracks.target != .rank {
+        for o in ["track-act-above", "track-rank-rounds", "track-rank-null"] where args.string(o) != nil {
+            throw UsageError("--\(o) needs --track-target rank")
+        }
+        if pipeline.tracks.decoys > 0 && pipeline.tracks.forcedRests.isEmpty {
+            throw UsageError("--track-decoys needs --track-target rank (or --track-rests)")
+        }
     }
     if let w = args.string("track-windows") {
         pipeline.tracks.windows = w.split(separator: ",").compactMap { Double($0) }

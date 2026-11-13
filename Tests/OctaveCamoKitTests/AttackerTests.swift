@@ -126,6 +126,26 @@ final class AttackerTests: XCTestCase {
         XCTAssertEqual(targets.count, 3, "targets should be drawn per seed")
     }
 
+    /// With decoys the stop still lands at or below its target, its end rank is still the attacker's
+    /// verdict on the output (decoy fills are judged too), and nothing changes beyond the farthest a
+    /// decoy can sit: the pass's reach plus twice the decoy offset.
+    func testRankStopWithDecoysLandsAndStaysInReach() {
+        let x = LineFillTests.fanTone(rate: Self.rate, snr: 20).mono
+        var stage = Self.rankStage()
+        stage.decoys = 8
+        stage.seed = 6
+        let r = stage.process(x, sampleRate: Self.rate)
+        guard let l = Self.landed(r.summary) else { return XCTFail(r.summary) }
+        XCTAssertLessThanOrEqual(l.end, l.target, r.summary)
+        XCTAssertTrue(r.summary.contains("along 8 decoy(s)"), r.summary)
+        guard let after = Self.judge(r.output) else { return XCTFail("no verdict after") }
+        XCTAssertEqual(after.rank, l.end, accuracy: 0.0006, r.summary)
+        let c = TrackFillTests.expected().center, reach = stage.fillHalfWindow + 2 * TrackFill.decoyOffset + 1
+        for i in x.indices where abs(Double(i) / Double(Self.rate) - c) > reach {
+            if x[i] != r.output[i] { return XCTFail("sample at \(Double(i) / Double(Self.rate)) s changed") }
+        }
+    }
+
     /// Judge-only (no rounds) is a pure measurement.
     func testZeroRoundsOnlyMeasures() {
         let x = LineFillTests.fanTone(rate: Self.rate, snr: 13).mono

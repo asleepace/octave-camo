@@ -417,7 +417,6 @@ public struct TrackFill {
     /// Fills reach this far either side of the closest approach (as found), s.
     var fillHalfWindow: Double { halfWindow + maxOffset }
 
-    /// The predicted tone as a track around the closest approach (where it was tested).
     /// `decoys` curves for a pass, drawn so that they don't point back to it. Reshaping composes by
     /// adding (log a, log b, offset), so the truth and its decoys are drawn alike: `decoys` + 1 points
     /// drawn independently, the truth taking the first, and each decoy is the pass moved by its point's
@@ -451,6 +450,7 @@ public struct TrackFill {
         return n
     }
 
+    /// The predicted tone as a track around the closest approach (where it was tested).
     func track(_ tone: Tone, sampleRate: Int, count: Int) -> Track? {
         let pass = expected[tone.pass], end = Double(count) / Double(sampleRate), c = pass.center + tone.offset
         var times: [Double] = [], freqs: [Double] = []
