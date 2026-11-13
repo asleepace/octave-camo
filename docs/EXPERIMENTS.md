@@ -1537,6 +1537,23 @@ candidate for the holdout: on the corpus it can't be told from 4, it's the one t
 trace on empty audio, and its decoys don't give the truth away. The holdout, scored once, decides
 whether it becomes the default.
 
+## The holdout for the rank stop with decoys (plan, written before it ran)
+
+The corpus's held-out half (18 passes) was scored once before, for tone removal's cap (z along the
+traced harmonic, above). Everything since — the place score u, the rank stop, decoys — was tuned on
+the tuning half only. This is its first score by u.
+
+- **Copies:** 18 passes × seeds 7 and 8, the Full preset with the traced curve as the expected pass
+  and `--track-max-tones 24`, as on the tuning half.
+- **Variants:** the original (no cloak); the default stop; the rank stop with 8 decoys
+  (`--track-target rank --track-decoys 8`). No other variant is run, and nothing is tuned after.
+- **Score:** corpus u with four lines, against the other held-out passes' shapes ±6 s (as the
+  tuning half used its own); leak u ≥ 0.95, hole u ≤ 0.05; sound change as before.
+- **Decision:** the rank stop with 8 decoys becomes the default if, on these 36 copies, it leaks
+  fewer than the default stop, its holes are no more than the default's plus 2, and its sound
+  change is within 0.5 dB of the default's. Otherwise the default stays and the result is reported
+  as it is.
+
 ## Next experiments
 
 0. **The place as the metric** (envelope term, holdouts, stopping, the public corpus and the
