@@ -73,8 +73,12 @@ def u_at(scene: locate.Scene, p: dict, others: list[dict], centre: float, lines:
 
 
 def trial(args: tuple) -> dict:
-    """One placement: u (1 and 4 lines) before, and after each variant and seed."""
-    sid, centre, k, variants, seeds = args
+    """One placement: u (1 and 4 lines) before, and after each variant and seed. With codec chains
+    (lab/codec.py) as a sixth element, also the four-line u of every copy after each chain, under
+    "codec"; a copy identical to its control (nothing filled) takes the control's scores."""
+    sid, centre, k, variants, seeds, *rest = args
+    chains = [c for c in (rest[0] if rest else []) if c != "raw"]
+    from . import codec
     from . import detect
     locate.whitened = lambda name, x, sr, prm: detect.whiten(x, sr, prm)   # scored once: no disk cache
     from .__main__ import PRESET_ARGS
@@ -86,6 +90,13 @@ def trial(args: tuple) -> dict:
     sc = locate.Scene(x, sr, "blank")
     for L in (1, zenodo.ATTACKER_LINES):
         out["before"][L] = u_at(sc, p, shapes, centre, L)
+
+    def coded(y):
+        return {c: u_at(locate.Scene(codec.reencode(y, sr, c), sr, "blank"), p, shapes, centre, zenodo.ATTACKER_LINES)
+                for c in chains}
+    if chains:
+        out["before"]["codec"] = coded(x)
+    controls = {}
     import subprocess
     with tempfile.TemporaryDirectory() as tmp:
         src = Path(tmp) / "in.wav"
@@ -109,6 +120,11 @@ def trial(args: tuple) -> dict:
                 out[f"{name}-s{seed}"]["change_db"] = zenodo.level_change(x, y, sr)
                 m = re.search(r"filled (\d+) tone", r.stdout + r.stderr)
                 out[f"{name}-s{seed}"]["filled"] = int(m.group(1)) if m else 0
+                if chains:
+                    if extra is None:
+                        controls[seed] = y
+                    same = extra is not None and np.array_equal(y, controls[seed])
+                    out[f"{name}-s{seed}"]["codec"] = (dict(out[f"{CONTROL}-s{seed}"]["codec"]) if same else coded(y))
     return out
 
 
@@ -141,6 +157,21 @@ def summarize(rows: list[dict], variants: dict, seeds: list[int]) -> str:
             lines.append(f"    {name}: effect {m:+.3f} ± {e:.3f}; where it filled ({nf}) {mf:+.3f} ± {ef:.3f}, "
                          f"where not ({nn}) {mn:+.3f} ± {en:.3f}; top 5 % {int(np.nansum(every >= 0.95))}, "
                          f"bottom 5 % {int(np.nansum(every <= 0.05))} of {int(np.isfinite(every).sum())}")
+    chains = list(rows[0]["before"].get("codec", {})) if rows else []
+    if chains:
+        lines.append(f"  {zenodo.ATTACKER_LINES} lines after a codec (lab/codec.py), each against the control through the same chain:")
+    for c in chains:
+        cc = np.array([np.nanmean([r[f"{CONTROL}-s{s}"]["codec"][c] for s in seeds]) for r in rows], float)
+        m, e, _ = by_session(cc)
+        lines.append(f"    {c}: untouched {np.nanmean([r['before']['codec'][c] for r in rows]):.3f}, blind preset {m:.3f} ± {e:.3f}")
+        for name in variants:
+            a = np.array([np.nanmean([r[f"{name}-s{s}"]["codec"][c] for s in seeds]) for r in rows], float)
+            filled = np.array([any(r[f"{name}-s{s}"]["filled"] > 0 for s in seeds) for r in rows])
+            m, e, _ = by_session(a - cc)
+            mf, ef, nf = by_session(a - cc, filled)
+            every = np.array([r[f"{name}-s{s}"]["codec"][c] for r in rows for s in seeds], float)
+            lines.append(f"      {name}: effect {m:+.3f} ± {e:.3f}; where it filled ({nf}) {mf:+.3f} ± {ef:.3f}; "
+                         f"top 5 % {int(np.nansum(every >= 0.95))}, bottom 5 % {int(np.nansum(every <= 0.05))} of {int(np.isfinite(every).sum())}")
     for name in variants:
         f = [r[f"{name}-s{s}"]["filled"] for r in rows for s in seeds]
         ch = [r[f"{name}-s{s}"]["change_db"] - r[f"{CONTROL}-s{s}"]["change_db"] for r in rows for s in seeds]

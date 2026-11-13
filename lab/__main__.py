@@ -14,7 +14,7 @@
   check <session> [audio …]             the page's check (the real wasm build) on the session and
                                         on other audio of it: counts and flyby passes
   zenodo [--holdout | --all] [--limit N] [-- scrub options for the track-removal copy]
-  blank [--seeds 7,8] [--spacing 30] [--per-session 3] [--variant name="scrub options" ...]
+  blank [--seeds 7,8] [--spacing 30] [--per-session 3] [--variant name="scrub options" ...] [--codec page,aac64]
         the cloak's mark on real recordings along a curve nothing follows
                                         the public corpus, tone removal (tuning half by default)
   locate <session> [audio …] [--envelope]   the place-searching attacker: rank of the true position
@@ -361,6 +361,7 @@ def cmd_blank(args: list[str]):
     from . import blank
     seeds = [int(s) for s in (args[args.index("--seeds") + 1] if "--seeds" in args else "7,8").split(",")]
     variants = {"fixed": []}
+    chains = args[args.index("--codec") + 1].split(",") if "--codec" in args else []
     if "--spacing" in args:
         blank.SPACING_S = float(args[args.index("--spacing") + 1])
     if "--per-session" in args:
@@ -376,8 +377,8 @@ def cmd_blank(args: list[str]):
         except Exception as e:                          # a session without usable tracks
             print(f"skip {sid[-6:]}: {type(e).__name__}")
             continue
-        jobs += [(sid, c, len(jobs), variants, seeds) for c in cs]
-    print(f"{len(jobs)} placements; variants {list(variants)}; seeds {seeds}", flush=True)
+        jobs += [(sid, c, len(jobs), variants, seeds, chains) for c in cs]
+    print(f"{len(jobs)} placements; variants {list(variants)}; seeds {seeds}; codecs {chains}", flush=True)
     t = time.time()
     with ProcessPoolExecutor(2) as pool:
         rows = list(pool.map(blank.trial, jobs))

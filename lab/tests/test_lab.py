@@ -367,6 +367,19 @@ class BlankTest(unittest.TestCase):
         self.assertTrue(ts[0] <= -59 and ts[-1] >= 209)                # covers the audio and the null shifts
         self.assertTrue(np.all((fs > 0.5) & (fs < 2)))                 # what the engine accepts
 
+    def test_codec_effect_is_against_the_control_through_the_same_chain(self):
+        from lab import blank
+        def copy(u, codec_u, filled=0):
+            return {1: u, 4: u, "change_db": 0.0, "filled": filled, "codec": {"page": codec_u}}
+        rows = [{"sid": f"s{i}", "before": {1: 0.5, 4: 0.5, "codec": {"page": 0.5}},
+                 "blind-s7": copy(0.4, 0.6), "v-s7": copy(0.4 - 0.1 * (i % 2), 0.6 - 0.2 * (i % 2), i % 2)}
+                for i in range(4)]
+        out = blank.summarize(rows, {"v": []}, [7])
+        line = next(l for l in out.splitlines() if l.strip().startswith("v:") and "where it filled (2)" in l
+                    and "top 5" in l and l.startswith("      "))
+        self.assertIn("effect -0.100", line)                           # (0 + -0.2) / 2 sessions' means
+        self.assertIn("where it filled (2) -0.200", line)
+
 
 class ReviewFindings(unittest.TestCase):
     """Regressions for an independent review's findings (Nov 2026, at commit 8d2f75a)."""
