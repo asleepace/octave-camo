@@ -9,6 +9,15 @@ are grouped by milestone, newest first, with the commits that made them.
 
 ## [Unreleased]
 
+### Scores survive the export (finding)
+
+- `lab/codec.py` re-encodes as the page's export (mono AAC, 160 kbps) and then a platform-like
+  AAC 128k, AAC 64k or Opus 96k.
+- On the corpus tuning half, untouched passes leak 14 of 17 after every chain, so a codec is no
+  defence.
+- The default stop and the rank stop with decoys keep their leaks and holes to within 2 of 34.
+  docs/EXPERIMENTS.md, "After the export".
+
 ### Holdout: the default stays (finding)
 
 - The rank stop with 8 decoys, scored once on the corpus's held-out half against the rule written

@@ -54,12 +54,18 @@ attacker every result is scored against").
   copies it acts on) by design. If a hole at the chance rate is no tell, the rank stop is the better
   cloak; settling that needs a new held-out set (the corpus's is spent).
 
-### Are the lab's scores what a posted video would give?
-- `lab zenodo` and `lab blank` score the cloak's floating-point output. A posted video carries AAC
-  (or another codec) after the browser's export. The benchmark harness re-encodes (160 kbps AAC);
-  the lab doesn't.
-- **Would settle it:** score the same copies after the page's own export and a platform-like
-  re-encode, and compare u.
+### Are the lab's scores what a posted video would give? (answered on the corpus: yes)
+- **Answered** (docs/EXPERIMENTS.md, "After the export"): through the page's export (ffmpeg's AAC
+  at 160 kbps) and then AAC 128k, AAC 64k or Opus 96k, the corpus scores barely move:
+  - untouched passes leak 14 of 17 in every chain, so a codec is no defence;
+  - the cloaked copies' leaks and holes move by at most 2 of 34;
+  - the rank stop's mean u rises 0.02–0.06, from its low-ranked copies (a bounded scale), not its
+    top tail.
+- **Still open:**
+  - the native encoders where a browser has one (Chrome and Safari on Apple use AudioToolbox);
+  - platform loudness normalisation;
+  - `lab blank` through a codec (the mark on real backgrounds). `lab/codec.py` does the
+    re-encoding for any of these.
 
 ### How many seeds does a decision need?
 - **Known:** one pass's u under two seeds correlates only 0.3–0.8. On 17 passes × 2 seeds,

@@ -1585,6 +1585,53 @@ almost none. That was written before the run and isn't changed after it. Whether
 chance rate is a problem is OPEN_QUESTIONS, "Does a hole matter to a real attacker?". The held-out
 half has now been used for this decision and can't settle another one.
 
+## After the export: do the scores survive a codec?
+
+Every score above is on the cloak's floating-point output. A posted video carries the page's
+export (mono AAC-LC, 160 kbps) and then whatever the platform re-encodes it to. `lab/codec.py`
+runs a copy through the page's export (ffmpeg's `aac`, the encoder the page falls back to when the
+browser has none), then one of three platform-like re-encodes: AAC 128 kbps at 44.1 kHz, AAC
+64 kbps at 44.1 kHz, or Opus 96 kbps. Each is decoded back aligned to the input. They are stand-ins
+of the common kinds; what any one service does isn't published.
+
+The tuning half (17 passes) was run: the original, the default stop and the rank stop with 8 decoys
+(seeds 7 and 8), each scored raw and after every chain. Δu is paired by copy against the same
+copy raw.
+
+| copy | chain | leaks | holes | mean u | Δu vs raw |
+| --- | --- | ---: | ---: | ---: | ---: |
+| original | raw | 14 of 17 | 0 | 0.94 | |
+| | page | 14 | 0 | 0.95 | +0.004 ± 0.004 |
+| | page → AAC 128k | 14 | 0 | 0.95 | +0.005 ± 0.006 |
+| | page → AAC 64k | 14 | 0 | 0.96 | +0.015 ± 0.009 |
+| | page → Opus 96k | 14 | 0 | 0.94 | −0.006 ± 0.007 |
+| default stop | raw | 12 of 34 | 2 | 0.76 | |
+| | page | 11 | 2 | 0.74 | −0.019 ± 0.011 |
+| | page → AAC 128k | 11 | 2 | 0.74 | −0.019 ± 0.017 |
+| | page → AAC 64k | 14 | 2 | 0.77 | +0.008 ± 0.020 |
+| | page → Opus 96k | 12 | 2 | 0.78 | +0.022 ± 0.018 |
+| rank stop, 8 decoys | raw | 1 of 34 | 3 | 0.51 | |
+| | page | 2 | 2 | 0.52 | +0.019 ± 0.013 |
+| | page → AAC 128k | 1 | 2 | 0.53 | +0.022 ± 0.020 |
+| | page → AAC 64k | 1 | 3 | 0.56 | +0.050 ± 0.030 |
+| | page → Opus 96k | 2 | 3 | 0.56 | +0.058 ± 0.022 |
+
+- **A codec is no defence.** The untouched passes leak just as much after every chain (14 of 17,
+  Δu within ±0.015). Whatever the attacker uses survives a lossy codec at 64 kbps and up, so the
+  cloak is needed and the raw scores aren't optimistic in that direction.
+- **The cloak isn't undone either.** Leaks and holes move by at most 2 for the default and 1 for
+  the rank stop, which is about what changing the seed does. Mean u moves by 0.02–0.06.
+- **The rank stop's small rise is the bounded scale, not a leak coming back.** A codec moves each
+  copy's rank by a little (mean |Δu| 0.05–0.12, less than a change of seed: two seeds correlate
+  only 0.3–0.8). A rank near 0 can only move up and one near 1 only down. Split by where the raw
+  rank sat, the rank stop's copies below 0.3 rise (+0.05 to +0.13) and those above 0.7 don't move
+  (−0.02 to +0.01). Half its copies sit low by design, so its mean rises. The default's copies sit
+  mostly high, so its mean doesn't. The top tail, which decides leaks, doesn't grow.
+- **Not covered:**
+  - the native encoders Chrome and Safari use where they have one (AudioToolbox on Apple);
+  - loudness normalisation or the other processing a platform may apply;
+  - real backgrounds (`lab blank`): whether a codec changes the cloak's mark where nothing passed.
+
 ## Next experiments
 
 0. **The place as the metric** (envelope term, holdouts, stopping, the public corpus and the
