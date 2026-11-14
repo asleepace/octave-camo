@@ -377,7 +377,11 @@ def cmd_blank(args: list[str]):
         except Exception as e:                          # a session without usable tracks
             print(f"skip {sid[-6:]}: {type(e).__name__}")
             continue
-        jobs += [(sid, c, len(jobs), variants, seeds, chains) for c in cs]
+        # The shape key is the session's first index, so a session's placements share one shape
+        # (trial takes shapes[k % 17]). Every published blank table was made this way; the paired
+        # control has the same shape, so the effects hold, over ~16 shapes rather than 91.
+        k0 = len(jobs)
+        jobs += [(sid, c, k0, variants, seeds, chains) for c in cs]
     print(f"{len(jobs)} placements; variants {list(variants)}; seeds {seeds}; codecs {chains}", flush=True)
     t = time.time()
     with ProcessPoolExecutor(2) as pool:

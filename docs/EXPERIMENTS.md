@@ -1125,7 +1125,8 @@ moment, nothing cloaked, gives 1,547 scores:
 
 A single shape, though, carries a baseline of its own with nothing there: from 0.33 (N451EE) to 0.59
 (N913TC), four lines. So one pass's u should be read against its shape's baseline. With one shape
-per placement, a set of placements' mean "before" wanders (0.61 in a first run of 31, 0.39–0.44 in
+per session (all of a session's placements share it, in every `lab blank` table here), a set of
+placements' mean "before" wanders (0.61 in a first run of 31, 0.39–0.44 in
 a run of 91), and any processing pulls it back toward that set's baselines. A cloak measured
 against its own "before", or against 0.5, mostly measures that regression. Two first runs did just
 that and read as a hole in one and almost nothing in the other.
