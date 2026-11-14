@@ -430,9 +430,19 @@ def curve(sid: str, hexid: str):
 # results (that look is the only contamination). The public corpus joins when it's ingested.
 HOLDOUT = ("af39e1", "f8b75a")
 
+# Sessions recorded from this UTC day on are split as they arrive, before anyone looks at them:
+# half go to the holdout, decided by a hash of the id alone (lab/DATA.md, "Intake").
+SPLIT_FROM = "20261115"
+
 
 def is_holdout(sid: str) -> bool:
-    return sid.endswith(HOLDOUT)
+    if sid.endswith(HOLDOUT):
+        return True
+    day = sid[:8]
+    if day.isdigit() and day >= SPLIT_FROM:
+        import hashlib
+        return hashlib.sha256(sid.encode()).digest()[0] % 2 == 1
+    return False
 
 
 def all_ids(holdout: bool = False) -> list[str]:

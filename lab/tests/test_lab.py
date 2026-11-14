@@ -574,7 +574,17 @@ class Holdout(unittest.TestCase):
                 main([cmd, sid])
             self.assertIn("holdout", str(e.exception))
         self.assertTrue(corpus.is_holdout(sid))
-        self.assertFalse(corpus.is_holdout("20990101T000000Z_abcdef"))
+        self.assertFalse(corpus.is_holdout("20261104T000000Z_abcdef"))
+
+    def test_new_sessions_split_by_id_alone(self):
+        # Before the split day only the named sessions are held out; from it on, a hash of the id
+        # decides, so the split is fixed before anyone looks and is the same on every machine.
+        self.assertFalse(any(corpus.is_holdout(f"20261114T{h:06d}Z_abcdef") for h in range(0, 235959, 997)))
+        new = [f"20261115T{h:06d}Z_{h:06x}" for h in range(2000)]
+        frac = sum(map(corpus.is_holdout, new)) / len(new)
+        self.assertTrue(0.45 < frac < 0.55, frac)
+        self.assertEqual([corpus.is_holdout(s) for s in new], [corpus.is_holdout(s) for s in new])
+        self.assertFalse(corpus.is_holdout("not-a-date_abcdef"))
 
 
 class ShapeTest(unittest.TestCase):

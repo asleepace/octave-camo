@@ -472,7 +472,8 @@ def main(argv):
                          "and only once the change being tested is settled")
     if cmd == "ingest":
         for b in rest:
-            print("ingested", corpus.ingest(b))
+            sid = corpus.ingest(b)
+            print("ingested", sid, "(holdout: not for tuning)" if corpus.is_holdout(sid) else "(tuning)")
     elif cmd == "backfill":
         for sid in (corpus.all_ids(holdout=True) if rest[:1] == ["all"] else rest):
             print(sid, "+", corpus.backfill(sid), "positions")
