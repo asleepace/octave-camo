@@ -309,6 +309,24 @@ In order of how much we think they matter:
     recording, so someone could tell a clip was processed. That says nothing about where or when
     it was made, and hiding it is not a goal.
 
+## Related work
+
+**On-device sensor isolation protects a different stage.** Apple's Secure Exclaves
+([AppleExclaves2026] in docs/SOURCES.md) process camera and microphone data for always-on
+features ("Hey Siri", HomeView's person recognition) in an isolated runtime. The main OS and apps
+get only a narrow signal, such as a wake flag or a recognised person. Raw audio is released only
+once a secure on-screen indicator has been visible for long enough.
+
+That protects sound the device takes in without your choosing. octave-camo starts where that
+ends: sound you've chosen to record and share. Once a clip is posted, nothing on the device can
+take back the plane in its background. The two are complements, not alternatives. Both rest on
+one principle: reduce what leaves to what's needed. There, a yes/no instead of the audio; here,
+the audio without the location clues.
+
+The post also names two features the exclaves support, Siri Recap and Live Rewind, without
+detailing them. If either keeps recent sound that can be saved or shared, a clip from it carries
+the same aircraft clues as a video's soundtrack, and the cloak applies to it the same way.
+
 ## Guarantees
 
 None. octave-camo **reduces** location leakage from sound. It doesn't remove it, and it can't

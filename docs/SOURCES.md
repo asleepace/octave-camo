@@ -138,6 +138,10 @@ reading in place; RESEARCH.md discusses the recent work.
 - **[Moradi2025]** Moradi, M. & Gannot, S. (2025). Transient noise removal via diffusion-based
   speech inpainting. arXiv:2508.08890. https://arxiv.org/html/2508.08890 — RESEARCH.md §7.
   *summary*
+- **[AppleExclaves2026]** Apple Security Research (2026, November 12). Secure Exclaves.
+  https://security.apple.com/blog/secure-exclaves/ — Isolated runtimes for always-on camera and
+  microphone processing; only narrow signals leave until a secure indicator shows. THREAT_MODEL.md
+  "Related work". *summary*
 
 ## Natural history
 
