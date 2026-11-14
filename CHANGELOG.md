@@ -17,6 +17,11 @@ are grouped by milestone, newest first, with the commits that made them.
   defence.
 - The default stop and the rank stop with decoys keep their leaks and holes to within 2 of 34.
   docs/EXPERIMENTS.md, "After the export".
+- `lab blank --codec page,aac64,…` scores each copy and its blind control through the same chain.
+  On real backgrounds (91 placements), the cloak's mark is unchanged by every chain: the default
+  −0.016 to −0.024 (raw −0.026), the rank stop about −0.011.
+- `lab blank` gives one shape per session (all of a session's placements share it); the docs said
+  one per placement. The behaviour is now explicit and unchanged.
 
 ### Holdout: the default stays (finding)
 

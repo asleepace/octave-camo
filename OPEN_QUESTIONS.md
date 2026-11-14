@@ -60,12 +60,13 @@ attacker every result is scored against").
   - untouched passes leak 14 of 17 in every chain, so a codec is no defence;
   - the cloaked copies' leaks and holes move by at most 2 of 34;
   - the rank stop's mean u rises 0.02–0.06, from its low-ranked copies (a bounded scale), not its
-    top tail.
+    top tail;
+  - on real backgrounds (`lab blank --codec`), the cloak's mark is the same after every chain:
+    the default −0.016 to −0.024 against its control (raw −0.026), the rank stop −0.011 to
+    −0.012 (raw −0.011).
 - **Still open:**
   - the native encoders where a browser has one (Chrome and Safari on Apple use AudioToolbox);
-  - platform loudness normalisation;
-  - `lab blank` through a codec (the mark on real backgrounds). `lab/codec.py` does the
-    re-encoding for any of these.
+  - platform loudness normalisation. `lab/codec.py` does the re-encoding for either.
 
 ### How many seeds does a decision need?
 - **Known:** one pass's u under two seeds correlates only 0.3–0.8. On 17 passes × 2 seeds,

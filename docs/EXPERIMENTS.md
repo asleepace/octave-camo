@@ -1630,8 +1630,33 @@ copy raw.
   mostly high, so its mean doesn't. The top tail, which decides leaks, doesn't grow.
 - **Not covered:**
   - the native encoders Chrome and Safari use where they have one (AudioToolbox on Apple);
-  - loudness normalisation or the other processing a platform may apply;
-  - real backgrounds (`lab blank`): whether a codec changes the cloak's mark where nothing passed.
+  - loudness normalisation or the other processing a platform may apply.
+
+### Real backgrounds through a codec
+
+`lab blank --codec page,aac128,aac64,opus96`: the same 91 placements in 16 sessions as above
+(seeds 7 and 8, 4 lines, one shape per session). Each copy and its blind control go through the
+same chain, and the effect is their difference, averaged by session.
+
+| chain | blind preset u | default: effect | where it filled (27) | rank stop, 8 decoys: effect | where it filled (3) |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| raw | 0.370 | −0.026 ± 0.012 | −0.122 ± 0.053 | −0.011 ± 0.006 | −0.447 ± 0.037 |
+| page | 0.382 | −0.023 ± 0.012 | −0.109 ± 0.060 | −0.011 ± 0.006 | −0.454 ± 0.036 |
+| page → AAC 128k | 0.364 | −0.016 ± 0.013 | −0.078 ± 0.061 | −0.011 ± 0.006 | −0.450 ± 0.052 |
+| page → AAC 64k | 0.387 | −0.024 ± 0.012 | −0.129 ± 0.058 | −0.012 ± 0.007 | −0.486 ± 0.149 |
+| page → Opus 96k | 0.362 | −0.023 ± 0.012 | −0.095 ± 0.052 | −0.011 ± 0.006 | −0.468 ± 0.049 |
+
+- **The mark survives a codec, and doesn't grow.**
+  - Where the default filled, the hole stays −0.08 to −0.13 after a chain (raw −0.12), each within
+    one se of raw.
+  - The rank stop's stays confined to the same 3 placements, at −0.45 to −0.49.
+  - So the raw blank tables stand for posted copies: a codec neither hides the cloak's mark nor
+    adds to it.
+- **The raw row reproduces the earlier run** (default −0.026, rank stop −0.012 then, −0.011 now).
+- **The rank stop's "where it filled" rests on 3 placements** (6 copies), so its ± there is wide
+  (±0.149 after AAC 64k).
+- **The bottom tail barely moves.** Copies at u ≤ 0.05 (of 182): default 19 raw, 19–23 after a chain;
+  rank stop 17 raw, 16–20.
 
 ## Next experiments
 
