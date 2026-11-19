@@ -1658,6 +1658,47 @@ same chain, and the effect is their difference, averaged by session.
 - **The bottom tail barely moves.** Copies at u ≤ 0.05 (of 182): default 19 raw, 19–23 after a chain;
   rank stop 17 raw, 16–20.
 
+## Do holes help an attacker? (plan, written before it ran)
+
+Issue #13. A hole is a copy whose truth ranks in the bottom 5 % on the presence score (u ≤ 0.05).
+It has been counted as a loss, but no attacker has been built that uses one.
+
+An attacker who knows the cloak can use a hole two ways:
+
+1. **The shape of the rank.** If the truth's presence rank isn't uniform under the cloak, an attacker
+   who has learned its shape guesses where the truth's rank is likeliest. If it's uniform, holes at
+   the chance rate tell them nothing.
+2. **A trough.** The cloak fills a strip along the truth's lines. Fill set below the real background
+   would carve a line that a deficit detector sees, though the presence score can't.
+
+**Attackers, on the corpus tuning half** (17 passes; candidates as for u: the other tuning passes'
+shapes ±6 s; four lines):
+
+- **P, presence:** u as now, the sum of the four best rest frequencies' mean excess along the curve.
+- **T, trough:** the same profile negated: the four deepest deficits along the curve, as far apart as
+  P's picks.
+- **C, either:** each candidate gets its better rank of P and T among the candidates. One guess,
+  so C pays for looking both ways.
+
+**Copies:** the original, the default stop and the rank stop with 8 decoys. Seeds 7 and 8, the Full
+preset with the traced curve as the expected pass and `--track-max-tones 24`, as before.
+
+**Read:**
+
+- leaks (u ≥ 0.95) per attacker and copy, out of 34 (17 for the original). The chance rate is 1.7;
+  5 or more is above chance at about p = 0.03, treating copies as independent (they aren't quite:
+  two seeds per pass);
+- T and C's ranks on the rank stop's hole copies;
+- the presence rank's shape per cloak: the masses of its top and bottom 5 % and 10 %.
+
+**What counts:**
+
+- **Holes help an attacker** if T or C leaks 5 or more of 34 on the rank stop with decoys, or 3 more
+  than P does.
+- **A trough shows on the default too** if T or C leaks 5 or more of 34 on it.
+
+This is the tuning half, which is worn: a result here points, and a new holdout (#16) decides.
+
 ## Next experiments
 
 0. **The place as the metric** (envelope term, holdouts, stopping, the public corpus and the
