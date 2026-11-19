@@ -27,6 +27,8 @@ import json
 import subprocess
 from pathlib import Path
 
+import dataclasses
+
 import numpy as np
 import soundfile as sf
 
@@ -120,7 +122,8 @@ PLACE_OFFSETS_S = np.arange(-6.0, 6.01, 1.5)   # a wrong place's closest approac
 ATTACKER_LINES = 4                              # the scoring attacker adds up four lines (THREAT_MODEL.md)
 
 
-def u(scene: locate.Scene, p: dict, others: list[dict], offset: float, lines: int = ATTACKER_LINES) -> tuple[float, int]:
+def u(scene: locate.Scene, p: dict, others: list[dict], offset: float, lines: int = ATTACKER_LINES,
+      deficit: bool = False) -> tuple[float, int]:
     """(where the traced shape ranks among wrong places' curves, how many). The wrong places'
     curves are the other passes' traced shapes with their closest approach put at this one's,
     ±6 s: the shapes a different geometry gives, scored on the same frames with every rest
@@ -132,7 +135,7 @@ def u(scene: locate.Scene, p: dict, others: list[dict], offset: float, lines: in
     t, fac, tc = shape(p)
     tcl = tc + offset
     j = np.flatnonzero(np.abs(scene.t - tcl) <= locate.HALF_WINDOW_S)
-    s0 = scene._best(j, flat_interp(scene.t[j], t + offset, fac), lines)
+    s0 = scene._best(j, flat_interp(scene.t[j], t + offset, fac), lines, deficit)
     if not np.isfinite(s0):
         return float("nan"), 0
     nulls = []
@@ -140,12 +143,37 @@ def u(scene: locate.Scene, p: dict, others: list[dict], offset: float, lines: in
         if q["case"] == p["case"]:
             continue
         tq, fq, tcq = shape(q)
-        nulls += [scene._best(j, flat_interp(scene.t[j] - (tcl + o - tcq), tq, fq), lines) for o in PLACE_OFFSETS_S]
+        nulls += [scene._best(j, flat_interp(scene.t[j] - (tcl + o - tcq), tq, fq), lines, deficit) for o in PLACE_OFFSETS_S]
     n = np.array(nulls)
     n = n[np.isfinite(n)]
     if len(n) == 0:
         return float("nan"), 0
     return locate.rank(s0, n), len(n)
+
+
+# The attacker panel (docs/EXPERIMENTS.md, "Attackers the cloak doesn't model"): (whitening,
+# lines, deficit). P is the scoring attacker every earlier table used; the rest differ in how they
+# estimate the background, in resolution, or read deficits. A cloak that models one of them must be
+# judged by the others.
+ATTACKERS = {
+    "P": (locate.P, ATTACKER_LINES, False),                                         # 15 s running median
+    "T": (locate.P, ATTACKER_LINES, True),                                          # its deficits
+    "P0": (dataclasses.replace(locate.P, ref_s=0.0), ATTACKER_LINES, False),        # whole-clip median
+    "PL0": (dataclasses.replace(locate.P, ref_s=0.0, fft_s=0.68), ATTACKER_LINES, False),  # 4x finer
+    "PF": (dataclasses.replace(locate.P, ref_s=-1.0), ATTACKER_LINES, False),       # frame median only
+}
+
+
+def panel(x: np.ndarray, sr: int, p: dict, others: list[dict], offset: float, name: str,
+          names: tuple[str, ...] = tuple(ATTACKERS)) -> dict[str, float]:
+    """u for each attacker in `names`, one whitened scene per distinct whitening."""
+    scenes, out = {}, {}
+    for a in names:
+        prm, lines, deficit = ATTACKERS[a]
+        if prm not in scenes:
+            scenes[prm] = locate.Scene(x, sr, f"{name}:{len(scenes)}", prm)
+        out[a] = u(scenes[prm], p, others, offset, lines, deficit)[0]
+    return out
 
 
 def expected_pass(p: dict, offset: float, duration: float) -> dict:

@@ -14,7 +14,7 @@ from scipy.signal import stft
 class Params:
     band: tuple[float, float] = (600.0, 2500.0)
     fft_s: float = 0.17              # window length
-    ref_s: float = 15.0              # running-median reference span (0 = whole-clip median)
+    ref_s: float = 15.0              # running-median reference span (0 = whole-clip median, < 0 = none)
     broadband_aware: bool = True     # subtract each frame's median excess
     clip: tuple[float, float] = (-3.0, 12.0)
     win_s: float = 10.0              # path search window
@@ -34,8 +34,10 @@ def whiten(x: np.ndarray, sr: int, p: Params):
     dt = t[1] - t[0]
     if p.ref_s > 0:
         ref = median_filter(P, size=(1, int(round(p.ref_s / dt)) | 1), mode="nearest")
-    else:
+    elif p.ref_s == 0:
         ref = np.median(P, 1, keepdims=True)
+    else:                        # no per-bin reference: each frame's median (below) is the only one
+        ref = np.ones((P.shape[0], 1))
     L = 10 * np.log10(P / (ref + 1e-30) + 1e-12)
     if p.broadband_aware:
         L = L - np.median(L, 0, keepdims=True)

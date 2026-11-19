@@ -1812,6 +1812,37 @@ as independent.
 - P0 is a better yardstick than P on this evidence. It's stronger on untouched audio and blind to the
   shadow.
 
+## The default's line finder with a whole-clip reference (plan, written before it ran)
+
+**Change:** the default stop finds the lines it fills with its own whitened search
+(`PathSearch`), and that search uses a 15 s running median too. So a loud, slow line the attacker
+P0 sees is partly background to the cloak, and it isn't filled. `--track-reference 0` gives the
+cloak's search the whole clip's median instead (`TrackFill.referenceSeconds`). Nothing else
+changes.
+
+**Copies:** the corpus tuning half (17 passes). The Full preset with the traced curve as the
+expected pass and `--track-max-tones 24`, seeds 7 and 8:
+
+- **default:** the 15 s reference (the cached copies from #27);
+- **whole:** `--track-reference 0`.
+
+**Attackers:** the panel (`lab/zenodo.py` `ATTACKERS`). Each cloak's own test is like one of them:
+
+- the default's, like P (a 15 s reference);
+- the whole clip's, like P0.
+
+So **the deciding attackers are PL0 and PF**, which neither cloak's test shares. PL0 is a
+whole-clip median at 4× the frequency resolution, and PF has no per-bin reference at all.
+
+**What counts** (paired by pass and seed, 34 copies each):
+
+- **whole is better** if its leaks (u ≥ 0.95) to the worse of PL0 and PF fall by 3 or more against
+  the default's. That holds only if no attacker in the panel gains more than 2 leaks on it, and its
+  sound change above 300 Hz is no more than 0.5 dB higher (mean, paired).
+- **Otherwise** the default keeps the 15 s reference.
+
+This is the worn tuning half: a pass here points, and a new holdout (#16) decides.
+
 ## Next experiments
 
 0. **The place as the metric** (envelope term, holdouts, stopping, the public corpus and the

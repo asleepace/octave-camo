@@ -274,6 +274,54 @@ class PublicCorpus(unittest.TestCase):
         self.assertGreater(np.mean(noise), 0.15)
 
 
+class AttackerPanel(unittest.TestCase):
+    """The attacker panel's parts (docs/EXPERIMENTS.md, "Attackers the cloak doesn't model")."""
+
+    def tone(self, seed=0):
+        sr = 8000
+        t = np.arange(60 * sr) / sr
+        x = np.random.default_rng(seed).normal(0, 1, len(t)) + ((t >= 20) & (t < 40)) * 0.5 * np.sin(2 * np.pi * 1000 * t)
+        return x, sr
+
+    def test_running_median_absorbs_a_steady_line_and_leaves_a_shadow(self):
+        # A 1 kHz tone held 20 s: the 15 s running median takes it for background (no excess while
+        # it sounds) and reads the bin low either side of it; with no per-bin reference it's there.
+        x, sr = self.tone()
+        seen = {}
+        for ref in (15.0, -1.0):
+            f, t, L = detect.whiten(x, sr, detect.Params(band=(80.0, 4000.0), ref_s=ref))
+            k = int(np.argmin(np.abs(f - 1000)))
+            near = ((t > 12) & (t < 19)) | ((t > 41) & (t < 48))
+            seen[ref] = (L[k, (t > 22) & (t < 38)].mean(), L[k + 10:k + 60][:, near].mean() - L[k, near].mean())
+        self.assertLess(seen[15.0][0], 3.0)          # absorbed
+        self.assertGreater(seen[-1.0][0], 10.0)      # seen (the clip is +12 dB)
+        self.assertGreater(seen[15.0][1], 0.7)       # the shadow, dB below the bins around it
+
+    def test_deficit_reads_the_negated_profile(self):
+        x, sr = self.tone()
+        s = locate.Scene(x, sr, "test:panel:deficit")
+        j = np.arange(100, 900)
+        fac = np.ones(len(j))
+        tot = s._profile(j, fac)
+        self.assertAlmostEqual(s._best(j, fac, 4, deficit=True), s.lines_of(-tot, 4), places=6)
+        self.assertAlmostEqual(s._best(j, fac, 4), s.lines_of(tot, 4), places=6)
+
+    def test_panel_scores_each_attacker_as_u_does(self):
+        t = np.arange(0, 50, 0.1707)
+        geos = [(0.30, 4.0), (0.12, 6.0), (0.50, 2.0), (0.20, 9.0)]
+        ps = [{"case": f"c{k}", "t": t, "f": 300 * (1 + d / 2 - d / (1 + np.exp(-(t - 25) / w)))}
+              for k, (d, w) in enumerate(geos)]
+        n = int(SR * (50 + 2 * zenodo.OFFSET_S))
+        tt = np.arange(n) / SR
+        _, fac, _ = zenodo.shape(ps[0])
+        f = 700 * zenodo.flat_interp(tt - zenodo.OFFSET_S, t, fac)
+        x = np.random.default_rng(4).normal(0, 1, n) + np.sqrt(4 * 10 ** 1.2 / SR) * np.sin(2 * np.pi * np.cumsum(f) / SR)
+        got = zenodo.panel(x, SR, ps[0], ps, zenodo.OFFSET_S, "test:panel", ("P", "T", "P0"))
+        self.assertEqual(got["P"], zenodo.u(locate.Scene(x, SR, "test:panel:P"), ps[0], ps, zenodo.OFFSET_S)[0])
+        self.assertEqual(got["T"], zenodo.u(locate.Scene(x, SR, "test:panel:P"), ps[0], ps, zenodo.OFFSET_S, deficit=True)[0])
+        self.assertGreaterEqual(got["P0"], 0.95)     # the whole-clip-median attacker finds it too
+
+
 class Invariants(unittest.TestCase):
     """Properties the scoring relies on, on made-up numbers (no audio)."""
 

@@ -86,14 +86,18 @@ class Scene:
             return np.nan, np.nan, np.nan
         return s0, float(nulls.mean()), float(nulls.std())
 
-    def _best(self, j: np.ndarray, fac: np.ndarray, lines: int = 1) -> float:
+    def _best(self, j: np.ndarray, fac: np.ndarray, lines: int = 1, deficit: bool = False) -> float:
         """Best mean excess along f0·fac over all rest frequencies (frames where fac is known), on
         the log axis: the factor rounded to 0.2 %, a fraction of a bin below 5 kHz. `j` must be
         consecutive frames (a gap just starts a new run). With `lines` > 1, the sum of that many
-        separate lines' mean excess (`lines_of`): an engine's family of lines all follow the curve."""
+        separate lines' mean excess (`lines_of`): an engine's family of lines all follow the curve.
+        `deficit`: the deepest mean deficits instead (a line read from the shadow a running-median
+        reference leaves beside it; docs/EXPERIMENTS.md, "Attackers the cloak doesn't model")."""
         total = self._profile(j, fac)
         if total is None or not np.isfinite(total).any():
             return np.nan
+        if deficit:
+            total = -total
         return float(np.nanmax(total)) if lines == 1 else self.lines_of(total, lines)
 
     def lines_of(self, total: np.ndarray, lines: int) -> float:
