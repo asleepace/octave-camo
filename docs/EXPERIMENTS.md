@@ -1843,6 +1843,41 @@ whole-clip median at 4× the frequency resolution, and PF has no per-bin referen
 
 This is the worn tuning half: a pass here points, and a new holdout (#16) decides.
 
+**Result:** the whole-clip reference fails, and the default keeps the 15 s reference. Leaks (u ≥ 0.95) of 34 copies per cloak, the original of 17:
+
+| copy | P | T | P0 | PL0 | PF | holes (PL0) | sound change |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| original | 14 | 8 | 16 | 16 | 1 | 0 | – |
+| default stop | 12 | 7 | 10 | **18** | 3 | 3 | 0.98 dB |
+| whole-clip reference | 17 | 8 | 12 | **26** | 3 | 2 | 0.90 dB |
+| rank stop, 8 decoys (for reference) | 1 | 4 | 7 | 14 | 3 | – | – |
+
+- **By the rule:** the worse of PL0 and PF goes from 18 to 26 leaks, 8 more where 3 fewer was needed. P gains 5 (the limit was 2).
+- **It filled less, not more:** sound change −0.09 ± 0.07 dB against the default, paired.
+  - Under PL0 it leaks on 10 copies the default didn't, and fixes 2.
+  - Why a reference that sees loud lines made the cloak's test stop sooner isn't known. One guess:
+    the same reference shows steady background lines everywhere, which raises the test's
+    wrong-time null.
+- **PF has no power, so it judged nothing.** It catches 1 of 17 untouched passes (mean u 0.56).
+  The rule's "worse of PL0 and PF" was in effect PL0. The rule was written before PF's power was
+  known and is kept as written.
+- **The finding that matters: PL0 is the strongest attacker against the cloak so far.**
+  - It's a whole-clip median at 0.68 s frames, 4× the frequency resolution of every other attacker
+    and of the cloak's own test.
+  - It catches 16 of 17 untouched passes, and **18 of 34 default copies**, against the 12 the
+    scoring attacker catches. Mean u is 0.74.
+  - It catches 14 of 34 of the rank stop's.
+  - A likely reason, not yet checked: a narrow tone stands higher above the noise in a narrower
+    bin, so PL0 sees lines too weak for the cloak's 0.17 s test.
+
+**What it means:**
+
+- **Every leak count before this understated the default's leak to a capable attacker,** by about
+  half again (12 to 18 of 34).
+- **The next fix is resolution, not reference.** The cloak can already test at several window
+  lengths (`--track-windows`). If it tests at 0.68 s, PL0 is no longer held out, so the panel needs
+  attackers at other resolutions held back to judge it (issue #29).
+
 ## Next experiments
 
 0. **The place as the metric** (envelope term, holdouts, stopping, the public corpus and the

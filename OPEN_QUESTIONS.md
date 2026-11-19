@@ -66,6 +66,10 @@ attacker every result is scored against").
     STFT or band.
   - Whether any stop should model an attacker at all is open.
 - **P0 beats P on untouched audio** (16 of 17 against 14), on 17 passes only.
+- **Resolution matters most so far.** PL0 (0.68 s frames) catches 18 of 34 default copies, against
+  P's 12 (#29).
+  - No-reference whitening (PF) has no power.
+  - The panel should span resolutions, so some can be held out from any cloak.
 
 ### Are the lab's scores what a posted video would give? (answered on the corpus: yes)
 - **Answered** (docs/EXPERIMENTS.md, "After the export"): through the page's export (ffmpeg's AAC

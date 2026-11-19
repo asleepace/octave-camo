@@ -9,6 +9,17 @@ are grouped by milestone, newest first, with the commits that made them.
 
 ## [Unreleased]
 
+### A finer-resolution attacker; the whole-clip reference fails (finding)
+
+- The lab's attacker panel (`lab/zenodo.py` `ATTACKERS`, `panel()`): P, T, P0, PL0 (0.68 s frames)
+  and PF (no per-bin reference).
+- On the corpus tuning half, PL0 catches 18 of 34 default copies, against the old scorer's 12. PF
+  has no power (1 of 17 untouched).
+- `--track-reference S` (experimental, #28): the cloak's own whitening reference.
+- Scored by the rule written beforehand, a whole-clip reference (`0`) made the default leak more to
+  every presence attacker (PL0 26 of 34) and fill less (−0.09 dB). The default keeps 15 s.
+- docs/EXPERIMENTS.md, "The default's line finder with a whole-clip reference"; issue #29.
+
 ### The rank stop's advantage is the attacker's (finding)
 
 - The presence score P has two weaknesses:

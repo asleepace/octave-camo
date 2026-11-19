@@ -319,6 +319,8 @@ In order of how much we think they matter:
     audio (16 of 17 passes against 14). The rank stop, which optimises against P, leaks 7–10 of 34
     to such attackers, level with the default (docs/EXPERIMENTS.md, "Attackers the cloak doesn't
     model"; issue #27). Any leak count from an attacker the cloak models is optimistic.
+    Resolution matters more: at 0.68 s frames, PL0 catches 18 of 34 of the default's copies, against
+    P's 12 (issue #29). So the cloak's earlier leak counts are understated.
 
 ## Related work
 
