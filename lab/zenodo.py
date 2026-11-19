@@ -161,6 +161,8 @@ ATTACKERS = {
     "P0": (dataclasses.replace(locate.P, ref_s=0.0), ATTACKER_LINES, False),        # whole-clip median
     "PL0": (dataclasses.replace(locate.P, ref_s=0.0, fft_s=0.68), ATTACKER_LINES, False),  # 4x finer
     "PF": (dataclasses.replace(locate.P, ref_s=-1.0), ATTACKER_LINES, False),       # frame median only
+    "PM0": (dataclasses.replace(locate.P, ref_s=0.0, fft_s=0.34), ATTACKER_LINES, False),  # 2x finer
+    "PXL0": (dataclasses.replace(locate.P, ref_s=0.0, fft_s=1.36), ATTACKER_LINES, False),  # 8x finer
 }
 
 
