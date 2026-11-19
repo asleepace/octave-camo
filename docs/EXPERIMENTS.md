@@ -1878,6 +1878,47 @@ This is the worn tuning half: a pass here points, and a new holdout (#16) decide
   lengths (`--track-windows`). If it tests at 0.68 s, PL0 is no longer held out, so the panel needs
   attackers at other resolutions held back to judge it (issue #29).
 
+## The default testing at 0.68 s too (plan, written before it ran)
+
+Issue #29.
+
+**Why PL0 wins.** On the 8 default copies PL0 catches and P0 doesn't, the truth's lines are not
+the original's strongest. Those are filled. What PL0 catches is weaker lines the cloak left: a
+cluster at 325–440 Hz on N4004R_R19, and one at 1040–1185 Hz on N413AK_R05.
+
+- At 0.17 s the truth sits at the wrong curves' median: −0.4 to +1.1 standard deviations.
+- At 0.68 s it's 1.1 to 3.2 above it. In summed dB, the truth gains 1.3–3.8 from the finer bins,
+  and the wrong curves' median gains 0.6–1.8.
+- So narrow residual lines gain more from resolution than background structure does. The cloak's
+  test, at 0.17 s, stops while they're still there.
+
+**Change:** `--track-windows 0.17,0.68`. The cloak's stopping test takes each tone at whichever
+window sees it better (`TrackFill.windows`). Everything else is the default.
+
+An earlier second window, 85 ms, filled more on the corpus but made one session's place easier
+(TrackFill.swift, `windows`). Sessions aren't scored here; if this passes, they are next.
+
+**Copies:** the corpus tuning half, the Full preset with the traced curve as the expected pass,
+`--track-max-tones 24`, seeds 7 and 8. **default** is the cached copies, and **w68** adds the
+second window.
+
+**Attackers:** the panel. The cloak tests at 0.17 and 0.68 s with a 15 s reference, so **PM0
+(0.34 s) and PXL0 (1.36 s) decide**: whole-clip medians at resolutions it doesn't test at. Both have
+power: each catches 16 of 17 untouched passes, and 16 and 17 of the 34 default copies. PL0 shares
+the 0.68 s resolution, so it's reported but doesn't decide. PF has no power and is left out of every
+count.
+
+**What counts** (paired by pass and seed, 34 copies each):
+
+- **w68 is better if all three hold:**
+  - its leaks (u ≥ 0.95) to the worse of PM0 and PXL0 (the one with more) fall by 3 or more from the
+    default's 17;
+  - no attacker with power (P, T, P0, PL0, PM0, PXL0) gains more than 2 leaks on it;
+  - its sound change above 300 Hz is no more than 0.5 dB higher (mean, paired).
+- **Otherwise** the default keeps one window.
+
+This is the worn tuning half: a pass here points, and the sessions and a new holdout (#16) decide.
+
 ## Next experiments
 
 0. **The place as the metric** (envelope term, holdouts, stopping, the public corpus and the
