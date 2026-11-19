@@ -315,8 +315,10 @@ In order of how much we think they matter:
       and 3 of 34 under the rank stop with decoys.
     - A loud enough line lowers P while T still sees it.
 
-    The cloak's stop watches only P (docs/EXPERIMENTS.md, "Do holes help an attacker?"; issue
-    #27).
+    The cloak's stop watches only P. A whole-clip-median attacker P0 is stronger on untouched
+    audio (16 of 17 passes against 14). The rank stop, which optimises against P, leaks 7–10 of 34
+    to such attackers, level with the default (docs/EXPERIMENTS.md, "Attackers the cloak doesn't
+    model"; issue #27). Any leak count from an attacker the cloak models is optimistic.
 
 ## Related work
 

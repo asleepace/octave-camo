@@ -55,9 +55,17 @@ attacker every result is scored against").
 - **What it turned up instead:** T is a second line detector. It catches lines the presence score
   misses (4 of 34 copies under the default, 3 under the rank stop), so leak counts should take both
   (#27).
-- **Still open:** this is the worn tuning half. The holdout that decided against the rank stop
-  counted holes as losses. The new holdout (#16) should count leaks to P or T, and keep holes as a
-  diagnostic.
+- **Moot for now:** the rank stop's advantage over the default holds only against the attacker it
+  optimises against (#27, "Attackers the cloak doesn't model"). Against others the two are level.
+
+### Which attackers should a cloak be scored by?
+- **A cloak that models an attacker beats that attacker** and can look far better than it is: the
+  rank stop leaks 1 of 34 to P, but 7–10 to attackers it doesn't model.
+- **The rule should match the data rule:** score with attackers the cloak never sees.
+  - Candidates for the yardstick: P0 (the whole-clip median), the learned detector, a different
+    STFT or band.
+  - Whether any stop should model an attacker at all is open.
+- **P0 beats P on untouched audio** (16 of 17 against 14), on 17 passes only.
 
 ### Are the lab's scores what a posted video would give? (answered on the corpus: yes)
 - **Answered** (docs/EXPERIMENTS.md, "After the export"): through the page's export (ffmpeg's AAC

@@ -9,6 +9,17 @@ are grouped by milestone, newest first, with the commits that made them.
 
 ## [Unreleased]
 
+### The rank stop's advantage is the attacker's (finding)
+
+- The presence score P has two weaknesses:
+  - its 15 s running-median whitening leaves a shadow beside a slow line and absorbs a loud one;
+  - its four-line sum lets a similar wrong curve count one loud line twice.
+- On the corpus tuning half, the rank stop with decoys leaks 1 of 34 copies to P but 7–10 to
+  whole-clip-median attackers, level with the default (10). The rank stop optimises against P, and
+  only P had scored it.
+- The whole-clip-median attacker catches 16 of 17 untouched passes, against P's 14.
+- docs/EXPERIMENTS.md, "Attackers the cloak doesn't model"; issue #27.
+
 ### Holes give nothing away; a second attacker does (finding)
 
 - Corpus tuning half, 17 passes × seeds 7 and 8: a hole (the truth in the presence score's bottom
@@ -17,8 +28,8 @@ are grouped by milestone, newest first, with the commits that made them.
   - A deficit attacker and an either-score attacker rank the hole copies' truth low.
 - The deficit score T is a second line detector. It reads the shadow whitening leaves beside a line,
   and it catches lines the presence score misses: 4 of 34 copies under the default, 3 under the rank
-  stop with decoys. Against its best attacker, the rank stop still leaks 4 of 34, against the
-  default's 12.
+  stop with decoys. Against the best of P and T, the rank stop leaks 4 of 34, against the default's 12,
+  but see the finding above: against attackers it doesn't model, the two are level.
 - docs/EXPERIMENTS.md, "Do holes help an attacker?"; THREAT_MODEL.md, Known gaps 13; issues #13 and
   #27.
 

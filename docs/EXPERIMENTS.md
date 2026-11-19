@@ -1740,8 +1740,9 @@ written to catch:**
     *lowered* P on all four shapes: 1.00 to 0.92, 0.81 to 0.61, 0.63 to 0.36, and 0.83 to 0.38.
     T stayed at 0.78–1.0. The whitening absorbs a strong line, so P alone can be beaten by
     loudness.
-- **Against its best single attacker, the rank stop still leaks far less.** T leaks 4 of 34 on it
-  (p ≈ 0.09 against chance), against the default's 12 to P.
+- **Against the better of P and T, the rank stop still leaks far less.** T leaks 4 of 34 on it
+  (p ≈ 0.09 against chance), against the default's 12 to P. *Superseded:* against attackers the
+  stop doesn't model, the two cloaks are level ("Attackers the cloak doesn't model", below).
 
 **What it means:**
 
@@ -1753,6 +1754,63 @@ written to catch:**
 - **The cloak's stop rule watches only P.** It stops once the truth looks like chance there while T
   can still see the line (issue #27).
 - **This is the worn tuning half.** It points; #16 decides.
+
+## Attackers the cloak doesn't model (issue #27)
+
+The presence score P has two weaknesses, found on synthetic tones and confirmed by its picks:
+
+- **The shadow.** Each bin is whitened against its 15 s running median. A slow line raises that
+  median while it sits in the bin, so the bin then reads low on either side. For a 500 Hz tone, the
+  truth's deepest deficits sat at 470 and 531 Hz, parallel to the line, and scattered once the
+  reference was the whole clip's median. T reads the shadow. A loud, slow line is partly absorbed
+  as background, so P sees less of it.
+- **Double counting.** P adds up four lines. With one loud line, a wrong curve of a similar shape
+  collects that line twice. For example, the truth's 510 Hz line gave 8.45 dB, while a wrong curve
+  took 8.0 at 558 Hz and 5.4 at 598 Hz, each overlapping a different stretch of the line. So a
+  louder tone lowered P.
+
+The cloak's rank stop judges with a port of P, so it inherits both weaknesses. Six attackers, on the
+cached tuning copies (17 passes; seeds 7 and 8; the same copies as above). These are exploratory,
+and no rule was written beforehand:
+
+- **P:** the scoring attacker: 15 s running-median reference, four lines summed.
+- **T:** the same profile's four deepest deficits.
+- **P1:** 15 s reference, the one best line.
+- **P0:** the whole clip's median as reference, four lines.
+- **P01:** whole-clip median, one line.
+- **T0:** whole-clip median, deficits.
+
+| copy | P | T | P1 | P0 | P01 | T0 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| original (of 17) | 14 | 8 | 11 | **16** | 7 | 6 |
+| default stop (of 34) | **12** | 7 | 3 | 10 | 10 | 4 |
+| rank stop, 8 decoys (of 34) | 1 | 4 | 1 | 7 | **10** | 6 |
+| mean u, rank stop − default | −0.26 | −0.06 | −0.23 | −0.01 | +0.03 | +0.01 |
+
+The chance rate is 1.7 of 34 per attacker. 7 or more is p ≈ 0.001 and 10 is p ≈ 10⁻⁵, treating copies
+as independent.
+
+- **The rank stop's advantage is P's alone.**
+  - Against P it leaks 1 of 34 against the default's 12, and its mean u is 0.26 lower.
+  - Against the attackers it doesn't model, it's level with the default: P0 7 against 10, P01 10
+    against 10, T0 6 against 4, and mean u within ±0.03.
+  - It fills lines until P's rank meets a target. P is also what scored it on the holdout, so the
+    holdout measured how well it beats the attacker it optimises against.
+- **P0 is the stronger attacker on untouched audio** (16 of 17 against P's 14). The copies P0 catches
+  and P doesn't are mostly the rank stop's (7 of 34), which fits the shadow. A slow line the 15 s
+  reference absorbs is invisible to the stop as well, so it's never filled.
+- **The default stop doesn't model the attacker, and it leaks about the same to all three
+  presence attackers** (P 12, P0 10, P01 10).
+- **Holes, for the record:** 2–4 of 34 under any attacker for either cloak; chance is 1.7.
+
+**What it means:**
+
+- Stopping on the worse of P and T would only move the target. It would make the stop beat two
+  attackers, and the score would still be one of them.
+- **A cloak that models an attacker has to be scored by attackers it doesn't model.** That's the same
+  rule as data: tune on one half, decide on the other.
+- P0 is a better yardstick than P on this evidence. It's stronger on untouched audio and blind to the
+  shadow.
 
 ## Next experiments
 

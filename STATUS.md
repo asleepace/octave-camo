@@ -19,9 +19,11 @@ _Updated 2026-11-19. Start here when checking in. Rules for working on the proje
 - **Holes give nothing away** (#13, tuning half). Under the rank stop the truth's rank is spread
   like chance, and attackers looking for a missing line rank the hole copies low. That was the only
   thing against the rank stop.
-- **A second attacker statistic (T) catches lines the presence score misses:** 4 of 34 copies under
-  the default, 3 under the rank stop. Against its best attacker, the rank stop still leaks 4 of 34,
-  against the default's 12. Every leak count so far used the presence score only (#27).
+- **The rank stop's advantage is an artefact of the attacker it's scored by** (#27, tuning half).
+  It optimises against the presence score P, and only P has scored it, the holdout included.
+  Against attackers it doesn't model, it's level with the default: a whole-clip-median attacker
+  catches 7–10 of 34 copies of each. That attacker is also stronger than P on untouched audio (16
+  of 17 against 14).
 - **Posting doesn't change any of this.** The page's AAC export, followed by AAC 128k, AAC 64k or
   Opus 96k, leaves leaks, holes and the mark on real backgrounds where they were.
 - **Data:** 23 recorder sessions (21 tuning, 2 holdout). The public corpus has 35 passes; its
@@ -42,17 +44,16 @@ holdout automatically as they're ingested ([lab/DATA.md](lab/DATA.md)).
 
 ## Next, by impact
 
-1. [#27](https://github.com/asleepace/octave-camo/issues/27) **Score against both attackers, and let
-   the stop see T.** Add T to the scoring, and try a stop that watches the worse of the two ranks.
-   It can be done now, on the tuning half.
+1. [#27](https://github.com/asleepace/octave-camo/issues/27) **Decide the attacker rules.** These
+   are the yardstick (likely P0, the whole-clip median), the held-out attackers a cloak may not see,
+   and whether any stop should model an attacker at all. **Waiting on Colin's steer.**
 2. [#15](https://github.com/asleepace/octave-camo/issues/15) **A recording target:** how many
    sessions the next held-out decision needs. The rough figure is 100–300 held-out passes.
 3. [#14](https://github.com/asleepace/octave-camo/issues/14) **Re-score the place search on our
    sessions** against the stronger attacker, with calibrated p-values. This matters for the docs'
    credibility.
-4. [#16](https://github.com/asleepace/octave-camo/issues/16) **The new holdout** (needs data): the
-   rank stop against the default. It will count leaks to either attacker, and keep holes as a
-   diagnostic rather than a loss.
+4. [#16](https://github.com/asleepace/octave-camo/issues/16) **The new holdout** (needs data):
+   score against attackers the cloak doesn't model. Keep holes as a diagnostic, not a loss.
 5. Loudness normalisation
    ([#17](https://github.com/asleepace/octave-camo/issues/17)), the pink-noise hole against a blind
    control ([#19](https://github.com/asleepace/octave-camo/issues/19)), native encoders
