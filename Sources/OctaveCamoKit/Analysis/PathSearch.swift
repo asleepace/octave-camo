@@ -28,7 +28,10 @@ import WASILibc
 public struct PathSearch {
     public var band: ClosedRange<Double> = 500...4_000
     public var windowSeconds = 0.17
-    /// Running median span, as a median of block medians (fast enough for the browser).
+    /// Running median span, as a median of block medians (fast enough for the browser). 0: the
+    /// whole clip's. A line that holds one bin for much of a 15 s span is taken for background
+    /// there, and leaves the bin reading low either side (docs/EXPERIMENTS.md, "Attackers the cloak
+    /// doesn't model").
     public var referenceSeconds = 15.0
     public var blockSeconds = 1.0
     public var clip: ClosedRange<Double> = -3...12
@@ -89,7 +92,7 @@ public struct PathSearch {
         // Running median per bin: the median of the block medians within ±referenceSeconds/2.
         let block = max(1, Int((blockSeconds / g.dt).rounded()))
         let blocks = (g.frames + block - 1) / block
-        let half = max(1, Int((referenceSeconds / 2 / blockSeconds).rounded()))
+        let half = referenceSeconds > 0 ? max(1, Int((referenceSeconds / 2 / blockSeconds).rounded())) : blocks
         var blockMedian = [Float](repeating: 0, count: blocks * g.bins)
         var scratch = [Float]()
         for k in 0..<g.bins {
