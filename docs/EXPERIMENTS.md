@@ -1699,6 +1699,61 @@ preset with the traced curve as the expected pass and `--track-max-tones 24`, as
 
 This is the tuning half, which is worn: a result here points, and a new holdout (#16) decides.
 
+**Result** (17 passes, seeds 7 and 8; 144 wrong curves per copy; P reproduces the stored u exactly):
+
+| copy | P leaks | T leaks | C leaks | P or T | P holes | mean P | mean T | mean C |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| original | 14 of 17 | 8 | 13 | 15 | 0 | 0.94 | 0.81 | 0.94 |
+| default stop | 12 of 34 | 7 | 11 | 16 | 2 | 0.76 | 0.63 | 0.77 |
+| rank stop, 8 decoys | 1 of 34 | 4 | 2 | 4 | 3 | 0.51 | 0.57 | 0.51 |
+
+"P or T" counts a copy lost to either attacker. That's two guesses, so it's an upper bound, not
+one attacker.
+
+**By the letter of the rule, both criteria fire:** on the rank stop T leaks 4 against P's 1 (3 more),
+and on the default T leaks 7 (5 or more). **What the copies show is different from what the rule was
+written to catch:**
+
+- **Holes give the attacker nothing.**
+  - On the rank stop's three hole copies (N373DF_R06 s7 and s8, N4004R_R19 s7), T ranks the truth
+    0.10, 0.08 and 0.42, and C 0.03, 0.01 and 0.17. An attacker looking for a missing line finds
+    nothing there.
+  - The default's two holes are the same pass, N373DF_R06 (T 0.10 and 0.08). That pass's presence
+    rank is 0.014 under both cloaks: the pass, not the rank target.
+  - Under P the rank stop's ranks are spread like chance. Its deciles are 5, 3, 3, 1, 2, 7, 1, 4, 5
+    and 3 of 34 (χ² 9.5 on 9 degrees of freedom; KS 0.10 against a 5 % critical value of 0.23).
+    So an attacker who has learned the shape of its ranks gains nothing; 3 holes against 1.7
+    expected is p ≈ 0.24. The default's ranks are far from uniform (KS 0.42), bunched at the top:
+    its leak.
+- **T isn't a trough detector. It's a second line detector.**
+  - It fires on untouched audio: 8 of 17 originals.
+  - On a synthetic tone in white noise along four corpus shapes it gives 0.78–1.0.
+  - Whitening pushes a line's neighbouring rest frequencies below the mean, and T reads those
+    deficits.
+  - Cloaking lowers T, against the same pass's original: −0.19 ± 0.03 for the default, −0.25 ± 0.04
+    for the rank stop. So the fill carves nothing below the background.
+- **T catches lines P misses.**
+  - It leaks on copies P doesn't: 4 of 34 under the default (N3012N_R40 s7, N788BM_R03 s8, N7PG_R60
+    s7, N784MB_R04 s8), and 3 under the rank stop (N3012N_R40 s7, N784MB_R04 s8, N7PG_R60 s7).
+  - P and T correlate only 0.26–0.49 across copies.
+  - On the synthetic tones, making the tone louder (amplitude 0.02 to 0.05 in noise of σ 0.1)
+    *lowered* P on all four shapes: 1.00 to 0.92, 0.81 to 0.61, 0.63 to 0.36, and 0.83 to 0.38.
+    T stayed at 0.78–1.0. The whitening absorbs a strong line, so P alone can be beaten by
+    loudness.
+- **Against its best single attacker, the rank stop still leaks far less.** T leaks 4 of 34 on it
+  (p ≈ 0.09 against chance), against the default's 12 to P.
+
+**What it means:**
+
+- **Holes at the chance rate are no tell,** to an attacker who knows the cloak's rank shape or one
+  who looks for missing lines. That was the only thing keeping the rank stop with decoys from
+  replacing the default.
+- **The attacker suite is missing a statistic.** Every leak count so far used P. The next decision
+  (#16) should count a copy as leaked to P or to T, and keep holes as a diagnostic, not a loss.
+- **The cloak's stop rule watches only P.** It stops once the truth looks like chance there while T
+  can still see the line (issue #27).
+- **This is the worn tuning half.** It points; #16 decides.
+
 ## Next experiments
 
 0. **The place as the metric** (envelope term, holdouts, stopping, the public corpus and the

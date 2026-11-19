@@ -308,6 +308,15 @@ In order of how much we think they matter:
 12. **Cloaking is detectable.** Regenerated and refilled noise is statistically cleaner than a real
     recording, so someone could tell a clip was processed. That says nothing about where or when
     it was made, and hiding it is not a goal.
+13. **The scoring attacker reads one statistic.** Every leak count uses the presence score P,
+    which adds up the excess along a curve. A deficit score T reads a line from the shadow that
+    whitening leaves beside it.
+    - T catches lines P misses: on the corpus tuning half, 4 of 34 copies under the default stop
+      and 3 of 34 under the rank stop with decoys.
+    - A loud enough line lowers P while T still sees it.
+
+    The cloak's stop watches only P (docs/EXPERIMENTS.md, "Do holes help an attacker?"; issue
+    #27).
 
 ## Related work
 

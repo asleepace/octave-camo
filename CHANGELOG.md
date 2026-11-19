@@ -9,6 +9,19 @@ are grouped by milestone, newest first, with the commits that made them.
 
 ## [Unreleased]
 
+### Holes give nothing away; a second attacker does (finding)
+
+- Corpus tuning half, 17 passes × seeds 7 and 8: a hole (the truth in the presence score's bottom
+  5 %) gives an attacker nothing.
+  - Under the rank stop the truth's rank is spread like chance.
+  - A deficit attacker and an either-score attacker rank the hole copies' truth low.
+- The deficit score T is a second line detector. It reads the shadow whitening leaves beside a line,
+  and it catches lines the presence score misses: 4 of 34 copies under the default, 3 under the rank
+  stop with decoys. Against its best attacker, the rank stop still leaks 4 of 34, against the
+  default's 12.
+- docs/EXPERIMENTS.md, "Do holes help an attacker?"; THREAT_MODEL.md, Known gaps 13; issues #13 and
+  #27.
+
 ### Scores survive the export (finding)
 
 - `lab/codec.py` re-encodes as the page's export (mono AAC, 160 kbps) and then a platform-like

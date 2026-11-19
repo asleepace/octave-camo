@@ -46,13 +46,18 @@ attacker every result is scored against").
 - Switch to four lines, re-score the tuning sessions with joint draws, and check the p-values'
   calibration on scenes with nothing there.
 
-### Does a hole matter to a real attacker?
-- A truth that scores unusually *low* is counted as a loss, to be safe. Nobody has measured how well
-  an attacker could exploit one. Until then it stays counted.
-- It now decides the default: on the holdout the rank stop with decoys leaked 4 of 36 against 7,
-  and lost on 3 holes against 0. A uniform target makes holes at about the chance rate (5 % of the
-  copies it acts on) by design. If a hole at the chance rate is no tell, the rank stop is the better
-  cloak; settling that needs a new held-out set (the corpus's is spent).
+### Does a hole matter to a real attacker? (answered on the tuning half: no)
+- **Answered for two attackers** (docs/EXPERIMENTS.md, "Do holes help an attacker?"):
+  - Under the rank stop the truth's presence rank is spread like chance, so an attacker who knows
+    the cloak's rank shape gains nothing. Its 3 holes of 34 against 1.7 expected is p ≈ 0.24.
+  - A deficit attacker (T) and one taking either score (C) rank the hole copies' truth low too:
+    T 0.08–0.42, C 0.01–0.17.
+- **What it turned up instead:** T is a second line detector. It catches lines the presence score
+  misses (4 of 34 copies under the default, 3 under the rank stop), so leak counts should take both
+  (#27).
+- **Still open:** this is the worn tuning half. The holdout that decided against the rank stop
+  counted holes as losses. The new holdout (#16) should count leaks to P or T, and keep holes as a
+  diagnostic.
 
 ### Are the lab's scores what a posted video would give? (answered on the corpus: yes)
 - **Answered** (docs/EXPERIMENTS.md, "After the export"): through the page's export (ffmpeg's AAC
