@@ -199,6 +199,10 @@ public struct TrackFill {
     /// window fills nothing) and made 37a954's place easier (p 0.49 → 0.14, same seed). Fills
     /// aren't yet clean enough to fill on weaker evidence.
     public var windows: [Double] = [0.17]
+    /// The reference span of the cloak's own whitening (`PathSearch.referenceSeconds`), s; 0: the
+    /// whole clip. At 15 s (the default) a loud line that holds a bin is partly taken for
+    /// background, so the cloak's test misses it and never fills it. Experimental.
+    public var referenceSeconds = 15.0
 
     /// Where each pass's score should end up. `.fixed`: below `stopZ` (removal only). That leaves a
     /// mark of its own: removal takes away the best match along the true curve, and even with no
@@ -254,6 +258,7 @@ public struct TrackFill {
         // median: with 1 s blocks this search scored a real pass 5.2 where the attacker scores
         // 6.3, and stopped after two of the four tones the attacker could use; at 0.25 s, 6.4.
         p.blockSeconds = 0.25
+        p.referenceSeconds = referenceSeconds
         return p
     }
 

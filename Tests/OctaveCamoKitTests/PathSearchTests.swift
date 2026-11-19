@@ -13,6 +13,36 @@ final class PathSearchTests: XCTestCase {
         check.analyze(audio).tracks.filter { $0.kind == .doppler }
     }
 
+    /// A 1 kHz tone held 20 s of a 60 s clip: the 15 s running median takes it for background (no
+    /// excess while it sounds); the whole clip's median doesn't (lab's AttackerPanel test).
+    func testAWholeClipReferenceSeesAHeldLineThe15sOneAbsorbs() {
+        let sr = 8_000, n = 60 * sr
+        var rng = SeededRNG(seed: 0)
+        let x = (0..<n).map { i -> Double in
+            let t = Double(i) / Double(sr)
+            return rng.normal() + (t >= 20 && t < 40 ? 0.5 * sin(2 * Double.pi * 1_000 * t) : 0)
+        }
+        func during(_ reference: Double) -> Double {
+            var p = PathSearch()
+            p.band = 80...4_000
+            p.blockSeconds = 0.25
+            p.referenceSeconds = reference
+            guard let g = p.grid(count: x.count, sampleRate: sr) else { XCTFail("no grid"); return .nan }
+            let e = p.excess(x, g)
+            let k = Int((1_000 / g.binHz).rounded()) - g.kLo
+            var sum = 0.0, count = 0
+            for m in 0..<g.frames {
+                let t: Double = g.t0 + Double(m) * g.dt
+                guard t > 22, t < 38 else { continue }
+                sum += Double(e[m * g.bins + k])
+                count += 1
+            }
+            return sum / Double(max(count, 1))
+        }
+        XCTAssertLessThan(during(15), 3, "absorbed")
+        XCTAssertGreaterThan(during(0), 10, "seen")
+    }
+
     func testFindsAFanToneTheTrackerMisses() {
         for rate in [16_000, 48_000] {
             let audio = LineFillTests.fanTone(rate: rate, snr: 20)
