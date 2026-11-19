@@ -26,8 +26,11 @@ _Updated 2026-11-19. Start here when checking in. Rules for working on the proje
   of 17 against 14).
 - **The cloak leaks more than every earlier table said.** A finer-resolution attacker (PL0, 0.68 s
   frames) catches 18 of 34 default copies on the tuning half, against 12 for the old scorer (#29).
-  Giving the cloak's line finder a whole-clip reference made it worse (26 of 34), so the default is
-  unchanged.
+  Giving the cloak's line finder a whole-clip reference made it worse (26 of 34).
+- **A fix that works, on the tuning half:** letting the cloak's stopping test look at 0.68 s as
+  well as 0.17 s (`--track-windows 0.17,0.68`) roughly halves its leak to the attackers held back
+  to judge it: 16–17 to 6–8 of 34 copies. It costs +0.36 dB of sound change. It isn't the default
+  yet; sessions and the new holdout come first (#29).
 - **Posting doesn't change any of this.** The page's AAC export, followed by AAC 128k, AAC 64k or
   Opus 96k, leaves leaks, holes and the mark on real backgrounds where they were.
 - **Data:** 23 recorder sessions (21 tuning, 2 holdout). The public corpus has 35 passes; its
@@ -48,10 +51,11 @@ holdout automatically as they're ingested ([lab/DATA.md](lab/DATA.md)).
 
 ## Next, by impact
 
-1. [#29](https://github.com/asleepace/octave-camo/issues/29) **Close the resolution gap.**
-   - Check why PL0 sees what the cloak misses.
-   - Add attackers at other resolutions to hold back.
-   - Try the cloak testing at 0.17 s and 0.68 s, judged by resolutions it doesn't test at.
+1. [#29](https://github.com/asleepace/octave-camo/issues/29) **Check the two-window cloak on real
+   recordings.**
+   - Real backgrounds (`lab blank`) and the tuning sessions, scored by the attacker panel. An
+     earlier extra window made one session's place easier.
+   - If it holds, it's the candidate for the new holdout.
 2. [#15](https://github.com/asleepace/octave-camo/issues/15) **A recording target:** how many
    sessions the next held-out decision needs. The rough figure is 100–300 held-out passes.
 3. [#14](https://github.com/asleepace/octave-camo/issues/14) **Re-score the place search on our

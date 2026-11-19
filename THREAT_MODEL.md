@@ -320,7 +320,9 @@ In order of how much we think they matter:
     to such attackers, level with the default (docs/EXPERIMENTS.md, "Attackers the cloak doesn't
     model"; issue #27). Any leak count from an attacker the cloak models is optimistic.
     Resolution matters more: at 0.68 s frames, PL0 catches 18 of 34 of the default's copies, against
-    P's 12 (issue #29). So the cloak's earlier leak counts are understated.
+    P's 12 (issue #29). So the cloak's earlier leak counts are understated. Testing at 0.68 s as
+    well (`--track-windows 0.17,0.68`) cuts the leak to attackers at other resolutions to 6–8 of 34,
+    on the tuning half.
 
 ## Related work
 

@@ -9,6 +9,18 @@ are grouped by milestone, newest first, with the commits that made them.
 
 ## [Unreleased]
 
+### Testing at 0.68 s too halves the leak to held-back attackers (finding)
+
+- Why the finer-resolution attacker wins: the cloak removes a plane's strongest lines, but narrower,
+  weaker ones it leaves gain more from finer bins than the background does. At 0.17 s the truth sits
+  at the wrong curves' median; at 0.68 s it's 1.1–3.2 SDs above.
+- `--track-windows 0.17,0.68`, scored by the rule written beforehand on the corpus tuning half: the
+  deciding attackers (0.34 s and 1.36 s frames, held back from the cloak) go from 16 and 17 leaks of
+  34 to 6 and 8. Every attacker with power loses leaks. +0.36 ± 0.09 dB sound change.
+- Not the default yet: sessions and a new holdout first.
+- New panel attackers PM0 and PXL0.
+- docs/EXPERIMENTS.md, "The default testing at 0.68 s too"; issue #29.
+
 ### A finer-resolution attacker; the whole-clip reference fails (finding)
 
 - The lab's attacker panel (`lab/zenodo.py` `ATTACKERS`, `panel()`): P, T, P0, PL0 (0.68 s frames)

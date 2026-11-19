@@ -1919,6 +1919,37 @@ count.
 
 This is the worn tuning half: a pass here points, and the sessions and a new holdout (#16) decide.
 
+**Result: w68 passes all three parts.** Leaks (u ≥ 0.95) of 34 copies:
+
+| attacker | default | w68 | w68 leaks the default didn't / default leaks w68 fixed |
+| --- | ---: | ---: | --- |
+| **PXL0 (1.36 s)**, decides | 17 | **8** | 2 / 11 |
+| **PM0 (0.34 s)**, decides | 16 | **6** | 0 / 10 |
+| PL0 (0.68 s) | 18 | 6 | 0 / 12 |
+| P (the old scorer) | 12 | 8 | 1 / 5 |
+| P0 | 10 | 5 | |
+| T | 7 | 4 | |
+| PF (no power; not counted) | 3 | 3 | |
+
+- **The rule:**
+  - The worse of PM0 and PXL0 falls from 17 to 8. Three fewer was needed.
+  - Every attacker with power loses leaks; none gains.
+  - The sound change is 0.98 dB for the default and 1.34 dB for w68, +0.36 ± 0.09 dB paired
+    (0 to 2.3 by copy). The limit was 0.5.
+- **The top tail moves more than the mean.** Mean u falls by 0.02–0.12 (PXL0 −0.12 ± 0.05,
+  PL0 −0.11 ± 0.06, P −0.04 ± 0.04). The stop removes the copies that give the place away, not
+  every trace of the curve.
+- **Holes are unchanged:** 2–4 of 34 under each attacker, as before.
+
+**What it means:**
+
+- **Testing at a second, finer window is the first change to cut the cloak's leak to attackers it
+  doesn't model.** It cuts it by about half (16–18 to 6–8 of 34), for 0.36 dB more sound change.
+- **This is the worn tuning half.** It isn't the default yet. Next:
+  - real backgrounds and sessions, scored by the panel. The earlier 85 ms window made one session's
+    place easier;
+  - then the new holdout (#16).
+
 ## Next experiments
 
 0. **The place as the metric** (envelope term, holdouts, stopping, the public corpus and the
