@@ -321,6 +321,30 @@ class AttackerPanel(unittest.TestCase):
         self.assertEqual(got["T"], zenodo.u(locate.Scene(x, SR, "test:panel:P"), ps[0], ps, zenodo.OFFSET_S, deficit=True)[0])
         self.assertGreaterEqual(got["P0"], 0.95)     # the whole-clip-median attacker finds it too
 
+    def test_scene_scores_takes_the_attackers_lines_and_deficit(self):
+        # The place search's per-curve score (Scene.scores) with an attacker's lines and deficit is
+        # _best's, at the curve and at each wrong time; the default stays one line.
+        x, sr = self.tone()
+        s = locate.Scene(x, sr, "test:panel:scores")
+        heard = np.arange(0.0, 60.0, 0.5)
+        fac = 1.0 + 0.05 * np.tanh((30 - heard) / 4)
+        tc = 30.0
+        j = np.flatnonzero((s.t >= tc - locate.HALF_WINDOW_S) & (s.t <= tc + locate.HALF_WINDOW_S))
+        at = lambda d: np.interp(s.t[j] - d, heard, fac, left=np.nan, right=np.nan)
+        for lines, deficit in ((1, False), (4, False), (4, True)):
+            s0, mean, sd = s.scores(heard, fac, tc, lines, deficit)
+            nulls = np.array([s._best(j, at(d), lines, deficit) for d in locate.NULL_SHIFTS_S])
+            nulls = nulls[np.isfinite(nulls)]
+            self.assertAlmostEqual(s0, s._best(j, at(0.0), lines, deficit), places=6)
+            self.assertAlmostEqual(mean, float(nulls.mean()), places=6)
+        self.assertEqual(s.scores(heard, fac, tc), s.scores(heard, fac, tc, 1, False))
+        self.assertEqual(set(locate.ATTACKERS), set(zenodo.ATTACKERS))
+        self.assertEqual(locate.attacker_spec("PM0/1"), (locate.ATTACKERS["PM0"][0], 1, False))
+        self.assertEqual(locate.attacker_spec("T"), locate.ATTACKERS["T"])
+        for bad in ("nope", "P/0", "P/x"):
+            with self.assertRaises(KeyError):
+                locate.attacker_spec(bad)
+
 
 class Invariants(unittest.TestCase):
     """Properties the scoring relies on, on made-up numbers (no audio)."""
@@ -427,6 +451,20 @@ class BlankTest(unittest.TestCase):
                     and "top 5" in l and l.startswith("      "))
         self.assertIn("effect -0.100", line)                           # (0 + -0.2) / 2 sessions' means
         self.assertIn("where it filled (2) -0.200", line)
+
+    def test_panel_effect_is_against_the_control_by_the_same_attacker(self):
+        from lab import blank
+        def copy(u, pm0, filled=0):
+            return {1: u, 4: u, "change_db": 0.0, "filled": filled, "panel": {"PM0": pm0}}
+        rows = [{"sid": f"s{i}", "before": {1: 0.5, 4: 0.5, "panel": {"PM0": 0.5}},
+                 "blind-s7": copy(0.4, 0.6), "v-s7": copy(0.4, 0.6 + 0.3 * (i % 2), i % 2)}
+                for i in range(4)]
+        out = blank.summarize(rows, {"v": []}, [7])
+        self.assertIn("attacker panel", out)
+        line = next(l for l in out.splitlines() if l.strip().startswith("v:") and "(control" in l)
+        self.assertIn("effect +0.150", line)                           # (0 + 0.3) / 2 sessions' means
+        self.assertIn("where it filled (2) +0.300", line)
+        self.assertIn("top 5 % 0 (control 0)", line)
 
 
 class ReviewFindings(unittest.TestCase):

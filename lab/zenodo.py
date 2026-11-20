@@ -27,8 +27,6 @@ import json
 import subprocess
 from pathlib import Path
 
-import dataclasses
-
 import numpy as np
 import soundfile as sf
 
@@ -119,7 +117,7 @@ def z(scene: locate.Scene, p: dict, offset: float) -> tuple[float, float]:
 
 
 PLACE_OFFSETS_S = np.arange(-6.0, 6.01, 1.5)   # a wrong place's closest approach, around this one's
-ATTACKER_LINES = 4                              # the scoring attacker adds up four lines (THREAT_MODEL.md)
+ATTACKER_LINES = locate.ATTACKER_LINES          # the scoring attacker adds up four lines (THREAT_MODEL.md)
 
 
 def u(scene: locate.Scene, p: dict, others: list[dict], offset: float, lines: int = ATTACKER_LINES,
@@ -151,19 +149,7 @@ def u(scene: locate.Scene, p: dict, others: list[dict], offset: float, lines: in
     return locate.rank(s0, n), len(n)
 
 
-# The attacker panel (docs/EXPERIMENTS.md, "Attackers the cloak doesn't model"): (whitening,
-# lines, deficit). P is the scoring attacker every earlier table used; the rest differ in how they
-# estimate the background, in resolution, or read deficits. A cloak that models one of them must be
-# judged by the others.
-ATTACKERS = {
-    "P": (locate.P, ATTACKER_LINES, False),                                         # 15 s running median
-    "T": (locate.P, ATTACKER_LINES, True),                                          # its deficits
-    "P0": (dataclasses.replace(locate.P, ref_s=0.0), ATTACKER_LINES, False),        # whole-clip median
-    "PL0": (dataclasses.replace(locate.P, ref_s=0.0, fft_s=0.68), ATTACKER_LINES, False),  # 4x finer
-    "PF": (dataclasses.replace(locate.P, ref_s=-1.0), ATTACKER_LINES, False),       # frame median only
-    "PM0": (dataclasses.replace(locate.P, ref_s=0.0, fft_s=0.34), ATTACKER_LINES, False),  # 2x finer
-    "PXL0": (dataclasses.replace(locate.P, ref_s=0.0, fft_s=1.36), ATTACKER_LINES, False),  # 8x finer
-}
+ATTACKERS = locate.ATTACKERS                    # the attacker panel (lab/locate.py)
 
 
 def panel(x: np.ndarray, sr: int, p: dict, others: list[dict], offset: float, name: str,
@@ -171,7 +157,7 @@ def panel(x: np.ndarray, sr: int, p: dict, others: list[dict], offset: float, na
     """u for each attacker in `names`, one whitened scene per distinct whitening."""
     scenes, out = {}, {}
     for a in names:
-        prm, lines, deficit = ATTACKERS[a]
+        prm, lines, deficit = locate.attacker_spec(a)
         if prm not in scenes:
             scenes[prm] = locate.Scene(x, sr, f"{name}:{len(scenes)}", prm)
         out[a] = u(scenes[prm], p, others, offset, lines, deficit)[0]

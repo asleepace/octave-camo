@@ -14,10 +14,10 @@
   check <session> [audio …]             the page's check (the real wasm build) on the session and
                                         on other audio of it: counts and flyby passes
   zenodo [--holdout | --all] [--limit N] [-- scrub options for the track-removal copy]
-  blank [--seeds 7,8] [--spacing 30] [--per-session 3] [--variant name="scrub options" ...] [--codec page,aac64]
+  blank [--seeds 7,8] [--spacing 30] [--per-session 3] [--variant name="scrub options" ...] [--codec page,aac64] [--attackers P0,PM0,PXL0]
         the cloak's mark on real recordings along a curve nothing follows
                                         the public corpus, tone removal (tuning half by default)
-  locate <session> [audio …] [--envelope]   the place-searching attacker: rank of the true position
+  locate <session> [audio …] [--envelope] [--attacker PM0]   the place-searching attacker: rank of the true position
                                         (--envelope: the loudness swell too, alone and combined)
                                         among a grid of candidates (distances and areas only)
   trackfill <session> [preset …] [--archive] [--stop Z] [--seed N]
@@ -249,9 +249,16 @@ def cmd_check(sid: str, others: list[str]):
 def cmd_locate(sid: str, others: list[str]):
     """The place-searching attacker (lab/locate.py) on the session and on copies of it."""
     from . import locate
-    audios, sr = with_copies(sid, [o for o in others if o != "--envelope"])
+    attacker = others[others.index("--attacker") + 1] if "--attacker" in others else None
+    if attacker is not None:
+        try:
+            locate.attacker_spec(attacker)
+        except KeyError as e:
+            raise SystemExit(f"--attacker: {e}")
+    files = [o for i, o in enumerate(others) if o not in ("--envelope", "--attacker") and (i == 0 or others[i - 1] != "--attacker")]
+    audios, sr = with_copies(sid, files)
     t = time.time()
-    rows = locate.locate(sid, audios, sr, envelope="--envelope" in others)
+    rows = locate.locate(sid, audios, sr, envelope="--envelope" in others, attacker=attacker)
     print("| audio | aircraft | true point's rank (of grid) | rank bits (no-information mean, p) | p from the bottom (a hole) | best guess off by | fine best off by | area within 3 / 6 of best | truth z by aircraft |")
     print("| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |")
     for r in rows:
@@ -266,7 +273,7 @@ def cmd_locate(sid: str, others: list[str]):
             print(f"| {r['name']} | {e['rank']}, p {e['p']}, {e['p_low']} | {b['rank']}, p {b['p']}, {b['p_low']} | "
                   f"{', '.join(str(v) for v in r['envelope_z_by_aircraft'].values())} |")
     print(f"\n{time.time() - t:.0f} s")
-    save_result(f"locate-{sid}" + ("-envelope" if "--envelope" in others else ""), rows)
+    save_result(f"locate-{sid}" + ("-envelope" if "--envelope" in others else "") + (f"-{attacker}" if attacker else ""), rows)
 
 
 def clean_curve(heard: np.ndarray, fac: np.ndarray, closest: float) -> dict:
@@ -362,6 +369,13 @@ def cmd_blank(args: list[str]):
     seeds = [int(s) for s in (args[args.index("--seeds") + 1] if "--seeds" in args else "7,8").split(",")]
     variants = {"fixed": []}
     chains = args[args.index("--codec") + 1].split(",") if "--codec" in args else []
+    attackers = args[args.index("--attackers") + 1].split(",") if "--attackers" in args else []
+    from . import locate
+    for a in attackers:
+        try:
+            locate.attacker_spec(a)
+        except KeyError as e:
+            raise SystemExit(f"--attackers: {e}")
     if "--spacing" in args:
         blank.SPACING_S = float(args[args.index("--spacing") + 1])
     if "--per-session" in args:
@@ -381,8 +395,8 @@ def cmd_blank(args: list[str]):
         # (trial takes shapes[k % 17]). Every published blank table was made this way; the paired
         # control has the same shape, so the effects hold, over ~16 shapes rather than 91.
         k0 = len(jobs)
-        jobs += [(sid, c, k0, variants, seeds, chains) for c in cs]
-    print(f"{len(jobs)} placements; variants {list(variants)}; seeds {seeds}; codecs {chains}", flush=True)
+        jobs += [(sid, c, k0, variants, seeds, chains, attackers) for c in cs]
+    print(f"{len(jobs)} placements; variants {list(variants)}; seeds {seeds}; codecs {chains}; attackers {attackers}", flush=True)
     t = time.time()
     with ProcessPoolExecutor(2) as pool:
         rows = list(pool.map(blank.trial, jobs))

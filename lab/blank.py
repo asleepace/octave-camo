@@ -75,9 +75,12 @@ def u_at(scene: locate.Scene, p: dict, others: list[dict], centre: float, lines:
 def trial(args: tuple) -> dict:
     """One placement: u (1 and 4 lines) before, and after each variant and seed. With codec chains
     (lab/codec.py) as a sixth element, also the four-line u of every copy after each chain, under
-    "codec"; a copy identical to its control (nothing filled) takes the control's scores."""
+    "codec"; a copy identical to its control (nothing filled) takes the control's scores. With
+    attacker names (lab/locate.py ATTACKERS) as a seventh, also each copy's u to each, under
+    "panel", the same way."""
     sid, centre, k, variants, seeds, *rest = args
     chains = [c for c in (rest[0] if rest else []) if c != "raw"]
+    attackers = tuple(rest[1]) if len(rest) > 1 else ()
     from . import codec
     from . import detect
     locate.whitened = lambda name, x, sr, prm: detect.whiten(x, sr, prm)   # scored once: no disk cache
@@ -94,8 +97,12 @@ def trial(args: tuple) -> dict:
     def coded(y):
         return {c: u_at(locate.Scene(codec.reencode(y, sr, c), sr, "blank"), p, shapes, centre, zenodo.ATTACKER_LINES)
                 for c in chains}
+    def panel(y):
+        return zenodo.panel(y, sr, p, shapes, centre - zenodo.shape(p)[2], "blank", attackers)
     if chains:
         out["before"]["codec"] = coded(x)
+    if attackers:
+        out["before"]["panel"] = panel(x)
     controls = {}
     import subprocess
     with tempfile.TemporaryDirectory() as tmp:
@@ -120,11 +127,14 @@ def trial(args: tuple) -> dict:
                 out[f"{name}-s{seed}"]["change_db"] = zenodo.level_change(x, y, sr)
                 m = re.search(r"filled (\d+) tone", r.stdout + r.stderr)
                 out[f"{name}-s{seed}"]["filled"] = int(m.group(1)) if m else 0
-                if chains:
+                if chains or attackers:
                     if extra is None:
                         controls[seed] = y
                     same = extra is not None and np.array_equal(y, controls[seed])
-                    out[f"{name}-s{seed}"]["codec"] = (dict(out[f"{CONTROL}-s{seed}"]["codec"]) if same else coded(y))
+                    for key, f in (("codec", coded), ("panel", panel)):
+                        if key == "codec" and not chains or key == "panel" and not attackers:
+                            continue
+                        out[f"{name}-s{seed}"][key] = dict(out[f"{CONTROL}-s{seed}"][key]) if same else f(y)
     return out
 
 
@@ -172,6 +182,23 @@ def summarize(rows: list[dict], variants: dict, seeds: list[int]) -> str:
             every = np.array([r[f"{name}-s{s}"]["codec"][c] for r in rows for s in seeds], float)
             lines.append(f"      {name}: effect {m:+.3f} ± {e:.3f}; where it filled ({nf}) {mf:+.3f} ± {ef:.3f}; "
                          f"top 5 % {int(np.nansum(every >= 0.95))}, bottom 5 % {int(np.nansum(every <= 0.05))} of {int(np.isfinite(every).sum())}")
+    attackers = list(rows[0]["before"].get("panel", {})) if rows else []
+    if attackers:
+        lines.append("  attacker panel (lab/locate.py ATTACKERS), each copy against the control by the same attacker:")
+    for k in attackers:
+        cc = np.array([np.nanmean([r[f"{CONTROL}-s{s}"]["panel"][k] for s in seeds]) for r in rows], float)
+        m, e, _ = by_session(cc)
+        lines.append(f"    {k}: untouched {np.nanmean([r['before']['panel'][k] for r in rows]):.3f}, blind preset {m:.3f} ± {e:.3f}")
+        for name in variants:
+            a = np.array([np.nanmean([r[f"{name}-s{s}"]["panel"][k] for s in seeds]) for r in rows], float)
+            filled = np.array([any(r[f"{name}-s{s}"]["filled"] > 0 for s in seeds) for r in rows])
+            m, e, _ = by_session(a - cc)
+            mf, ef, nf = by_session(a - cc, filled)
+            every = np.array([r[f"{name}-s{s}"]["panel"][k] for r in rows for s in seeds], float)
+            ctrl = np.array([r[f"{CONTROL}-s{s}"]["panel"][k] for r in rows for s in seeds], float)
+            lines.append(f"      {name}: effect {m:+.3f} ± {e:.3f}; where it filled ({nf}) {mf:+.3f} ± {ef:.3f}; "
+                         f"top 5 % {int(np.nansum(every >= 0.95))} (control {int(np.nansum(ctrl >= 0.95))}), "
+                         f"bottom 5 % {int(np.nansum(every <= 0.05))} (control {int(np.nansum(ctrl <= 0.05))}) of {int(np.isfinite(every).sum())}")
     for name in variants:
         f = [r[f"{name}-s{s}"]["filled"] for r in rows for s in seeds]
         ch = [r[f"{name}-s{s}"]["change_db"] - r[f"{CONTROL}-s{s}"]["change_db"] for r in rows for s in seeds]

@@ -19,6 +19,8 @@ are printed or saved, never a position.
 """
 from __future__ import annotations
 
+import dataclasses
+
 import numpy as np
 
 from . import corpus, detect
@@ -34,6 +36,32 @@ MIN_FRAMES = 80                # frames a curve must cover near its closest appr
 TOL_BINS = 2                  # best of ±2 bins (published positions are coarse)
 NULL_SHIFTS_S = (-40.0, -32.0, -24.0, 24.0, 32.0, 40.0)   # the same curve at wrong times
 MAX_RANGE_KM = 10.0           # a point farther than this from an aircraft doesn't hear it
+ATTACKER_LINES = 4            # the scoring attacker adds up four lines (THREAT_MODEL.md)
+
+# The attacker panel (docs/EXPERIMENTS.md, "Attackers the cloak doesn't model"): (whitening, lines,
+# deficit). P is the corpus's scoring attacker in every earlier table; the rest differ in how they
+# estimate the background, in resolution, or read deficits. A cloak that models one of them must be
+# judged by the others, and an attacker judges only once it's calibrated (docs/EXPERIMENTS.md,
+# "Calibration of the attacker panel": T favours shapes, PF has no power).
+ATTACKERS = {
+    "P": (P, ATTACKER_LINES, False),                                              # 15 s running median
+    "T": (P, ATTACKER_LINES, True),                                               # its deficits
+    "P0": (dataclasses.replace(P, ref_s=0.0), ATTACKER_LINES, False),             # whole-clip median
+    "PL0": (dataclasses.replace(P, ref_s=0.0, fft_s=0.68), ATTACKER_LINES, False),   # 4x finer
+    "PF": (dataclasses.replace(P, ref_s=-1.0), ATTACKER_LINES, False),            # frame median only
+    "PM0": (dataclasses.replace(P, ref_s=0.0, fft_s=0.34), ATTACKER_LINES, False),   # 2x finer
+    "PXL0": (dataclasses.replace(P, ref_s=0.0, fft_s=1.36), ATTACKER_LINES, False),  # 8x finer
+}
+
+
+def attacker_spec(name: str) -> tuple[detect.Params, int, bool]:
+    """An ATTACKERS entry by name; "NAME/k" takes k lines instead (e.g. "PM0/1": one line). On our
+    sessions a plane can carry one dominant tone, where three more lines only add noise."""
+    base, _, k = name.partition("/")
+    if base not in ATTACKERS or (k and not k.isdigit()) or k == "0":
+        raise KeyError(f"attacker {name!r}: a name in {list(ATTACKERS)}, optionally /lines")
+    prm, lines, deficit = ATTACKERS[base]
+    return prm, int(k) if k else lines, deficit
 
 
 def rank(s0: float, nulls: np.ndarray) -> float:
@@ -70,7 +98,8 @@ class Scene:
         # Running sums over frames, frames × rows (a run's sum is two contiguous rows).
         self.C = np.ascontiguousarray(np.concatenate([np.zeros((1, len(rows))), np.cumsum(G.T, axis=0)], axis=0))
 
-    def scores(self, heard: np.ndarray, factor: np.ndarray, t_close: float) -> tuple[float, float, float]:
+    def scores(self, heard: np.ndarray, factor: np.ndarray, t_close: float, lines: int = 1,
+               deficit: bool = False) -> tuple[float, float, float]:
         """(score, null mean, null spread): the curve's score near its closest approach, and the
         same curve moved to wrong times over the same frames. A far point predicts an almost flat
         curve, which matches a steady sound as well at any time, so only timing that fits stands
@@ -79,8 +108,9 @@ class Scene:
         j = np.flatnonzero((t >= t_close - HALF_WINDOW_S) & (t <= t_close + HALF_WINDOW_S))
         if len(j) < MIN_FRAMES:
             return np.nan, np.nan, np.nan
-        s0 = self._best(j, np.interp(t[j], heard, factor, left=np.nan, right=np.nan))
-        nulls = np.array([self._best(j, np.interp(t[j] - d, heard, factor, left=np.nan, right=np.nan)) for d in NULL_SHIFTS_S])
+        s0 = self._best(j, np.interp(t[j], heard, factor, left=np.nan, right=np.nan), lines, deficit)
+        nulls = np.array([self._best(j, np.interp(t[j] - d, heard, factor, left=np.nan, right=np.nan), lines, deficit)
+                          for d in NULL_SHIFTS_S])
         nulls = nulls[np.isfinite(nulls)]
         if not np.isfinite(s0) or len(nulls) < 3:
             return np.nan, np.nan, np.nan
@@ -232,9 +262,10 @@ def audible(geo: dict, extent_m: float, max_km: float = 12.0) -> list[str]:
     return keep
 
 
-def search(scene: Scene, geo: dict, hexes: list[str], points: np.ndarray) -> np.ndarray:
+def search(scene: Scene, geo: dict, hexes: list[str], points: np.ndarray, lines: int = 1,
+           deficit: bool = False) -> np.ndarray:
     """(score, null mean, null spread), points × aircraft × 3 (NaN: outside the audio's time or
-    out of earshot)."""
+    out of earshot). `lines`, `deficit`: as Scene._best (the attacker panel, ATTACKERS)."""
     dur = geo["duration_s"]
     S = np.full((len(points), len(hexes), 3), np.nan)
     for i, p in enumerate(points):
@@ -242,7 +273,7 @@ def search(scene: Scene, geo: dict, hexes: list[str], points: np.ndarray) -> np.
         for k, h in enumerate(hexes):
             heard, fac, tc, rmin = cv[h]
             if -HALF_WINDOW_S < tc < dur + HALF_WINDOW_S and rmin <= MAX_RANGE_KM * 1000:
-                S[i, k] = scene.scores(heard, fac, tc)
+                S[i, k] = scene.scores(heard, fac, tc, lines, deficit)
     return S
 
 
@@ -367,25 +398,28 @@ def grid(extent_m: float, step_m: float, center=(0.0, 0.0)) -> np.ndarray:
 
 
 def locate(sid: str, audios: list[tuple[str, np.ndarray]], sr: int, extent_m: float = 8_000,
-           coarse_m: float = 500, fine_m: float = 100, fine_extent_m: float = 1_000, envelope: bool = False) -> list[dict]:
+           coarse_m: float = 500, fine_m: float = 100, fine_extent_m: float = 1_000, envelope: bool = False,
+           attacker: str | None = None) -> list[dict]:
     """Search a coarse grid around the true position, then a fine one around the coarse best and
     around the truth (so the truth is always scored on the fine grid's terms). Summaries only.
     With `envelope`, also the loudness swell on the coarse grid, alone and combined with the tones
-    (each aircraft's better z of the two at each point)."""
+    (each aircraft's better z of the two at each point). `attacker`: a name in ATTACKERS (its
+    whitening, lines and deficit); None is the original one-line search at the default whitening."""
+    prm, lines, deficit = attacker_spec(attacker) if attacker else (P, 1, False)
     geo = corpus.geometry(sid)
     hexes = audible(geo, extent_m)
     coarse = grid(extent_m, coarse_m)
     results = []
     for name, x in audios:
-        scene = Scene(x, sr, f"{sid}:{name}")
-        S = search(scene, geo, hexes, coarse)
+        scene = Scene(x, sr, f"{sid}:{name}", prm)
+        S = search(scene, geo, hexes, coarse, lines, deficit)
         Zc, floor = zscores(S)
         total = combine(Zc)
         truth_i = int(np.argmin(np.hypot(*coarse.T)))
         best_i = int(np.nanargmax(total))
         # Fine grids around the best coarse point and around the truth.
         fine = np.unique(np.concatenate([grid(fine_extent_m, fine_m, coarse[best_i]), grid(fine_extent_m, fine_m)]), axis=0)
-        Zf = combine(zscores(search(scene, geo, hexes, fine), floor)[0])
+        Zf = combine(zscores(search(scene, geo, hexes, fine, lines, deficit), floor)[0])
         fb = int(np.nanargmax(Zf))
         ft = int(np.argmin(np.hypot(*fine.T)))
         # Ties share the middle rank: points no aircraft reaches all score 0, and the truth among
@@ -399,7 +433,7 @@ def locate(sid: str, audios: list[tuple[str, np.ndarray]], sr: int, extent_m: fl
         bits_low, nb_low = rank_bits(rank_low, len(coarse)), null_bits(Zc, truth_i, near, low=True)
         per_aircraft = {h: round(float(Zc[truth_i, k]), 1) for k, h in enumerate(hexes) if np.isfinite(Zc[truth_i, k])}
         results.append({
-            "name": name, "aircraft": len(hexes), "points": len(coarse),
+            "name": name, "attacker": attacker or "P1-15s", "aircraft": len(hexes), "points": len(coarse),
             "truth_rank": rank, "truth_percentile": round(100 * (1 - (rank - 1) / len(coarse)), 2),
             "best_error_m": round(float(np.hypot(*coarse[best_i]))), "fine_best_error_m": round(float(np.hypot(*fine[fb]))),
             "best_score": round(float(total[best_i]), 1), "truth_score": round(float(total[truth_i]), 1),
