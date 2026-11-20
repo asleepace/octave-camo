@@ -5,6 +5,9 @@ means, and what to try next. The detector's design is in [ACOUSTICS.md](ACOUSTIC
 of work in [PLAN.md](PLAN.md), related work in [RESEARCH.md](RESEARCH.md). Real recordings are described here only by what they contain; they
 never go into the repo.
 
+**Catching up?** The settled results, one short section each, are in [FINDINGS.md](FINDINGS.md).
+This notebook stays the complete record.
+
 ## The problem
 
 A jet's fan tone on a real indoor phone recording (a climbing airliner about 3 km away, heard
