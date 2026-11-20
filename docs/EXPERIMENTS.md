@@ -2055,6 +2055,22 @@ no power: reported. Each judge must also pass **session calibration (#14)**: pla
 p ≤ 0.05 in no more than 5 of the 36 clips (the binomial 97.5 % limit) and mean p is 0.40–0.60. A
 judge that fails is dropped before scoring, and the reason recorded here.
 
+**Calibration result (run before any copy was scored):** all three judges pass. 42 clips (21
+sessions × white and pink), 36 with a scorable aircraft (32 for PXL0/1).
+
+| attacker | p ≤ 0.05 | p ≤ 0.01 | mean p |
+| --- | ---: | ---: | ---: |
+| P0/1 (judge) | 4 / 36 | 1 | 0.49 |
+| PM0/1 (judge) | 1 / 36 | 1 | 0.49 |
+| PL0/1 (judge) | 1 / 36 | 1 | 0.54 |
+| P/1 (reported) | 1 / 36 | 0 | 0.52 |
+| PXL0/1 (reported) | 0 / 32 | 0 | 0.59 |
+
+- So joint-draw p is calibrated on sessions (#14). P0/1 is the loosest: 4 of 36 (11 %), within
+  the limit of 5.
+- **Any of the three judges** gives p ≤ 0.05 on 5 of 36 noise clips: **14 ± 6 %**. That's the
+  chance rate when a copy counts as leaked to any judge (#16).
+
 **Copies:** each tuning session, `lab trackfill <sid> full` (the tracked aircraft as the expected
 passes), **default** and **w68**, seeds 7 and 8: 42 copies each.
 
