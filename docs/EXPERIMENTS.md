@@ -1755,6 +1755,20 @@ written to catch:**
   can still see the line (issue #27).
 - **This is the worn tuning half.** It points; #16 decides.
 
+**Correction (review, 2026-11-20):** T is shape-biased. On plane-free noise it ranks the truth at
+0.88 or above for 5 of the 17 shapes ("Calibration of the attacker panel", below).
+
+- **Without those shapes:**
+  - T catches lines P misses on 2 of 24 default copies (N784MB_R04 s8, N788BM_R03 s8) and 1 of 24
+    rank-stop copies, about chance.
+  - Against the rank stop T leaks 1 of 24, as P does.
+  - So both criteria fired on T's bias, not on lines.
+- **What stands:**
+  - holes give nothing away: T ranks the hole copies low even on a shape it favours;
+  - the shadow (the whitening test);
+  - T finding planes on untouched audio: 6 of 12 originals on the shapes where it's calibrated.
+- **What doesn't:** "T catches lines P misses", as a second attacker worth scoring the cloak by.
+
 ## Attackers the cloak doesn't model (issue #27)
 
 The presence score P has two weaknesses, found on synthetic tones and confirmed by its picks:
@@ -1787,8 +1801,8 @@ and no rule was written beforehand:
 | rank stop, 8 decoys (of 34) | 1 | 4 | 1 | 7 | **10** | 6 |
 | mean u, rank stop − default | −0.26 | −0.06 | −0.23 | −0.01 | +0.03 | +0.01 |
 
-The chance rate is 1.7 of 34 per attacker. 7 or more is p ≈ 0.001 and 10 is p ≈ 10⁻⁵, treating copies
-as independent.
+The chance rate is 1.7 of 34 per attacker. 7 or more is p ≈ 0.001 and 10 or more is p ≈ 4 × 10⁻⁶, treating copies
+as independent (they aren't quite: two seeds per pass).
 
 - **The rank stop's advantage is P's alone.**
   - Against P it leaks 1 of 34 against the default's 12, and its mean u is 0.26 lower.
@@ -1796,12 +1810,15 @@ as independent.
     against 10, T0 6 against 4, and mean u within ±0.03.
   - It fills lines until P's rank meets a target. P is also what scored it on the holdout, so the
     holdout measured how well it beats the attacker it optimises against.
-- **P0 is the stronger attacker on untouched audio** (16 of 17 against P's 14). The copies P0 catches
-  and P doesn't are mostly the rank stop's (7 of 34), which fits the shadow. A slow line the 15 s
-  reference absorbs is invisible to the stop as well, so it's never filled.
+- **P0 is the stronger attacker on untouched audio** (16 of 17 against P's 14).
+  - Against the rank stop it catches 7 copies P doesn't, while P catches 1 P0 doesn't.
+  - On the default it's even: 5 one way, 7 the other.
+  - That fits the stop being blind to what a 15 s reference absorbs, but it wasn't tested
+    directly.
 - **The default stop doesn't model the attacker, and it leaks about the same to all three
   presence attackers** (P 12, P0 10, P01 10).
-- **Holes, for the record:** 2–4 of 34 under any attacker for either cloak; chance is 1.7.
+- **Holes, for the record:** 0–4 of 34 depending on the attacker, for either cloak (the deficit
+  attackers 0–1); chance is 1.7.
 
 **What it means:**
 
@@ -1887,7 +1904,7 @@ the original's strongest. Those are filled. What PL0 catches is weaker lines the
 cluster at 325–440 Hz on N4004R_R19, and one at 1040–1185 Hz on N413AK_R05.
 
 - At 0.17 s the truth sits at the wrong curves' median: −0.4 to +1.1 standard deviations.
-- At 0.68 s it's 1.1 to 3.2 above it. In summed dB, the truth gains 1.3–3.8 from the finer bins,
+- At 0.68 s it's 1.1 to 3.2 above it. In summed dB, the truth gains 1.0–3.8 from the finer bins,
   and the wrong curves' median gains 0.6–1.8.
 - So narrow residual lines gain more from resolution than background structure does. The cloak's
   test, at 0.17 s, stops while they're still there.
@@ -1939,16 +1956,68 @@ This is the worn tuning half: a pass here points, and the sessions and a new hol
 - **The top tail moves more than the mean.** Mean u falls by 0.02–0.12 (PXL0 −0.12 ± 0.05,
   PL0 −0.11 ± 0.06, P −0.04 ± 0.04). The stop removes the copies that give the place away, not
   every trace of the curve.
-- **Holes are unchanged:** 2–4 of 34 under each attacker, as before.
+- **Holes move little:**
+  - under the presence attackers, 2–4 of 34 before and after (+0 or +1 each);
+  - T's go from 0 to 3. A T hole is the truth with the least deficit, so the shadow is gone, not a
+    line found.
+  - Chance is 1.7.
 
 **What it means:**
 
 - **Testing at a second, finer window is the first change to cut the cloak's leak to attackers it
   doesn't model.** It cuts it by about half (16–18 to 6–8 of 34), for 0.36 dB more sound change.
+- **By pass,** since a pass's two seeds aren't independent:
+  - PM0 leaks on 9 passes of 17 before and 4 after: 7 passes better, none worse (sign test
+    p = 0.016);
+  - PXL0 goes from 10 to 6: 6 better, none worse (p = 0.031).
+- **"Held out" is by resolution, and the judges are neighbours.** The cloak now tests at 0.17 and
+  0.68 s, and PM0 and PXL0 are one factor of 2 from the 0.68 s window. An attacker of a different
+  kind (the loudness attacker, a learned detector, or a different window shape) would be a stronger
+  judge. #16 should include one.
+- **Fine-resolution attackers are conservative at high frequencies.** The rest-frequency grid steps
+  0.2 % (`locate.STEP`), so it rounds a curve by up to 0.1 %. At 48 kHz that exceeds the ±2-bin
+  tolerance above 1.5 kHz at 1.36 s frames (PXL0) and above 2.9 kHz at 0.68 s (PL0), so they can
+  miss high lines. That cuts their power, not their calibration: the
+  truth and the wrong curves are scored on the same grid.
 - **This is the worn tuning half.** It isn't the default yet. Next:
   - real backgrounds and sessions, scored by the panel. The earlier 85 ms window made one session's
     place easier;
   - then the new holdout (#16).
+
+## Calibration of the attacker panel (review, 2026-11-20)
+
+Each attacker on plane-free synthetic noise: white and pink, two seeds each, at every tuning
+pass's clip length and with its shape. That's 68 clips per attacker, against the same 144 wrong
+curves as the real copies. A calibrated attacker gives about 5 % at u ≥ 0.95 (3.4 of 68), mean 0.5.
+
+| attacker | u ≥ 0.95 | u ≤ 0.05 | mean u | shapes favoured on noise (mean u ≥ 0.85 over 4 clips) |
+| --- | ---: | ---: | ---: | --- |
+| P | 6 | 3 | 0.61 | N373DF_R06, N788BM_R03, N7PG_R60 |
+| T | **13** | 6 | 0.54 | N3012N_R40, N373DF_R06, N451EE_R51, N621KS_R18, N7PG_R60 |
+| P0 | 5 | 5 | 0.52 | – |
+| PL0 | 2 | 2 | 0.50 | – |
+| PM0 | 5 | 4 | 0.50 | – |
+| PXL0 | 4 | 4 | 0.52 | N4040_R12 |
+
+- **The whole-clip-median attackers are calibrated.** P0, PL0 and PM0 favour no shape, and PXL0
+  favours one. PXL0 does lean on the noise's colour: mean u 0.44 on white noise and 0.60 on pink.
+- **T is not, and P slightly isn't.** Both favour shapes whatever the audio, and T strongly. Some
+  shapes' scores are more extreme on any background: a flat stretch revisits the same bins, whose
+  whitened values are correlated in time.
+  - #13's T findings are corrected above.
+  - P's favoured shapes don't change its counts on cloaked copies: the default's 12 P leaks, the
+    rank stop's 1 and w68's 8 are all on other shapes. On the originals, P is 12 of 14 without
+    them, against 14 of 17.
+- **Paired comparisons are safe.** Two cloaks on the same shapes share the bias, so default against
+  rank stop, whole-clip or w68 stands.
+- **Leaks against chance are only as good as the attacker's calibration.** The binomial p-values
+  above assume 5 %, which holds for P0, PL0, PM0 and PXL0, but not for T.
+- **Without each attacker's favoured shapes:**
+  - PXL0: default 15 of 32, w68 8;
+  - P: default 12 of 28, w68 8, the rank stop 1.
+  - No decision changes.
+- **For the future:** calibrate any new attacker this way before it judges, and score u against
+  each shape's own noise baseline (issue #30).
 
 ## Next experiments
 

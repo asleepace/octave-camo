@@ -49,9 +49,10 @@ are grouped by milestone, newest first, with the commits that made them.
   5 %) gives an attacker nothing.
   - Under the rank stop the truth's rank is spread like chance.
   - A deficit attacker and an either-score attacker rank the hole copies' truth low.
-- The deficit score T is a second line detector. It reads the shadow whitening leaves beside a line,
-  and it catches lines the presence score misses: 4 of 34 copies under the default, 3 under the rank
-  stop with decoys. Against the best of P and T, the rank stop leaks 4 of 34, against the default's 12,
+- The deficit score T reads the shadow whitening leaves beside a line. *Corrected in review:* T is
+  shape-biased (it favours 5 of 17 shapes on plane-free noise). On the shapes where it's
+  calibrated, it catches lines the presence score misses on only 2 and 1 of 24 copies, about
+  chance. Against the best of P and T, the rank stop leaks 4 of 34, against the default's 12,
   but see the finding above: against attackers it doesn't model, the two are level.
 - docs/EXPERIMENTS.md, "Do holes help an attacker?"; THREAT_MODEL.md, Known gaps 13; issues #13 and
   #27.

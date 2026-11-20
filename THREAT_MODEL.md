@@ -311,8 +311,8 @@ In order of how much we think they matter:
 13. **The scoring attacker reads one statistic.** Every leak count uses the presence score P,
     which adds up the excess along a curve. A deficit score T reads a line from the shadow that
     whitening leaves beside it.
-    - T catches lines P misses: on the corpus tuning half, 4 of 34 copies under the default stop
-      and 3 of 34 under the rank stop with decoys.
+    - T is shape-biased, and on the shapes where it's calibrated it catches lines P misses on only
+      2 and 1 of 24 copies (docs/EXPERIMENTS.md, "Calibration of the attacker panel").
     - A loud enough line lowers P while T still sees it.
 
     The cloak's stop watches only P. A whole-clip-median attacker P0 is stronger on untouched

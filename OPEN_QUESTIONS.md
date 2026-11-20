@@ -52,9 +52,9 @@ attacker every result is scored against").
     the cloak's rank shape gains nothing. Its 3 holes of 34 against 1.7 expected is p ≈ 0.24.
   - A deficit attacker (T) and one taking either score (C) rank the hole copies' truth low too:
     T 0.08–0.42, C 0.01–0.17.
-- **What it turned up instead:** T is a second line detector. It catches lines the presence score
-  misses (4 of 34 copies under the default, 3 under the rank stop), so leak counts should take both
-  (#27).
+- **What it turned up instead:** the shadow a 15 s reference leaves beside a line, which T reads.
+  T is shape-biased, though (docs/EXPERIMENTS.md, "Calibration of the attacker panel"). On the
+  shapes where it's calibrated, it adds about nothing against the cloaks: 2 and 1 of 24 copies.
 - **Moot for now:** the rank stop's advantage over the default holds only against the attacker it
   optimises against (#27, "Attackers the cloak doesn't model"). Against others the two are level.
 

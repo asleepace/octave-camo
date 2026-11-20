@@ -1,6 +1,6 @@
 # Status
 
-_Updated 2026-11-19. Start here when checking in. Rules for working on the project are in
+_Updated 2026-11-20. Start here when checking in. Rules for working on the project are in
 [CLAUDE.md](CLAUDE.md), and the backlog is in the
 [issues](https://github.com/asleepace/octave-camo/issues)._
 
@@ -31,6 +31,13 @@ _Updated 2026-11-19. Start here when checking in. Rules for working on the proje
   well as 0.17 s (`--track-windows 0.17,0.68`) roughly halves its leak to the attackers held back
   to judge it: 16–17 to 6–8 of 34 copies. It costs +0.36 dB of sound change. It isn't the default
   yet; sessions and the new holdout come first (#29).
+- **Reviewed 2026-11-20:**
+  - Every figure was recounted from the raw results, the default's output was regenerated
+    byte-for-byte, and the panel was calibrated on plane-free noise.
+  - The new judges are calibrated, and the #27 and #29 decisions stand.
+  - The deficit attacker T is shape-biased, so #13's "T catches lines P misses" is withdrawn.
+    "Holes give nothing away" stands.
+  - Four small figures were corrected.
 - **Posting doesn't change any of this.** The page's AAC export, followed by AAC 128k, AAC 64k or
   Opus 96k, leaves leaks, holes and the mark on real backgrounds where they were.
 - **Data:** 23 recorder sessions (21 tuning, 2 holdout). The public corpus has 35 passes; its
@@ -63,7 +70,9 @@ holdout automatically as they're ingested ([lab/DATA.md](lab/DATA.md)).
    credibility.
 4. [#16](https://github.com/asleepace/octave-camo/issues/16) **The new holdout** (needs data):
    score against attackers the cloak doesn't model. Keep holes as a diagnostic, not a loss.
-5. Loudness normalisation
+5. [#30](https://github.com/asleepace/octave-camo/issues/30) **Calibrate the corpus score per
+   shape,** and gate new attackers on it.
+6. Loudness normalisation
    ([#17](https://github.com/asleepace/octave-camo/issues/17)), the pink-noise hole against a blind
    control ([#19](https://github.com/asleepace/octave-camo/issues/19)), native encoders
    ([#18](https://github.com/asleepace/octave-camo/issues/18)).
