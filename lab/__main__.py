@@ -17,6 +17,7 @@
   blank [--seeds 7,8] [--spacing 30] [--per-session 3] [--variant name="scrub options" ...] [--codec page,aac64] [--attackers P0,PM0,PXL0]
         the cloak's mark on real recordings along a curve nothing follows
                                         the public corpus, tone removal (tuning half by default)
+  calibrate [--attackers P0,PM0] [--seeds 2]   each attacker on plane-free noise: fit to judge?
   locate <session> [audio …] [--envelope] [--attacker PM0]   the place-searching attacker: rank of the true position
                                         (--envelope: the loudness swell too, alone and combined)
                                         among a grid of candidates (distances and areas only)
@@ -410,6 +411,38 @@ def zenodo_citation() -> str:
     return zenodo.CITATION
 
 
+def cmd_calibrate(args: list[str]):
+    """Each panel attacker on plane-free noise, every tuning shape (lab/zenodo.py calibrate_pass):
+    which attackers are fit to judge, and which shapes each favours. Saved as results/calibration."""
+    from concurrent.futures import ProcessPoolExecutor
+    from . import zenodo, locate
+    names = tuple(args[args.index("--attackers") + 1].split(",")) if "--attackers" in args else tuple(locate.ATTACKERS)
+    seeds = int(args[args.index("--seeds") + 1]) if "--seeds" in args else 2
+    for a in names:
+        try:
+            locate.attacker_spec(a)
+        except KeyError as e:
+            raise SystemExit(f"--attackers: {e}")
+    ps = [p for p in zenodo.passes() if zenodo.usable(p) and zenodo.half(p["case"]) == "tune"]
+    t = time.time()
+    with ProcessPoolExecutor(2) as pool:
+        cal = dict(zip([p["case"] for p in ps], pool.map(_calibrate_one, [(p, ps, names, seeds) for p in ps])))
+    summ = zenodo.calibration_summary(cal)
+    print(f"{len(ps)} shapes × {len(zenodo.CAL_KINDS) * seeds} noise clips ({time.time() - t:.0f} s)")
+    print("| attacker | u >= 0.95 (limit) | u <= 0.05 | mean u | favoured shapes | judges |")
+    print("| --- | ---: | ---: | ---: | --- | --- |")
+    for a, s in summ.items():
+        print(f"| {a} | {s['top']} of {s['clips']} ({s['top_limit']}) | {s['bottom']} | {s['mean']:.2f} | {', '.join(s['favoured']) or '-'} | {'yes' if s['judges'] else 'no'} |")
+    save_result("calibration", {"per_shape": cal, "summary": summ})
+
+
+def _calibrate_one(job):
+    from . import zenodo, locate, detect
+    locate.whitened = lambda nm, x, sr, prm: detect.whiten(x, sr, prm)   # noise: no disk cache
+    p, ps, names, seeds = job
+    return zenodo.calibrate_pass(p, ps, names, seeds)
+
+
 def cmd_zenodo(args: list[str]):
     """The public 40-flight corpus as a tone-removal holdout (lab/zenodo.py). Scored once."""
     from concurrent.futures import ProcessPoolExecutor
@@ -510,6 +543,8 @@ def main(argv):
         cmd_ml(rest)
     elif cmd == "zenodo":
         cmd_zenodo(rest)
+    elif cmd == "calibrate":
+        cmd_calibrate(rest)
     elif cmd == "blank":
         cmd_blank(rest)
     elif cmd == "bench":

@@ -38,6 +38,14 @@ science moves in [docs/EXPERIMENTS.md](docs/EXPERIMENTS.md), and the open questi
   holdout, once.
 - **Compare against a blind control, not "before".** Regression to the mean has misled us twice
   (OPEN_QUESTIONS.md, "Pitfalls"). Pair by copy and seed.
+- **An attacker judges only once it's fit to.** It needs two things:
+  - calibration (`python3 -m lab calibrate`): within chance on plane-free noise, and favouring at
+    most one shape, which is then left out of its counts;
+  - power on untouched audio of the kind being judged. The corpus and our sessions differ: four
+    lines and a whole-clip median win on the corpus, but lose a session the one-line 15 s search
+    finds.
+
+  Name the judging attackers in the rule before scoring.
 - **At least two seeds** for any comparison. One pass's u under two seeds correlates only 0.3–0.8.
 - **Report ± se and the n.** Say what isn't settled.
 - **The tuning half is worn.** Its numbers are optimistic; prefer new data for any new decision.

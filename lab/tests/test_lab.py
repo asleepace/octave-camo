@@ -321,6 +321,35 @@ class AttackerPanel(unittest.TestCase):
         self.assertEqual(got["T"], zenodo.u(locate.Scene(x, SR, "test:panel:P"), ps[0], ps, zenodo.OFFSET_S, deficit=True)[0])
         self.assertGreaterEqual(got["P0"], 0.95)     # the whole-clip-median attacker finds it too
 
+    def test_calibration_summary_gates_an_attacker_on_chance_and_favoured_shapes(self):
+        rng = np.random.default_rng(0)
+        fair = {f"c{i}": {"A": list(rng.uniform(0, 1, 4)), "B": list(rng.uniform(0, 1, 4))} for i in range(17)}
+        for c in ("c0", "c1"):                                    # B favours two shapes
+            fair[c]["B"] = [0.97, 0.99, 0.9, 0.96]
+        s = zenodo.calibration_summary(fair)
+        self.assertEqual(s["A"]["clips"], 68)
+        self.assertEqual(s["A"]["top_limit"], 7)                 # binomial(68, 0.05) 97.5th percentile
+        self.assertTrue(s["A"]["judges"])
+        self.assertEqual(s["B"]["favoured"], ["c0", "c1"])
+        self.assertFalse(s["B"]["judges"])
+        many = {f"c{i}": {"C": [0.96, 0.5, 0.2, 0.7]} for i in range(17)}   # 17 of 68 at the top
+        self.assertFalse(zenodo.calibration_summary(many)["C"]["judges"])
+
+    def test_calibrate_pass_scores_each_attacker_on_each_noise_clip(self):
+        t = np.arange(0, 50, 0.1707)
+        geos = [(0.30, 4.0), (0.12, 6.0), (0.50, 2.0), (0.20, 9.0)]
+        ps = [{"case": f"c{k}", "t": t, "f": 300 * (1 + d / 2 - d / (1 + np.exp(-(t - 25) / w)))}
+              for k, (d, w) in enumerate(geos)]
+        got = zenodo.calibrate_pass(ps[0], ps, ("P0", "PM0/1"), seeds=1, duration_s=50 + 2 * zenodo.OFFSET_S, sr=SR)
+        self.assertEqual(set(got), {"P0", "PM0/1"})
+        for v in got.values():
+            self.assertEqual(len(v), len(zenodo.CAL_KINDS))
+            self.assertTrue(all(0 <= u <= 1 for u in v))
+        pink = zenodo.noise(8192, SR, "pink", 1)
+        P = np.abs(np.fft.rfft(pink)) ** 2
+        f = np.fft.rfftfreq(8192, 1 / SR)
+        self.assertGreater(P[(f > 100) & (f < 200)].mean(), 4 * P[(f > 1600) & (f < 3200)].mean())
+
     def test_scene_scores_takes_the_attackers_lines_and_deficit(self):
         # The place search's per-curve score (Scene.scores) with an attacker's lines and deficit is
         # _best's, at the curve and at each wrong time; the default stays one line.

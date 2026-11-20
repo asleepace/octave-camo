@@ -185,6 +185,68 @@ def blind(path: str) -> dict:
     return {"doppler": len(dop), "distance": (d.get("consensus") or {}).get("distance")}
 
 
+def noise(n: int, sr: int, kind: str, seed: int) -> np.ndarray:
+    """Plane-free synthetic noise for calibration: "white", or "pink" (power falling 3 dB an octave)."""
+    w = np.random.default_rng(seed).normal(0, 1, n)
+    if kind == "white":
+        return w
+    W = np.fft.rfft(w)
+    f = np.fft.rfftfreq(n, 1 / sr)
+    W[1:] /= np.sqrt(f[1:])
+    W[0] = 0
+    return np.fft.irfft(W, n)
+
+
+CAL_KINDS = ("white", "pink")
+FAVOURED_U = 0.85          # a shape's mean noise u at or above this: the attacker favours it
+
+
+def calibrate_pass(p: dict, others: list[dict], names: tuple[str, ...], seeds: int = 2,
+                   duration_s: float | None = None, sr: int | None = None) -> dict[str, list[float]]:
+    """Each attacker's u for this pass's shape on plane-free noise (CAL_KINDS × `seeds` clips), at
+    the pass's own length and rate unless given (docs/EXPERIMENTS.md, "Calibration of the attacker
+    panel"). A calibrated attacker's u is uniform; one that favours the shape runs high on any
+    background."""
+    if sr is None or duration_s is None:
+        info = sf.info(p["wav"])
+        sr, n = info.samplerate, info.frames
+    else:
+        n = int(duration_s * sr)
+    out = {a: [] for a in names}
+    for kind in CAL_KINDS:
+        for s in range(seeds):
+            x = noise(n, sr, kind, 1000 + 10 * s + (kind == "pink"))
+            for a, v in panel(x, sr, p, others, OFFSET_S, "calibrate", names).items():
+                out[a].append(v)
+    return out
+
+
+def calibration_summary(per_shape: dict[str, dict[str, list[float]]]) -> dict[str, dict]:
+    """Per attacker, from {case: {attacker: [noise u]}}: the clips, how many reach u >= 0.95 and
+    u <= 0.05, the mean, the shapes it favours (mean >= FAVOURED_U) and disfavours (<= 1 - that),
+    and whether it may judge: its top 5 % within chance (at most the binomial 97.5th percentile
+    for 5 %) and at most one favoured shape, which is then left out of its counts."""
+    from math import comb
+    names = sorted({a for v in per_shape.values() for a in v})
+    out = {}
+    for a in names:
+        us = [u for v in per_shape.values() for u in v.get(a, []) if np.isfinite(u)]
+        n = len(us)
+        cdf, limit = 0.0, n
+        for k in range(n + 1):
+            cdf += comb(n, k) * 0.05 ** k * 0.95 ** (n - k)
+            if cdf >= 0.975:
+                limit = k
+                break
+        means = {c: float(np.mean(v[a])) for c, v in per_shape.items() if a in v and len(v[a])}
+        fav = sorted(c for c, m in means.items() if m >= FAVOURED_U)
+        top = int(sum(u >= 0.95 for u in us))
+        out[a] = {"clips": n, "top": top, "bottom": int(sum(u <= 0.05 for u in us)), "mean": float(np.mean(us)) if n else np.nan,
+                  "favoured": fav, "disfavoured": sorted(c for c, m in means.items() if m <= 1 - FAVOURED_U),
+                  "top_limit": limit, "judges": top <= limit and len(fav) <= 1}
+    return out
+
+
 def level_change(x: np.ndarray, y: np.ndarray, sr: int, lo: float = 300.0, hi: float = 4_000.0) -> float:
     """Mean absolute third-octave level change between two aligned audios, lo–hi Hz, dB."""
     from scipy.signal import stft
