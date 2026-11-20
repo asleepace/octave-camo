@@ -2019,6 +2019,66 @@ curves as the real copies. A calibrated attacker gives about 5 % at u ≥ 0.95 (
 - **For the future:** calibrate any new attacker this way before it judges, and score u against
   each shape's own noise baseline (issue #30).
 
+## The two-window cloak on our sessions (plan, written before it ran)
+
+Issues #29 and #14. w68 (`--track-windows 0.17,0.68`) passed on the corpus tuning half. Two checks
+on our own recordings decide whether it goes to the new holdout (#16).
+
+**First, which attackers have power on sessions.** The place search on the 21 untouched tuning
+sessions, under ten attackers. "Found" is the place given away at p ≤ 0.05 (joint draws). Three
+sessions have no scorable aircraft for any attacker (p = 1), so n is 18 (16 for PXL0). By chance, about 1 of 18
+sessions is found.
+
+| attacker | found | p ≤ 0.01 | mean excess bits |
+| --- | ---: | ---: | ---: |
+| P/1 (the default search: one line, 15 s median) | 3 | 1 | +0.59 |
+| P (four lines) | 1 | 1 | +0.38 |
+| P0/1 (whole-clip median) | 4 | 2 | +0.60 |
+| P0 | 0 | 0 | +0.01 |
+| PM0/1 (0.34 s) | 3 | 2 | +0.44 |
+| PM0 | 0 | 0 | +0.08 |
+| PL0/1 (0.68 s) | 3 | 3 | +0.78 |
+| PL0 | 2 | 0 | +0.44 |
+| PXL0/1 (1.36 s; 16 scorable) | 1 | 1 | +0.30 |
+| PXL0 (16 scorable) | 2 | 0 | +0.20 |
+
+- **One line beats four on sessions,** the reverse of the corpus. A session's aircraft are mostly
+  far and faint, and extra lines add noise.
+- **Power on sessions is thin.** The best attacker finds 4 of 18 (binomial p 0.011 against chance; 3 of 18 is p 0.06).
+  6 sessions are found by any attacker, and 3 carry most of it (found by 4–7 of the ten).
+- **So this check can only catch w68 being clearly worse.** It can't show it's better.
+
+**Judges on sessions:** **P0/1, PM0/1 and PL0/1.** They have the most power and the cloak doesn't
+model them (whole-clip medians). P/1 is the cloak's own model: reported, not a judge. PXL0/1 has
+no power: reported. Each judge must also pass **session calibration (#14)**: plane-free noise
+(white and pink, each session's length) scored against that session's own aircraft. It passes if
+p ≤ 0.05 in no more than 5 of the 36 clips (the binomial 97.5 % limit) and mean p is 0.40–0.60. A
+judge that fails is dropped before scoring, and the reason recorded here.
+
+**Copies:** each tuning session, `lab trackfill <sid> full` (the tracked aircraft as the expected
+passes), **default** and **w68**, seeds 7 and 8: 42 copies each.
+
+**What counts** (paired by session and seed):
+
+- **w68 fails the session check if, under any judge:**
+  - it gives the place away (p ≤ 0.05) on 2 or more copies more than the default; or
+  - its mean excess bits are above the default's by more than 2 se.
+- **Otherwise it passes:** no worse on sessions, at this size.
+
+**Second, real backgrounds** (`lab blank`, the 91 moments as before, two seeds, against the blind
+control): `--variant w68="--track-windows 0.17,0.68" --attackers PM0,PXL0,PL0`. This is the
+corpus's u on a curve nothing follows, so the corpus judges apply: **PM0 and PXL0** (calibrated,
+with power on corpus shapes). PL0 is reported.
+
+- **w68 fails here if,** under PM0 or PXL0, its copies at u ≥ 0.95 (a peak along a curve nothing
+  follows) outnumber the fixed default's by more than 2, or its effect against blind is further
+  from 0 than the default's by more than 2 se (paired).
+- Holes (u ≤ 0.05) are reported, not counted: #13 found they give nothing away.
+- The sound change is reported.
+
+**If w68 passes both,** it's the candidate the #16 holdout decides. It doesn't become the default
+on the tuning sessions. **If it fails either,** the default keeps one window.
+
 ## Next experiments
 
 0. **The place as the metric** (envelope term, holdouts, stopping, the public corpus and the
