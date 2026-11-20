@@ -35,16 +35,16 @@ attacker every result is scored against").
 - **Would settle it:** compare statistics by how well they find planes in *untouched* audio (power),
   without tuning them to the cloak.
 
-### The place search on our sessions needs re-scoring
-- `lab locate` hasn't been switched to the four-line statistic, so session results are against the
-  weaker attacker.
-- Its p-values (`locate.null_bits`) drew each aircraft's wrong-place z independently, which loses
-  the dependence between aircraft that share a background. With strongly correlated aircraft that
-  understates the null's spread, and the truth looks rarer than it is (an independent review's
-  stress test: a tail of 0.0005 against 0.0094). Draws are now joint by default (one wrong place,
-  all its aircraft). The session numbers in docs/EXPERIMENTS.md were computed the old way.
-- Switch to four lines, re-score the tuning sessions with joint draws, and check the p-values'
-  calibration on scenes with nothing there.
+### The place search on our sessions (answered, 2026-11-20)
+- **Joint draws are calibrated.** On plane-free noise against each session's aircraft, p ≤ 0.05 in
+  1–4 of 36 clips per judge, mean p 0.49–0.54.
+- **One line beats four on sessions,** the reverse of the corpus, so the search keeps one line.
+  Session aircraft are mostly far and faint.
+- **Re-scored:** any of three calibrated judges finds 4 of 18 untouched sessions. Neither cloak's
+  copies are found in those sessions (docs/EXPERIMENTS.md, "The two-window cloak on our sessions").
+- **Still open:** both cloaks push the truth *below* chance on sessions (negative excess bits).
+  It's not significant per copy, but it's consistent. Whether an attacker could use that, and
+  whether the blind preset does the same, isn't known.
 
 ### Does a hole matter to a real attacker? (answered on the tuning half: no)
 - **Answered for two attackers** (docs/EXPERIMENTS.md, "Do holes help an attacker?"):

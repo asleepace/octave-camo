@@ -2095,6 +2095,95 @@ with power on corpus shapes). PL0 is reported.
 **If w68 passes both,** it's the candidate the #16 holdout decides. It doesn't become the default
 on the tuning sessions. **If it fails either,** the default keeps one window.
 
+### Result (2026-11-20): w68 passes both, so it goes to the holdout
+
+**Sessions** (18 with a scorable aircraft, 36 copies of each cloak, two seeds):
+
+| attacker | originals found | default copies found | w68 copies found | excess bits: original / default / w68 − default |
+| --- | ---: | ---: | ---: | --- |
+| P0/1 (judge) | 4 | 0 / 36 | 1 / 36 | +0.60 / −0.21 / +0.23 ± 0.20 |
+| PM0/1 (judge) | 3 | 0 / 36 | 0 / 36 | +0.44 / −0.41 / +0.23 ± 0.12 |
+| PL0/1 (judge) | 3 | 0 / 36 | 0 / 36 | +0.78 / −0.30 / +0.13 ± 0.16 |
+| P/1 (reported) | 3 | 2 / 36 | 4 / 36 | +0.59 / −0.00 / +0.14 ± 0.18 |
+| PXL0/1 (reported, 16) | 1 | 0 / 32 | 0 / 32 | +0.30 / −0.18 / −0.06 ± 0.06 |
+
+- **Both cloaks hide the place on our sessions.** Any judge finds 4 of 18 originals. It finds none
+  of their 8 copies under either cloak, and 1 of 36 w68 copies overall: below the 14 % chance
+  rate on noise.
+- **w68 passes the session rule:** at most 1 more copy found under any judge (the limit was 2). Its
+  excess bits are above the default's by at most 1.96 se (PM0/1), under the limit of 2.
+  - That margin is thin, and it points the wrong way for the rule's purpose. Both cloaks push the
+    truth below chance (negative excess bits); w68 pushes it less far (−0.18 against −0.41 under
+    PM0/1). The rule as written counts that as worse. The holdout rule below asks the right
+    question instead: does a cloak lean toward the truth, above chance?
+- **Holes:** a copy with the truth significantly *un*likely (p_low ≤ 0.05) is rare under any
+  attacker: 0–2 of 36 for each cloak, about chance.
+- **Sound change** over the original: w68 +0.08 ± 0.03 dB more than the default (n 21, max +0.40).
+- **One line beats four on sessions** (#14), so the session search keeps one line.
+
+**Real backgrounds** (`lab blank`, 91 moments in 16 sessions, two seeds, against the blind control):
+
+| attacker | top 5 %: fixed / w68 / control | effect vs blind: fixed / w68 | w68 further from 0 by |
+| --- | --- | --- | --- |
+| PM0 (judge) | 13 / 11 / 12 | −0.005 / −0.022 | 1.5 se |
+| PXL0 (judge) | 3 / 1 / 2 | −0.015 / −0.021 | 0.4 se |
+| PL0 (reported) | 4 / 3 / 4 | −0.010 / −0.030 | 1.4 se |
+
+- **w68 passes:** fewer top-5 % copies than fixed under both judges, and its effect is within 2 se.
+- Reported: w68 fills on 54 % of moments (fixed 27 %); bottom-5 % copies under PXL0 15 against 11
+  (control 8); sound change over the blind preset +0.08 dB (fixed +0.02).
+
+## The new holdout: w68 against the default on held-out sessions (rule, written before it ran)
+
+Issue #16. Replaces the rank-stop holdout, which #27 dropped. Nothing here has been scored on a
+held-out session.
+
+**What it decides:** whether `--track-windows 0.17,0.68` becomes the default. Its gain was shown on
+the corpus tuning half, which is worn. On our sessions both cloaks already hide the place (above),
+so the holdout can't show w68 is *better* there. It checks that w68 is **no worse**. Adopting w68 on
+that basis is Colin's call, made before scoring (#16).
+
+**Data:** sessions with `corpus.is_holdout`, recorded from 2026-11-15 on. Scored once, when at
+least **20 held-out sessions have a scorable aircraft** (#15). The two older holdout sessions are
+included.
+
+**Copies:** for each session, the default and w68 (`lab trackfill <sid> full`), and the blind
+control (the same preset without `--expect`, as `lab blank` uses; `lab trackfill --blind`, #32). Seeds 7 and 8.
+
+**Judges:** P0/1, PM0/1 and PL0/1. Before any copy is scored, each must pass calibration again on
+the held-out sessions' own aircraft: plane-free white and pink noise, p ≤ 0.05 in no more than the
+binomial 97.5 % limit of the clips, and mean p 0.40–0.60. A judge that fails is dropped and the
+reason recorded. If all three fail, there's no decision.
+
+No attacker of a different kind qualifies: the loudness attacker (`locate --envelope`) reaches
+p ≈ 0.1 at best on untouched sessions. So this holdout tests the cloak only against attackers that
+look for the curve at other resolutions. That's its main caveat.
+
+**A copy leaks** if any judge gives p ≤ 0.05.
+
+**w68 is adopted if all three hold** (sessions as the unit, the two seeds together):
+
+1. **No more leaks:** w68's leaked copies are at most the default's plus 2.
+2. **No lean toward the truth:** under each judge, w68's mean excess bits are not above 0 (chance)
+   by more than 2 se.
+3. **Sound:** its mean sound change is at most +0.5 dB over the default's.
+
+Otherwise the default stays.
+
+**Reported, not deciding:**
+
+- Originals found; in those sessions, copies found under each cloak and the blind control. That's
+  the security claim on new data.
+- Holes (p_low ≤ 0.05).
+- P/1 and PXL0/1.
+
+**Power, from the tuning sessions:**
+
+- Clause 2 catches a w68 that leans toward the truth like an untouched original at about 80 % with
+  6–13 sessions under PL0/1 and PM0/1 (31 under P0/1).
+- Clause 1 trips by chance about 1 % of the time at 20 sessions (simulated). That's if the two cloaks differ
+  as they do on tuning (1 discordant session in 18).
+
 ## Next experiments
 
 0. **The place as the metric** (envelope term, holdouts, stopping, the public corpus and the

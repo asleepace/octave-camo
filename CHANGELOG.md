@@ -9,6 +9,20 @@ are grouped by milestone, newest first, with the commits that made them.
 
 ## [Unreleased]
 
+### The two-window cloak holds on our recordings; the new holdout's rule (finding)
+
+- **Session calibration (#14):** joint-draw p from the place search is calibrated on plane-free
+  noise. Three judges qualify (whole-clip median at 0.17, 0.34 and 0.68 s, one line). Any of the
+  three gives a false place on 14 ± 6 % of noise clips.
+- **Both cloaks hide the place on our sessions.** The judges find 4 of 18 untouched sessions and
+  none of their copies, default or `--track-windows 0.17,0.68` (two seeds).
+- **w68 passes the session and real-background checks** written beforehand (#29). +0.08 ± 0.03 dB
+  over the default on sessions.
+- **The #16 holdout rule:** w68 against the default, on non-inferiority. It's scored once at 20
+  held-out sessions with a scorable aircraft.
+- **Recording target (#15):** about 45 new recordings. The session, not the pass, is the unit.
+- docs/EXPERIMENTS.md, "The two-window cloak on our sessions" and "The new holdout"; lab/DATA.md.
+
 ### Testing at 0.68 s too halves the leak to held-back attackers (finding)
 
 - Why the finer-resolution attacker wins: the cloak removes a plane's strongest lines, but narrower,

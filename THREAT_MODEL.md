@@ -51,8 +51,8 @@ every number that decides a design is about this one (docs/EXPERIMENTS.md and th
 - **Doesn't yet:** weight the lines (a learned or likelihood-ratio statistic would beat a plain
   sum); use silence (a place that should have heard a plane the audio doesn't have); average
   several renders; search over the time (gap 5). Each is a way this attacker is weaker than a real
-  one. The place search (`lab locate`) still uses one line; the corpus and null-test scores use
-  both.
+  one. The place search (`lab locate`) uses one line by default: on our sessions one line
+  finds more than four (aircraft there are far and faint), the reverse of the corpus.
 
 ### The score
 
@@ -69,7 +69,7 @@ what's known about the clip:
 
 | Clips | Truth | Wrong answers | Lab command |
 | --- | --- | --- | --- |
-| Our own sessions (place known, never published) | the true place | every grid point over 2 km away, redrawn per aircraft (`locate.null_bits`) | `lab locate` |
+| Our own sessions (place known, never published) | the true place | every grid point over 2 km away, one wrong place for all aircraft at once (`locate.null_bits`, joint draws; calibrated on plane-free noise) | `lab locate` |
 | The public corpus (Pathak 2026; position not published and **never reconstructed**) | the pass's own traced curve | the other passes' traced curves, put at this clip's closest approach ±6 s: the shapes other places would give | `lab zenodo` |
 | Synthetic scenes | the inserted pass's curve | the same curve at 28 other times, each on its own stretch | `lab nulltest` |
 | Our own sessions, a curve nothing follows (holes) | a corpus shape placed where no tracked aircraft is near | the other shapes at that moment ±6 s; scored against the same preset blind to the curve | `lab blank` |

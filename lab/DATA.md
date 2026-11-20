@@ -49,12 +49,31 @@ split.
 
 ## How much data a decision needs
 
-On the public corpus's holdout, the rank stop with 8 decoys leaked 4 of 36 against the default's 7.
-To tell leak rates that close apart (about 11 % against 19 %) at 80 % power, a paired test needs
-roughly 100–300 held-out passes. It's nearer 300 if the two cloaks fail on unrelated passes, and
-fewer if they fail on the same hard ones. Each session has several passes, but only the ones whose
-original gives the place away count. Working out passes per session from the tuning half turns
-this into a session target; that's the first job once new data arrives.
+**Target: about 45 new recordings like the current ones.** That's about 23 held out, and about 20
+of those with a scorable aircraft, which is what the #16 rule needs (docs/EXPERIMENTS.md, "The new
+holdout"). Half of new recordings go to tuning, which is useful too.
+
+How that was worked out (issue #15, from the 21 tuning sessions, 2026-11-20):
+
+- **The unit is the session, not the pass.** The place search scores a session's aircraft
+  together. Per aircraft, originals don't stand out: 2–3 of 45 scorable aircraft clear the noise's
+  95th percentile, about what chance gives. So the corpus's figure of 100–300 passes doesn't carry
+  over.
+- **Sessions with a scorable aircraft:** 18 of 21 (86 %), with 2.1 aircraft each.
+- **Sessions that count** (the original found by any of the three judges): 4 of 18 (22 %). Both
+  cloaks hide all 4, so on sessions the decision is non-inferiority (no worse), not superiority.
+- **Power for the #16 rule:**
+  - "No lean toward the truth": per-session sd of a cloak's excess bits is 0.6–1.2. It catches a
+    lean the size of an untouched original's at 80 % with 6–13 sessions under PL0/1 and PM0/1.
+  - "No more leaks": copies leak at 0–3 %, and the cloaks differ on 1 session in 18, so a margin
+    of 2 copies trips by chance about 1 % of the time at 20 sessions.
+- **The security claim** (copies hidden where the original was found) needs about 5 counting
+  sessions to reach p < 0.05 with a sign test (all 5 hidden: p 0.03). At 22 % that's about 23
+  held-out sessions. Beating the blind control too would take several times more, depending on how
+  often the blind preset already hides them (not measured on sessions yet).
+
+The corpus figure was a different question: telling a leak rate of about 11 % from 19 % over its
+passes needed 100–300 held-out passes.
 
 ## What to record
 

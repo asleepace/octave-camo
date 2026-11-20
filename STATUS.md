@@ -28,9 +28,11 @@ _Updated 2026-11-20. Start here when checking in. Rules for working on the proje
   frames) catches 18 of 34 default copies on the tuning half, against 12 for the old scorer (#29).
   Giving the cloak's line finder a whole-clip reference made it worse (26 of 34).
 - **A fix that works, on the tuning half:** letting the cloak's stopping test look at 0.68 s as
-  well as 0.17 s (`--track-windows 0.17,0.68`) roughly halves its leak to the attackers held back
-  to judge it: 16–17 to 6–8 of 34 copies. It costs +0.36 dB of sound change. It isn't the default
-  yet; sessions and the new holdout come first (#29).
+  well as 0.17 s (`--track-windows 0.17,0.68`, "w68") roughly halves its leak to the attackers held
+  back to judge it: 16–17 to 6–8 of 34 copies. +0.36 dB of sound change on the corpus.
+- **On our recordings, both cloaks hide the place** (#14, #29). Three calibrated judges find 4 of
+  18 untouched sessions, and none of their copies, default or w68. w68 also passes on real
+  backgrounds. It's the candidate for the new holdout, not the default yet.
 - **Reviewed 2026-11-20:**
   - Every figure was recounted from the raw results, the default's output was regenerated
     byte-for-byte, and the panel was calibrated on plane-free noise.
@@ -45,11 +47,16 @@ _Updated 2026-11-20. Start here when checking in. Rules for working on the proje
 
 ## In flight
 
-Nothing is running. Colin is collecting new recordings. New sessions are split into tuning and
+Nothing is running. Colin is collecting new recordings: **about 45 like the current ones** are
+needed for the next held-out decision (#15). New sessions are split into tuning and
 holdout automatically as they're ingested ([lab/DATA.md](lab/DATA.md)).
 
 ## Decisions waiting on Colin
 
+- [#16](https://github.com/asleepace/octave-camo/issues/16) **Adopt w68 on "no worse"?** On our
+  sessions both cloaks already hide the place, so the holdout can only show w68 is no worse there.
+  Its gain is from the corpus tuning half, which is worn. Recommended: yes. It costs about 0.1 dB
+  on sessions, and the gain is where planes are close and loud.
 - [#25](https://github.com/asleepace/octave-camo/issues/25) **Where the session zips live.** They're
   the only lab data that can't be rebuilt, and they exist only in one workspace that can be wiped.
   Recommended: your bucket, with its host allowed in the environment's network settings.
@@ -58,21 +65,16 @@ holdout automatically as they're ingested ([lab/DATA.md](lab/DATA.md)).
 
 ## Next, by impact
 
-1. [#29](https://github.com/asleepace/octave-camo/issues/29) **Check the two-window cloak on real
-   recordings.**
-   - Real backgrounds (`lab blank`) and the tuning sessions, scored by the attacker panel. An
-     earlier extra window made one session's place easier.
-   - If it holds, it's the candidate for the new holdout.
-2. [#15](https://github.com/asleepace/octave-camo/issues/15) **A recording target:** how many
-   sessions the next held-out decision needs. The rough figure is 100–300 held-out passes.
-3. [#14](https://github.com/asleepace/octave-camo/issues/14) **Re-score the place search on our
-   sessions** against the stronger attacker, with calibrated p-values. This matters for the docs'
-   credibility.
-4. [#16](https://github.com/asleepace/octave-camo/issues/16) **The new holdout** (needs data):
-   score against attackers the cloak doesn't model. Keep holes as a diagnostic, not a loss.
-5. [#30](https://github.com/asleepace/octave-camo/issues/30) **Calibrate the corpus score per
-   shape,** and gate new attackers on it.
-6. Loudness normalisation
+1. [#16](https://github.com/asleepace/octave-camo/issues/16) **The new holdout** (needs data): the
+   rule is written and committed (docs/EXPERIMENTS.md, "The new holdout"). Score it once at 20
+   held-out sessions with a scorable aircraft.
+2. **The blind control on sessions:** does the preset without flight tracks already hide the place?
+   That needs `lab trackfill --blind`
+   ([#32](https://github.com/asleepace/octave-camo/issues/32), custodial), and it's the holdout's
+   control arm.
+3. **Both cloaks push the truth below chance on sessions.** Could an attacker use that? (#13 says
+   no on the corpus.)
+4. Loudness normalisation
    ([#17](https://github.com/asleepace/octave-camo/issues/17)), the pink-noise hole against a blind
    control ([#19](https://github.com/asleepace/octave-camo/issues/19)), native encoders
    ([#18](https://github.com/asleepace/octave-camo/issues/18)).
@@ -82,7 +84,8 @@ holdout automatically as they're ingested ([lab/DATA.md](lab/DATA.md)).
 ([#21](https://github.com/asleepace/octave-camo/issues/21)), PLAN.md
 ([#22](https://github.com/asleepace/octave-camo/issues/22)), resumable runs
 ([#23](https://github.com/asleepace/octave-camo/issues/23)), `lab fetch-corpus`
-([#24](https://github.com/asleepace/octave-camo/issues/24)).
+([#24](https://github.com/asleepace/octave-camo/issues/24)), `lab trackfill --blind`
+([#32](https://github.com/asleepace/octave-camo/issues/32)).
 
 ## Check-in loop
 
