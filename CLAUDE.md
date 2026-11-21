@@ -55,7 +55,7 @@ science moves in [docs/EXPERIMENTS.md](docs/EXPERIMENTS.md), and the open questi
 - Swift: `export PATH=/opt/swift/swift-6.4.2-RELEASE-ubuntu24.04/usr/bin:$PATH`. The lab drives the
   release CLI (`swift build -c release --product octave-camo`).
 - 2 CPUs, a fixed disk allowance, and background jobs capped at 2 h. Workers killed mid-run leave
-  `/tmp/tmp*` directories behind: delete them.
+  `/tmp/tmp*` directories behind: delete the ones no running job holds (`lsof +D`).
 - **Long runs must be resumable:** use `lab/resume.py` (`resume.run(fn, jobs, path)`). It appends
   one JSON line per job, keyed by its index and a hash of its arguments, and skips keys already
   written. (A key shared by several jobs once made a resume skip work.) `lab blank` uses it.
