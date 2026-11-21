@@ -9,6 +9,7 @@ The research and planning behind octave-camo. The user-facing overview is the
 | [lab/DATA.md](../lab/DATA.md) | The lab's data: intake of new recordings, the holdout split, rebuilding, what to record |
 | [ACOUSTICS.md](ACOUSTICS.md) | How the check finds tones, and why: windows, integration, thresholds, measured sensitivity |
 | [FINDINGS.md](FINDINGS.md) | The settled results, most important first, each linked to the notebook |
+| [LAB-LOG.md](LAB-LOG.md) | What the lab measured, newest first (findings moved out of the CHANGELOG) |
 | [EXPERIMENTS.md](EXPERIMENTS.md) | The lab notebook: each experiment, its numbers, what it changed |
 | [OPEN_QUESTIONS.md](../OPEN_QUESTIONS.md) | What isn't known yet, what would settle it, and pitfalls that misled us before |
 | [PLAN.md](PLAN.md) | The order of work: done, now, next |

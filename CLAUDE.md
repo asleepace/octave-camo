@@ -91,4 +91,5 @@ It never merges, never touches `$LAB_DATA`, and comments on the issue with what 
 
 - Plain language, short sentences, numbers with their uncertainty.
 - New sources go in [docs/SOURCES.md](docs/SOURCES.md).
-- Each finding gets a CHANGELOG entry under its milestone.
+- Each finding gets an entry in [docs/LAB-LOG.md](docs/LAB-LOG.md), newest first. CHANGELOG.md is
+  for what changed in the page, the CLI and the engine.
