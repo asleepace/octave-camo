@@ -1153,5 +1153,91 @@ class BlankResumes(unittest.TestCase):
         self.assertEqual(seen[1][0]["before"][4], 0.5)       # int line counts after the round trip
 
 
+
+class FetchCorpus(unittest.TestCase):
+    """lab fetch-corpus against a fake record on a local server (never the real Zenodo)."""
+
+    def setUp(self):
+        import hashlib, http.server, io, json, os, tempfile, threading, zipfile
+        from pathlib import Path
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as z:
+            z.writestr("V_x/N1_R1/a.wav", b"RIFF" + bytes(2000))
+        self.files = {"Raw data_V_x.zip": buf.getvalue(), "final.csv": b"case,x\nN1_R1,1\n" * 50}
+        self.requests = []
+        test = self
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def log_message(self, *a):
+                pass
+
+            def do_GET(self):
+                port = self.server.server_address[1]
+                if self.path == "/api/records/1":
+                    body = json.dumps({"id": 1, "files": [
+                        {"key": k, "size": len(v), "checksum": "md5:" + hashlib.md5(v).hexdigest(),
+                         "links": {"self": f"http://127.0.0.1:{port}/f/{i}"}}
+                        for i, (k, v) in enumerate(test.files.items())]}).encode()
+                    self.send_response(200); self.end_headers(); self.wfile.write(body)
+                    return
+                data = list(test.files.values())[int(self.path.rsplit("/", 1)[1])]
+                rng = self.headers.get("Range")
+                test.requests.append((self.path, rng))
+                if rng:
+                    start = int(rng.split("=")[1].rstrip("-"))
+                    self.send_response(206); self.end_headers(); self.wfile.write(data[start:])
+                else:
+                    self.send_response(200); self.end_headers(); self.wfile.write(data)
+
+        self.server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+        self.api = f"http://127.0.0.1:{self.server.server_address[1]}/api/records/1"
+        self.dir = tempfile.TemporaryDirectory()
+        self.root = Path(self.dir.name)
+        self.env = {"no_proxy": "127.0.0.1,localhost", "NO_PROXY": "127.0.0.1,localhost"}
+
+    def tearDown(self):
+        self.server.shutdown()
+        self.dir.cleanup()
+
+    def fetch(self):
+        from unittest import mock
+        import os
+        from lab import fetchcorpus
+        with mock.patch.dict(os.environ, self.env):
+            return fetchcorpus.fetch(self.root, self.api, log=lambda m: None)
+
+    def test_downloads_checks_and_unzips(self):
+        self.fetch()
+        for k, v in self.files.items():
+            self.assertEqual((self.root / "raw" / k).read_bytes(), v)
+        self.assertTrue((self.root / "extracted" / "Raw data_V_x" / "V_x" / "N1_R1" / "a.wav").exists())
+        self.assertEqual(len((self.root / "files.tsv").read_text().splitlines()), 2)
+
+    def test_a_second_run_downloads_nothing(self):
+        self.fetch()
+        self.requests.clear()
+        self.fetch()
+        self.assertEqual(self.requests, [])
+
+    def test_a_cut_off_download_resumes(self):
+        raw = self.root / "raw"
+        raw.mkdir(parents=True)
+        (raw / "final.csv.part").write_bytes(self.files["final.csv"][:100])
+        self.fetch()
+        self.assertIn(("/f/1", "bytes=100-"), self.requests)
+        self.assertEqual((raw / "final.csv").read_bytes(), self.files["final.csv"])
+        self.assertFalse((raw / "final.csv.part").exists())
+
+    def test_a_wrong_md5_stops_and_cleans_up(self):
+        raw = self.root / "raw"
+        raw.mkdir(parents=True)
+        (raw / "final.csv.part").write_bytes(b"garbage" * 20)       # not the start of the file
+        with self.assertRaises(SystemExit):
+            self.fetch()
+        self.assertFalse((raw / "final.csv.part").exists())
+        self.assertFalse((raw / "final.csv").exists())
+
+
 if __name__ == "__main__":
     unittest.main()

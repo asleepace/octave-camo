@@ -13,6 +13,8 @@
                                         audio of it, e.g. cloaked copies, aligned automatically)
   check <session> [audio …]             the page's check (the real wasm build) on the session and
                                         on other audio of it: counts and flyby passes
+  fetch-corpus                          download the public corpus (Zenodo 23424278) into $LAB_DATA,
+                                        md5-checked and unzipped; resumes, skips what it has
   zenodo [--holdout | --all] [--limit N] [-- scrub options for the track-removal copy]
   blank [--seeds 7,8] [--spacing 30] [--per-session 3] [--variant name="scrub options" ...] [--codec page,aac64] [--attackers P0,PM0,PXL0] [--resume file.jsonl]
         the cloak's mark on real recordings along a curve nothing follows
@@ -548,6 +550,10 @@ def main(argv):
         cmd_envelope(rest[0], rest[1:])
     elif cmd == "ml":
         cmd_ml(rest)
+    elif cmd == "fetch-corpus":
+        from . import fetchcorpus, zenodo
+        fetchcorpus.fetch(zenodo.ROOT)
+        print(zenodo.CITATION)
     elif cmd == "zenodo":
         cmd_zenodo(rest)
     elif cmd == "calibrate":

@@ -27,9 +27,10 @@ python3 -m lab backfill all
 python3 -m lab sessions                                              # check: every session listed
 ```
 
-The public corpus: `files.tsv` in the record lists each file's URL and md5. Download them into
-`$LAB_DATA/external/zenodo-23424278/raw/`, check the md5s, and unzip each into `extracted/`. The
-record is https://zenodo.org/records/23424278.
+The public corpus: `python3 -m lab fetch-corpus`. It reads the record's file list, downloads each
+file into `$LAB_DATA/external/zenodo-23424278/raw/` (resuming a cut-off download), checks the md5s,
+and unzips each zip into `extracted/`. A rerun skips what's already there. The record is
+https://zenodo.org/records/23424278 (Pathak 2026, CC BY 4.0).
 
 The holdout is decided by the session id (`lab.corpus.is_holdout`), so a rebuild gives the same
 split.
