@@ -56,8 +56,9 @@ science moves in [docs/EXPERIMENTS.md](docs/EXPERIMENTS.md), and the open questi
   release CLI (`swift build -c release --product octave-camo`).
 - 2 CPUs, a fixed disk allowance, and background jobs capped at 2 h. Workers killed mid-run leave
   `/tmp/tmp*` directories behind: delete them.
-- **Long runs must be resumable:** append one JSON line per job, keyed by a unique per-job index,
-  and skip keys already written. (A key shared by several jobs once made a resume skip work.)
+- **Long runs must be resumable:** use `lab/resume.py` (`resume.run(fn, jobs, path)`). It appends
+  one JSON line per job, keyed by its index and a hash of its arguments, and skips keys already
+  written. (A key shared by several jobs once made a resume skip work.) `lab blank` uses it.
 - The full Swift debug suite doesn't finish locally within 2 h. Rely on CI for it, and run the
   targeted tests and the lab tests locally.
 - `$LAB_DATA` (default `~/.octave-camo-lab`) is local to one workspace and can disappear. How to

@@ -1050,5 +1050,108 @@ class Trackfill(unittest.TestCase):
                 self.run_trackfill(["full", "--blind", *extra])
 
 
+
+def square_job(job):
+    """A resumable-run job for the tests (module level, so a process pool can pickle it)."""
+    return {"n": job["n"], "sq": job["n"] ** 2}
+
+
+class Resume(unittest.TestCase):
+    """lab/resume.py: append per job, skip what's done, refuse what can't be trusted."""
+
+    def setUp(self):
+        import tempfile
+        from pathlib import Path
+        self.dir = tempfile.TemporaryDirectory()
+        self.path = Path(self.dir.name) / "run.jsonl"
+        self.jobs = [{"n": n} for n in range(6)]
+
+    def tearDown(self):
+        self.dir.cleanup()
+
+    def test_a_restart_runs_only_what_is_left(self):
+        from lab import resume
+        ran = []
+
+        def dies_after_three(job):
+            if len(ran) == 3:
+                raise KeyboardInterrupt
+            ran.append(job["n"])
+            return square_job(job)
+        with self.assertRaises(KeyboardInterrupt):
+            resume.run(dies_after_three, self.jobs, self.path, workers=1, log=lambda m: None)
+        self.assertEqual(len(self.path.read_text().splitlines()), 3)
+        ran.clear()
+        rows = resume.run(lambda j: ran.append(j["n"]) or square_job(j), self.jobs, self.path, workers=1, log=lambda m: None)
+        self.assertEqual(ran, [3, 4, 5])
+        self.assertEqual([r["sq"] for r in rows], [n * n for n in range(6)])
+
+    def test_identical_jobs_get_their_own_keys(self):
+        from lab import resume
+        rows = resume.run(square_job, [{"n": 2}] * 4, self.path, workers=1, log=lambda m: None)
+        self.assertEqual(len({r["_key"] for r in rows}), 4)
+
+    def test_pool_results_come_back_in_job_order(self):
+        from lab import resume
+        rows = resume.run(square_job, self.jobs, self.path, workers=2, log=lambda m: None)
+        self.assertEqual([r["n"] for r in rows], list(range(6)))
+
+    def test_a_changed_job_list_is_refused(self):
+        from lab import resume
+        resume.run(square_job, self.jobs, self.path, workers=1, log=lambda m: None)
+        with self.assertRaises(SystemExit):
+            resume.run(square_job, [{"n": 10 + n} for n in range(6)], self.path, workers=1, log=lambda m: None)
+
+    def test_a_key_written_twice_is_refused(self):
+        from lab import resume
+        resume.run(square_job, self.jobs[:2], self.path, workers=1, log=lambda m: None)
+        first = self.path.read_text().splitlines()[0]
+        self.path.write_text(self.path.read_text() + first + "\n")
+        with self.assertRaises(SystemExit):
+            resume.run(square_job, self.jobs, self.path, workers=1, log=lambda m: None)
+
+    def test_a_half_written_last_line_is_run_again(self):
+        from lab import resume
+        resume.run(square_job, self.jobs[:3], self.path, workers=1, log=lambda m: None)
+        self.path.write_text(self.path.read_text() + '{"n": 3, "sq')
+        rows = resume.run(square_job, self.jobs[:4], self.path, workers=1, log=lambda m: None)
+        self.assertEqual([r["sq"] for r in rows], [0, 1, 4, 9])
+        self.assertEqual(len(self.path.read_text().splitlines()), 4)
+
+    def test_blank_rows_survive_the_round_trip(self):
+        import json
+        from lab import blank
+        row = {"sid": "abcdef", "before": {1: 0.4, 4: 0.5, "panel": {"PM0": 0.3}}, "fixed-s7": {1: 0.2, "filled": 0}}
+        self.assertEqual(blank.from_json(json.loads(json.dumps(row))), row)
+
+
+
+def fake_blank_trial(job):
+    sid, centre, *_ = job
+    return {"sid": sid, "centre": centre, "before": {1: 0.5, 4: 0.5}}
+
+
+class BlankResumes(unittest.TestCase):
+    def test_a_second_run_reads_the_first(self):
+        import tempfile
+        from pathlib import Path
+        from unittest import mock
+        from lab import __main__ as lab_main, blank
+        seen = []
+        with tempfile.TemporaryDirectory() as d, \
+                mock.patch.object(corpus, "all_ids", return_value=["20260101T000000Z_abcdef"]), \
+                mock.patch.object(corpus, "DATA", Path(d)), \
+                mock.patch.object(blank, "placements", return_value=[10.0, 20.0, 30.0]), \
+                mock.patch.object(blank, "trial", fake_blank_trial), \
+                mock.patch.object(blank, "summarize", lambda rows, v, s: seen.append(rows) or ""), \
+                mock.patch.object(lab_main, "save_result", lambda *a: None):
+            f = Path(d) / "run.jsonl"
+            lab_main.cmd_blank(["--resume", str(f)])
+            lab_main.cmd_blank(["--resume", str(f)])
+            self.assertEqual(len(f.read_text().splitlines()), 3)
+        self.assertEqual([r["centre"] for r in seen[1]], [10.0, 20.0, 30.0])
+        self.assertEqual(seen[1][0]["before"][4], 0.5)       # int line counts after the round trip
+
+
 if __name__ == "__main__":
     unittest.main()

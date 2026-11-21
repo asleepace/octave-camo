@@ -137,6 +137,16 @@ def trial(args: tuple) -> dict:
     return out
 
 
+def from_json(row: dict) -> dict:
+    """A trial row read back from JSON (a resumed run): the line counts are int keys again."""
+    out = {}
+    for k, v in row.items():
+        if isinstance(v, dict):
+            v = {int(L) if isinstance(L, str) and L.isdigit() else L: x for L, x in v.items()}
+        out[k] = v
+    return out
+
+
 def summarize(rows: list[dict], variants: dict, seeds: list[int]) -> str:
     """Each variant against the control (the same preset and seed, blind to the curve), per
     placement, averaged by session (placements in one session share its background). With nothing

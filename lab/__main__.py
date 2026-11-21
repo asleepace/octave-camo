@@ -14,7 +14,7 @@
   check <session> [audio …]             the page's check (the real wasm build) on the session and
                                         on other audio of it: counts and flyby passes
   zenodo [--holdout | --all] [--limit N] [-- scrub options for the track-removal copy]
-  blank [--seeds 7,8] [--spacing 30] [--per-session 3] [--variant name="scrub options" ...] [--codec page,aac64] [--attackers P0,PM0,PXL0]
+  blank [--seeds 7,8] [--spacing 30] [--per-session 3] [--variant name="scrub options" ...] [--codec page,aac64] [--attackers P0,PM0,PXL0] [--resume file.jsonl]
         the cloak's mark on real recordings along a curve nothing follows
                                         the public corpus, tone removal (tuning half by default)
   calibrate [--attackers P0,PM0] [--seeds 2]   each attacker on plane-free noise: fit to judge?
@@ -370,8 +370,8 @@ def cmd_trackfill(sid: str, presets: list[str]):
 
 def cmd_blank(args: list[str]):
     """lab/blank.py: the cloak's mark on real recordings along a curve nothing follows."""
-    from concurrent.futures import ProcessPoolExecutor
-    from . import blank
+    from pathlib import Path
+    from . import blank, resume
     seeds = [int(s) for s in (args[args.index("--seeds") + 1] if "--seeds" in args else "7,8").split(",")]
     variants = {"fixed": []}
     chains = args[args.index("--codec") + 1].split(",") if "--codec" in args else []
@@ -404,10 +404,12 @@ def cmd_blank(args: list[str]):
         jobs += [(sid, c, k0, variants, seeds, chains, attackers) for c in cs]
     print(f"{len(jobs)} placements; variants {list(variants)}; seeds {seeds}; codecs {chains}; attackers {attackers}", flush=True)
     t = time.time()
-    with ProcessPoolExecutor(2) as pool:
-        rows = list(pool.map(blank.trial, jobs))
-    print(f"({time.time() - t:.0f} s)\n{zenodo_citation()}\n{blank.summarize(rows, variants, seeds)}")
     tag = "-".join(variants)
+    # Resumable: a killed run picks up where it stopped (--resume names the file; a changed job
+    # list is refused, so start a new file for a new run).
+    partial = Path(args[args.index("--resume") + 1]) if "--resume" in args else corpus.DATA / "results" / f"blank-{tag}.partial.jsonl"
+    rows = [blank.from_json(r) for r in resume.run(blank.trial, jobs, partial)]
+    print(f"({time.time() - t:.0f} s)\n{zenodo_citation()}\n{blank.summarize(rows, variants, seeds)}")
     save_result(f"blank-{tag}", rows)
 
 
