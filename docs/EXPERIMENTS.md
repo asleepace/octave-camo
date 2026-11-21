@@ -2144,7 +2144,7 @@ held-out session.
 **What it decides:** whether `--track-windows 0.17,0.68` becomes the default. Its gain was shown on
 the corpus tuning half, which is worn. On our sessions both cloaks already hide the place (above),
 so the holdout can't show w68 is *better* there. It checks that w68 is **no worse**. Adopting w68 on
-that basis is Colin's call, made before scoring (#16).
+that basis was Colin's call, made before scoring: yes (2026-11-21, #16).
 
 **Data:** sessions with `corpus.is_holdout`, recorded from 2026-11-15 on. Scored once, when at
 least **20 held-out sessions have a scorable aircraft** (#15). The two older holdout sessions are

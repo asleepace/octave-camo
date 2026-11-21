@@ -53,10 +53,6 @@ holdout automatically as they're ingested ([lab/DATA.md](lab/DATA.md)).
 
 ## Decisions waiting on Colin
 
-- [#16](https://github.com/asleepace/octave-camo/issues/16) **Adopt w68 on "no worse"?** On our
-  sessions both cloaks already hide the place, so the holdout can only show w68 is no worse there.
-  Its gain is from the corpus tuning half, which is worn. Recommended: yes. It costs about 0.1 dB
-  on sessions, and the gain is where planes are close and loud.
 - [#25](https://github.com/asleepace/octave-camo/issues/25) **Where the session zips live.** They're
   the only lab data that can't be rebuilt, and they exist only in one workspace that can be wiped.
   Recommended: your bucket, with its host allowed in the environment's network settings.
