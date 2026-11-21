@@ -923,9 +923,6 @@ class Plumbing(unittest.TestCase):
         self.assertFalse(corpus._plausible(37.0, -122.0, 321_250))
 
 
-if __name__ == "__main__":
-    unittest.main()
-
 
 class SyntheticPasses(unittest.TestCase):
     """The benchmark's generator (lab/passes.py)."""
@@ -1009,3 +1006,49 @@ class Codec(unittest.TestCase):
             tone = P[np.abs(f - 700) < 2].sum() / P[np.abs(f - 700) < 2].size
             near = np.median(P[(np.abs(f - 700) > 20) & (np.abs(f - 700) < 200)])
             self.assertGreater(tone / near, 1e3, chain)
+
+
+class Trackfill(unittest.TestCase):
+    """lab trackfill's scrub runs (the CLI is faked: no build, no session data)."""
+
+    def run_trackfill(self, args, sid="20260101T000000Z_abcdef"):
+        import tempfile
+        from pathlib import Path
+        from types import SimpleNamespace
+        from unittest import mock
+        from lab import __main__ as lab_main
+        calls = []
+        fake = lambda argv, **kw: calls.append(argv) or SimpleNamespace(returncode=0, stdout="", stderr="")
+        with tempfile.TemporaryDirectory() as d, \
+                mock.patch.object(corpus, "load", return_value=(None, np.zeros(SR), SR)), \
+                mock.patch.object(corpus, "DATA", Path(d)), \
+                mock.patch.object(common, "release_cli", return_value=Path("/fake/octave-camo")), \
+                mock.patch.object(lab_main, "expected_passes", return_value=[]), \
+                mock.patch("subprocess.run", fake):
+            lab_main.cmd_trackfill(sid, args)
+        return calls
+
+    def test_blind_is_the_preset_without_the_track_step(self):
+        (argv,) = self.run_trackfill(["full", "--blind", "--seed", "8"])
+        self.assertNotIn("--expect", argv)
+        self.assertNotIn("--archive", argv)
+        self.assertEqual(argv[-2:], ["--seed", "8"])
+        self.assertTrue(argv[3].endswith("-full-blind-s8.wav"), argv[3])
+        # The same run lab blank's control makes: one builder for both.
+        self.assertEqual(argv, common.scrub_command(argv[0], argv[2], argv[3], "full", "8"))
+
+    def test_tracks_keep_their_name_and_expect(self):
+        (argv,) = self.run_trackfill(["full", "--seed", "8", "--", "--track-windows", "0.17,0.68"])
+        self.assertIn("--expect", argv)
+        self.assertTrue(argv[3].endswith("-full-tracks-s8-xtrack-windows0.17_0.68.wav"), argv[3])
+        i = argv.index("--track-windows")
+        self.assertEqual(argv[i + 1], "0.17,0.68")
+
+    def test_blind_refuses_track_options(self):
+        for extra in (["--stop", "1"], ["--archive"], ["--", "--track-windows", "0.17"]):
+            with self.assertRaises(SystemExit):
+                self.run_trackfill(["full", "--blind", *extra])
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -24,9 +24,9 @@ from pathlib import Path
 import numpy as np
 import soundfile as sf
 
-from . import detect, locate, synth
+from . import common, detect, locate, synth
 
-CLI = Path(__file__).resolve().parent.parent / ".build/release/octave-camo"
+CLI = common.RELEASE_CLI
 WINDOWS = (0.043, 0.085, 0.17, 0.34)
 
 

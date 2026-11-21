@@ -30,7 +30,7 @@ from pathlib import Path
 import numpy as np
 import soundfile as sf
 
-from . import corpus, locate
+from . import common, corpus, locate
 
 ROOT = corpus.DATA / "external" / "zenodo-23424278"
 CITATION = "Pathak, P. (2026). Aeroplane data full analysis and raw files. Zenodo, record 23424278. CC BY 4.0."
@@ -175,7 +175,7 @@ def expected_pass(p: dict, offset: float, duration: float) -> dict:
 
 def blind(path: str) -> dict:
     """The engine's blind check on a file: did it fit a flyby (a Doppler track), and its distance."""
-    cli = Path(__file__).resolve().parent.parent / ".build/release/octave-camo"
+    cli = common.RELEASE_CLI
     r = subprocess.run([str(cli), "analyze", path, "--json"], capture_output=True, text=True)
     try:
         d = json.loads(r.stdout)
@@ -265,7 +265,7 @@ def run_pass(p: dict, preset_args: dict, extra: list[str] | None = None, others:
     original and on Full; sound change above 300 Hz against the original. With `others` (the
     passes whose shapes are the wrong places), also the score that decides, `u` (THREAT_MODEL.md)."""
     import tempfile
-    cli = Path(__file__).resolve().parent.parent / ".build/release/octave-camo"
+    cli = common.RELEASE_CLI
     x, sr = sf.read(p["wav"])
     x = x if x.ndim == 1 else x[:, 0]
     out = {"case": p["case"], "category": p["category"], "closest_m": p["closest_m"], "speed_kmh": p["speed_kmh"],

@@ -25,12 +25,12 @@ from pathlib import Path
 
 import numpy as np
 
-from . import corpus, detect, passes, synth
+from . import common, corpus, detect, passes, synth
 
 SR = 48_000
 SECONDS = 60.0
 REPO = Path(__file__).resolve().parent.parent
-CLI = REPO / ".build/release/octave-camo"
+CLI = common.RELEASE_CLI
 
 # Recorder sessions where no aircraft was found by any detector, including the known-path
 # attacker (docs/EXPERIMENTS.md): the real backgrounds.

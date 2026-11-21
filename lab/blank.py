@@ -28,7 +28,7 @@ from pathlib import Path
 import numpy as np
 import soundfile as sf
 
-from . import corpus, locate, zenodo
+from . import common, corpus, locate, zenodo
 
 CLEAR_KM = 4.0
 CLEAR_S = 20.0
@@ -84,11 +84,10 @@ def trial(args: tuple) -> dict:
     from . import codec
     from . import detect
     locate.whitened = lambda name, x, sr, prm: detect.whiten(x, sr, prm)   # scored once: no disk cache
-    from .__main__ import PRESET_ARGS
     shapes = [p for p in zenodo.passes() if zenodo.usable(p) and zenodo.half(p["case"]) == "tune"]
     p = shapes[k % len(shapes)]
     _, x, sr = corpus.load(sid)
-    cli = Path(__file__).resolve().parent.parent / ".build/release/octave-camo"
+    cli = common.RELEASE_CLI
     out = {"sid": sid[-6:], "shape": p["case"], "before": {}}
     sc = locate.Scene(x, sr, "blank")
     for L in (1, zenodo.ATTACKER_LINES):
@@ -118,7 +117,7 @@ def trial(args: tuple) -> dict:
             for seed in seeds:
                 dst = Path(tmp) / "o.wav"
                 track = [] if extra is None else ["--expect", str(exp), "--track-max-tones", "24", *extra]
-                r = subprocess.run([str(cli), "scrub", str(src), str(dst), *PRESET_ARGS["full"], *track, "--seed", str(seed)],
+                r = subprocess.run(common.scrub_command(cli, src, dst, "full", seed, track),
                                    check=True, capture_output=True, text=True)
                 y, _ = sf.read(dst)
                 y = y if y.ndim == 1 else y[:, 0]

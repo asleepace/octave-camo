@@ -21,12 +21,14 @@
   locate <session> [audio …] [--envelope] [--attacker PM0]   the place-searching attacker: rank of the true position
                                         (--envelope: the loudness swell too, alone and combined)
                                         among a grid of candidates (distances and areas only)
-  trackfill <session> [preset …] [--archive] [--stop Z] [--seed N]
+  trackfill <session> [preset …] [--archive | --blind] [--stop Z] [--seed N]
                                         cloak with flight-track removal (the CLI's --expect, curves
                                         predicted at the true position), into
                                         $LAB_DATA/cloaked/<session>-<preset>-tracks.wav; with
                                         --archive, the page's path instead: the engine predicts the
-                                        curves from adsb.lol's half-hour archive (…-archive.wav)
+                                        curves from adsb.lol's half-hour archive (…-archive.wav);
+                                        with --blind, the same preset and seed without the track
+                                        step, the control (…-blind.wav)
   bench [--synth-only] [--per N]       the curve benchmark (N clips per strength, default 16): synthetic passes in real and synthetic
                                         backgrounds; detection by strength, false alarms per hour
   ml data|train|report                  the learned curve detector: make the training set (synthetic
@@ -46,7 +48,7 @@ from multiprocessing import Pool
 
 import numpy as np
 
-from . import corpus, detect, synth
+from . import common, corpus, detect, synth
 from .common import null, save_result, whitened, with_copies
 
 P = detect.Params()
@@ -304,38 +306,42 @@ def expected_passes(sid: str, max_km: float = 15.0) -> list[dict]:
     return out
 
 
-PRESET_ARGS = {
-    "full": ["--steps", "mono,hum,subtract,scurve,lowband", "--flatten", "gentle"],
-    "experimental": ["--steps", "mono,hum,subtract,scurve,lowband,lines", "--flatten", "strong"],
-}
+PRESET_ARGS = common.PRESET_ARGS
+
+
+def trackfill_name(sid: str, preset: str, kind: str, stop: str | None, seed: str, passthrough: list[str]) -> str:
+    """The copy's file name: <session>-<preset>-<tracks|archive|blind>[-stopZ][-sN][-x<flags>].wav."""
+    tag = (f"-stop{stop}" if stop else "") + (f"-s{seed}" if seed != "7" else "") + (
+        "-x" + "".join(f.strip("-").replace(",", "_") for f in passthrough) if passthrough else "")
+    return f"{sid}-{preset}-{kind}{tag}.wav"
 
 
 def cmd_trackfill(sid: str, presets: list[str]):
-    """The CLI's scrub with --expect: flight-track removal on top of a preset."""
+    """The CLI's scrub with --expect: flight-track removal on top of a preset. With --blind, the
+    same preset and seed without it: the control, blind to the planes."""
     import subprocess, tempfile
     import soundfile as sf
     from pathlib import Path
     idx, x, sr = corpus.load(sid)
-    repo = Path(__file__).resolve().parent.parent
-    cli = repo / ".build/release/octave-camo"
-    if not cli.exists():
-        raise SystemExit("build the CLI first: swift build -c release --product octave-camo")
-    newest = max(f.stat().st_mtime for f in (repo / "Sources").rglob("*.swift"))
-    if newest > cli.stat().st_mtime:
-        print("warning: the CLI is older than Sources/ (swift build -c release --product octave-camo)", file=sys.stderr)
+    cli = common.release_cli()
     out_dir = corpus.DATA / "cloaked"
     out_dir.mkdir(parents=True, exist_ok=True)
     # Anything after '--' goes to scrub as is, and names the copy ('-x' plus the flags).
     passthrough = presets[presets.index("--") + 1:] if "--" in presets else []
     presets = presets[: presets.index("--")] if "--" in presets else presets
-    archive = "--archive" in presets
+    archive, blind = "--archive" in presets, "--blind" in presets
     opt = lambda name: presets[presets.index(name) + 1] if name in presets else None
     stop, seed = opt("--stop"), opt("--seed") or "7"
-    presets = [p for i, p in enumerate(presets) if p != "--archive" and not p.startswith("--") and (i == 0 or presets[i - 1] not in ("--stop", "--seed"))]
+    if blind and (archive or stop or passthrough):
+        raise SystemExit("--blind is the preset without the track step: it takes no --archive, --stop or scrub options")
+    presets = [p for i, p in enumerate(presets) if p not in ("--archive", "--blind") and not p.startswith("--")
+               and (i == 0 or presets[i - 1] not in ("--stop", "--seed"))]
     with tempfile.TemporaryDirectory() as tmp:
         src, exp = Path(tmp) / "in.wav", Path(tmp) / "expect.json"
         sf.write(src, x, sr, subtype="FLOAT")
-        if archive:
+        if blind:
+            track_args, kind = [], "blind"
+        elif archive:
             # The page's path: adsb.lol's half-hour archive only, curves predicted by the engine.
             files, at, start = corpus.archive_files(sid)
             track_args = ["--archive", ",".join(str(f) for f in files), "--at", at, "--start", str(start)]
@@ -343,17 +349,16 @@ def cmd_trackfill(sid: str, presets: list[str]):
             if temp is not None:
                 track_args += ["--temp", str(temp)]
             print(f"archive: {len(files)} half-hour file(s)")
+            kind = "archive"
         else:
             passes = expected_passes(sid)
             print(f"{len(passes)} expected pass(es)")
             exp.write_text(json.dumps(passes))
-            track_args = ["--expect", str(exp)]
+            track_args, kind = ["--expect", str(exp)], "tracks"
         for preset in presets or ["experimental"]:
-            tag = (f"-stop{stop}" if stop else "") + (f"-s{seed}" if seed != "7" else "") + (
-                "-x" + "".join(f.strip("-").replace(",", "_") for f in passthrough) if passthrough else "")
-            dst = out_dir / f"{sid}-{preset}-{'archive' if archive else 'tracks'}{tag}.wav"
+            dst = out_dir / trackfill_name(sid, preset, kind, stop, seed, passthrough)
             extra = (["--track-stop", stop] if stop else []) + passthrough
-            r = subprocess.run([str(cli), "scrub", str(src), str(dst), *PRESET_ARGS[preset], "--seed", seed, *track_args, *extra],
+            r = subprocess.run(common.scrub_command(cli, src, dst, preset, seed, [*track_args, *extra]),
                                capture_output=True, text=True)
             if r.returncode != 0:
                 raise SystemExit(f"octave-camo scrub failed:\n{r.stderr.strip().splitlines()[0] if r.stderr.strip() else r.stdout[:500]}")

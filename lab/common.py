@@ -4,10 +4,38 @@ from __future__ import annotations
 
 import hashlib
 import json
+import sys
+from pathlib import Path
 
 import numpy as np
 
 from . import corpus, detect, synth
+
+
+REPO = Path(__file__).resolve().parent.parent
+RELEASE_CLI = REPO / ".build/release/octave-camo"     # the lab drives the release CLI (CLAUDE.md)
+
+PRESET_ARGS = {
+    "full": ["--steps", "mono,hum,subtract,scurve,lowband", "--flatten", "gentle"],
+    "experimental": ["--steps", "mono,hum,subtract,scurve,lowband,lines", "--flatten", "strong"],
+}
+
+
+def release_cli() -> Path:
+    """The release CLI, with a warning if it's older than the Swift sources."""
+    if not RELEASE_CLI.exists():
+        raise SystemExit("build the CLI first: swift build -c release --product octave-camo")
+    newest = max(f.stat().st_mtime for f in (REPO / "Sources").rglob("*.swift"))
+    if newest > RELEASE_CLI.stat().st_mtime:
+        print("warning: the CLI is older than Sources/ (swift build -c release --product octave-camo)", file=sys.stderr)
+    return RELEASE_CLI
+
+
+def scrub_command(cli, src, dst, preset: str, seed, track=()) -> list[str]:
+    """One `octave-camo scrub` run: a preset, the track step's options (none: blind to the planes,
+    the control lab blank and lab trackfill --blind use) and the seed. Every lab copy of a session
+    is built here, so a copy and its control can't drift apart."""
+    return [str(cli), "scrub", str(src), str(dst), *PRESET_ARGS[preset], *track, "--seed", str(seed)]
 
 
 def cache_key(name: str, p: detect.Params, x: np.ndarray) -> str:
