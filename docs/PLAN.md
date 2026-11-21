@@ -44,47 +44,53 @@ else. Room, light and other non-aircraft clues keep what already ships, and thei
   detector nor the known-path attacker finds it; eight plane-free sessions report no pass.
 - **Lab:** recorder sessions with ADS-B ground truth, backfill, the known-path attacker, the page's
   check through the real wasm, and the place-searching attacker from the video ([lab](../lab/README.md)).
+- **Flight-track removal** (`TrackFill`, `--expect`, the page's adsb.lol archive path): the
+  defender runs the attacker's own test first and removes until it fails. In Full and Experimental.
+- **Scoring against the public corpus** (Pathak 2026): 35 passes, a tuning half and a held-out
+  half. The held-out half was scored once and is spent.
+- **Decoys and the rank stop:** they hide heavy filling's own trace. On the corpus holdout the rank
+  stop leaked less but left one hole more than the rule allowed, so the default stayed. Its
+  advantage then turned out to belong to the attacker it optimises against (#27).
+- **Codec checks:** the page's AAC export and platform re-encodes leave leaks, holes and the
+  cloak's mark where they were.
+- **An attacker panel with calibration** (`lab calibrate`, #30): judges must be within chance on
+  plane-free noise and have power on untouched audio of the kind being judged.
+- **Testing at 0.68 s too** (`--track-windows 0.17,0.68`, #29): halves the leak to held-back
+  attackers on the corpus tuning half, and is no worse on our sessions and real backgrounds.
+- **Data intake:** new sessions split into tuning and holdout by a hash of the id
+  ([lab/DATA.md](../lab/DATA.md)); `lab fetch-corpus`; resumable runs (`lab/resume.py`).
+- **A findings summary:** [FINDINGS.md](FINDINGS.md).
 
-## Now: remove what the flight tracks predict
+## Now: new recordings, then the session holdout
 
-The known-path attacker saw passes the blind check can't (a faint climb-out under 1 kHz survived
-both presets, z 6.3 / 5.7). The phone knows where and when it recorded, so the defender runs the
-attacker's own test first and removes until it fails.
+What's waiting and in flight is in [STATUS.md](../STATUS.md); the backlog is the
+[issues](https://github.com/asleepace/octave-camo/issues).
 
-- **Done, engine, lab and page.** `TrackFill` takes the attacker's statistic and fills until it's
-  below 2.5. The page reads the place and time from the file (or takes them typed in) and the user
-  adds adsb.lol's half-hour archive (a worldwide file: the download reveals the time only);
-  `PassPrediction` makes four curves per aircraft from its stale positions. On the three real
-  passes: the attacker with the exact tracks ends at −1.6, 0.1, −0.2 after removal with the exact
-  tracks, and −1.6, −0.5, −0.2 after removal with only the archive (docs/EXPERIMENTS.md).
-- **Done:** the low band's slow loudness is flattened in Full too, gently (swells slower than 10 s;
-  Experimental 5 s), named strengths swappable per preset (`FLATTEN`, `--flatten off|gentle|strong`).
-- **Next:** swells above the low band (a 737 MAX's mid-band swell survives every preset at z
-  2.3–2.9); more real passes to test on (three is thin); a false fill on busy indoor audio (a
-  TV's tones fitted one curve at z 8); fill level unbiased along the curve (±0.3 dB); engine-tone
-  families searched together; the attacker's z on pure noise has a heavy tail (about one white-
-  noise draw in three scores 4 along some fixed curve), so its threshold needs a calibrated null;
-  a decoy-aware attacker before any decoys.
-
-## Now, alongside: the curve benchmark and a learned detector
-
-A synthetic benchmark measures every detector (`python3 -m lab bench`), and a 14 k-parameter
-learned detector (`python3 -m lab ml`) beats the check by roughly 3 dB at 9–18 dB/Hz on held-out
-backgrounds and finds the faint real pass the check misses, but on real construction audio it
-raises ~38 false passes an hour (docs/EXPERIMENTS.md). Next: harder negatives in training (vehicles
-slowing down, beepers, more real outdoor backgrounds), a pass-level score over the whole curve,
-more clips per strength; port it to Swift as a proposer for the check only once its false alarms
-on real audio are near the check's.
+- **Recordings** (#15): about 45 more sessions like the current ones, so that about 20 held-out
+  ones have a scorable aircraft. Close, loud passes help most.
+- **The session holdout** (#16): the rule is committed (docs/EXPERIMENTS.md, "The new holdout").
+  w68 becomes the default if it's no worse on held-out sessions. Colin agreed to adopt it on that
+  basis.
+- **The blind control on sessions:** does the preset alone already hide the place? (In flight.)
 
 ## Next
 
-- **Decoys (to discuss).** Silence is evidence, and so is the time between events. Synthetic passes
-  consistent with real logged aircraft heard from a *different* place would point a place search
-  elsewhere; random fake curves only fool blind checks. Open questions: where to "put" the
-  recording (not someone else's home), and whether the decoy itself becomes a fingerprint.
+- **An attacker of a different kind with power on sessions.** Every judge today looks for the curve
+  at another resolution; the loudness attacker reaches p ≈ 0.1 at best. Candidates: engine-tone
+  families summed (E5), a learned statistic, the mid-band swell.
+- **Both cloaks push the truth below chance on sessions.** It's not significant per copy; is it
+  usable across copies?
+- **Swells above the low band** (a 737 MAX's mid-band swell survived every preset at z 2.3–2.9),
+  loudness normalisation ([#17](https://github.com/asleepace/octave-camo/issues/17)), the pink-noise
+  hole against a blind control ([#19](https://github.com/asleepace/octave-camo/issues/19)), native
+  encoders ([#18](https://github.com/asleepace/octave-camo/issues/18)).
+- **False fills on busy indoor audio** (a TV's tones once fitted one curve at z 8), and the fill
+  level along the curve (±0.3 dB).
 - **A faster path search:** about 45 % more check time today (spans overlap 4×, so a shared
-  forward pass would cut it). Its z isn't the lab's (real rooms score far above white noise, so the
-  duration rule and the shape test do the work), and a decelerating vehicle can still fit a flyby.
+  forward pass would cut it). A decelerating vehicle can still fit a flyby.
+- **The learned detector** (`lab ml`): beats the check by roughly 3 dB on held-out synthetic
+  backgrounds, but raises ~38 false passes an hour on real construction audio. It needs harder
+  negatives before it's a proposer for the check.
 
 ## Later: paths, families and risk classes (slice 3, [ACOUSTICS.md](ACOUSTICS.md) §4.4–6)
 
@@ -129,6 +135,6 @@ Kept as they are today; picked up once aircraft removal is solid.
 
 ## Housekeeping
 
-- Delete the merged branches (everything on the remote but `main` and `track-fill`, once it's
-  merged); `review-tests` is old work in progress that `main` has superseded.
+- Branches are kept, not deleted (CLAUDE.md). `review-tests` is old work in progress that `main`
+  has superseded.
 - The next release (after v0.1.1, at `19e6902`) collects the work since then.
