@@ -2187,6 +2187,35 @@ Otherwise the default stays.
 - Clause 1 trips by chance about 1 % of the time at 20 sessions (simulated). That's if the two cloaks differ
   as they do on tuning (1 discordant session in 18).
 
+## Does the preset alone already hide the place on our sessions? (plan, written before it ran)
+
+The session check above compared two cloaks that both run the track step. It didn't show the track
+step itself does anything on sessions: the preset's other stages (mono, hum, subtract, S-curve,
+low band, gentle flatten) might hide a faint pass by themselves. Both cloaks also put the truth
+below chance, and it isn't known which stage does that.
+
+**Copies:** `lab trackfill <sid> full --blind`, seeds 7 and 8, the 21 tuning sessions: 42. Scored
+like the session check, under P0/1, PM0/1 and PL0/1 (judges), with P/1 and PXL0/1 reported.
+
+**What's compared, paired by session and seed, with the default's copies already scored:**
+
+- In the 4 sessions whose original a judge finds: blind copies found (of 8) against the default's
+  0 of 8.
+- Over all scorable sessions: copies found under any judge, and mean excess bits under each judge,
+  blind against the default (± se by session).
+
+**How it's read.** It's descriptive; no default changes on it. The question is whether the track
+step does anything on our sessions.
+
+- **The track step adds something** if blind copies are found in at least 3 of those 8. It also
+  adds something if, under any judge, blind's mean excess bits are above the default's by more
+  than 2 se *and* above 0.
+- **The preset alone does it** if neither holds and blind's mean excess bits are within 2 se of
+  the default's under every judge.
+- **Otherwise:** not settled at this size.
+- **Below chance:** if blind's mean excess bits are also below 0 by more than 2 se under a judge,
+  the shift is the preset's, not the track step's.
+
 ## Next experiments
 
 0. **The place as the metric** (envelope term, holdouts, stopping, the public corpus and the
