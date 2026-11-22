@@ -1,6 +1,6 @@
 # Status
 
-_Updated 2026-11-20. Start here when checking in. Rules for working on the project are in
+_Updated 2026-11-22. Start here when checking in. Rules for working on the project are in
 [CLAUDE.md](CLAUDE.md), and the backlog is in the
 [issues](https://github.com/asleepace/octave-camo/issues)._
 
@@ -32,7 +32,12 @@ _Updated 2026-11-20. Start here when checking in. Rules for working on the proje
   back to judge it: 16–17 to 6–8 of 34 copies. +0.36 dB of sound change on the corpus.
 - **On our recordings, both cloaks hide the place** (#14, #29). Three calibrated judges find 4 of
   18 untouched sessions, and none of their copies, default or w68. w68 also passes on real
-  backgrounds. It's the candidate for the new holdout, not the default yet.
+  backgrounds. Colin adopted it on non-inferiority (#16): it becomes the default if it passes the
+  new holdout.
+- **The preset alone hides faint passes, not every clear one** (blind control, tuning half). Without
+  the track step, one of the three sessions with a clear original keeps its lead under every judge.
+  By the rule written beforehand that's not enough to say the track step adds something at this
+  size; more clear passes would settle it.
 - **Reviewed 2026-11-20:**
   - Every figure was recounted from the raw results, the default's output was regenerated
     byte-for-byte, and the panel was calibrated on plane-free noise.
@@ -64,24 +69,18 @@ holdout automatically as they're ingested ([lab/DATA.md](lab/DATA.md)).
 1. [#16](https://github.com/asleepace/octave-camo/issues/16) **The new holdout** (needs data): the
    rule is written and committed (docs/EXPERIMENTS.md, "The new holdout"). Score it once at 20
    held-out sessions with a scorable aircraft.
-2. **The blind control on sessions:** does the preset without flight tracks already hide the place?
-   That needs `lab trackfill --blind`
-   ([#32](https://github.com/asleepace/octave-camo/issues/32), custodial), and it's the holdout's
-   control arm.
-3. **Both cloaks push the truth below chance on sessions.** Could an attacker use that? (#13 says
-   no on the corpus.)
+2. **Clear passes.** The track step's value on sessions rests on one session so far. The new
+   recordings' tuning half answers it (lab/DATA.md, "What to record": clear passes).
+3. **Both cloaks push the truth below chance on sessions,** consistently across sessions but not
+   visibly in one copy. Could an attacker pooling many videos from one place use it? Untested.
 4. Loudness normalisation
    ([#17](https://github.com/asleepace/octave-camo/issues/17)), the pink-noise hole against a blind
    control ([#19](https://github.com/asleepace/octave-camo/issues/19)), native encoders
    ([#18](https://github.com/asleepace/octave-camo/issues/18)).
 
-**Custodial** (the weekly run picks these up, one PR each): a findings summary
-([#20](https://github.com/asleepace/octave-camo/issues/20)), the CHANGELOG
-([#21](https://github.com/asleepace/octave-camo/issues/21)), PLAN.md
-([#22](https://github.com/asleepace/octave-camo/issues/22)), resumable runs
-([#23](https://github.com/asleepace/octave-camo/issues/23)), `lab fetch-corpus`
-([#24](https://github.com/asleepace/octave-camo/issues/24)), `lab trackfill --blind`
-([#32](https://github.com/asleepace/octave-camo/issues/32)).
+**Custodial** (the weekly run picks these up, one PR each): `lab session-calibrate` and
+`lab session-check` as lab commands for the #16 holdout
+([#33](https://github.com/asleepace/octave-camo/issues/33)).
 
 ## Check-in loop
 

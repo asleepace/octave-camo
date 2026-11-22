@@ -7,6 +7,21 @@ the engine. The short version is [FINDINGS.md](FINDINGS.md); the full tables are
 
 Older findings, from before the split, are still in the CHANGELOG entries they shipped with.
 
+## The preset alone hides faint passes, not every clear one (finding)
+
+- **The blind control on sessions:** the Full preset without its track step (`lab trackfill
+  --blind`), two seeds, 21 tuning sessions, scored by the plan written beforehand.
+- **By the rule, the preset alone does it at this size.** Blind copies are found in 2 of the 8
+  copies where the original is found (the default: 0), and no judge has blind above the default by
+  more than 2 se (0.7–1.7 se).
+- **But both are one session's,** under every judge and seed: blind keeps nearly all of its
+  original's lead, and the track step removes it. Of the three sessions with a clear original, the
+  preset alone hides two. On faint passes it does about as well as the default.
+- **The below-chance shift** is consistent across sessions (the default below 0 in 14 of 18, sign
+  test p 0.031) but can't be seen in one copy. Blind isn't below 0 by 2 se, so where it comes from
+  isn't settled.
+- docs/EXPERIMENTS.md, "Does the preset alone already hide the place on our sessions?"
+
 ## The two-window cloak holds on our recordings; the new holdout's rule (finding)
 
 - **Session calibration (#14):** joint-draw p from the place search is calibrated on plane-free

@@ -2216,6 +2216,52 @@ step does anything on our sessions.
 - **Below chance:** if blind's mean excess bits are also below 0 by more than 2 se under a judge,
   the shift is the preset's, not the track step's.
 
+### Result (2026-11-22): by the rule, the preset alone does it at this size; one session says otherwise
+
+42 blind copies of 21 sessions, 18 scorable, 4 counting. Excess bits are means over the two seeds,
+± se by session (n 18; PXL0/1 n 16).
+
+| judge | original | blind | default | blind − default | blind copies found |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| P0/1 | +0.60 ± 0.42 | +0.19 ± 0.34 | −0.21 ± 0.25 | +0.40 ± 0.23 (1.7 se) | 2 of 36 |
+| PM0/1 | +0.44 ± 0.44 | −0.09 ± 0.27 | −0.41 ± 0.12 | +0.32 ± 0.25 (1.3 se) | 2 of 36 |
+| PL0/1 | +0.78 ± 0.49 | −0.12 ± 0.27 | −0.30 ± 0.17 | +0.18 ± 0.24 (0.7 se) | 2 of 36 |
+| P/1 (reported) | +0.59 ± 0.47 | +0.91 ± 0.60 | −0.00 ± 0.30 | +0.91 ± 0.63 (1.5 se) | 5 of 36 |
+| PXL0/1 (reported) | +0.30 ± 0.38 | −0.06 ± 0.31 | −0.18 ± 0.23 | +0.12 ± 0.25 (0.5 se) | 1 of 32 |
+
+- **Counting sessions:** blind copies are found in 2 of 8, the default's in 0 of 8. Fewer than 3,
+  and no judge has blind above the default by more than 2 se, so **by the rule the preset alone
+  does it**, at this size.
+- **But both found copies are one session's,** under all three judges and both seeds. Its original
+  has 3.6–4.4 excess bits. Blind keeps 3.3–4.1 of them; the default brings it to −0.8 to +0.5. On
+  that session the track step is what hides the place.
+- **The other clear originals:** three sessions have an original at 3–6.6 excess bits. In one,
+  blind removes it all (−1.1 to −1.4). In the clearest, blind leaves 0.8–1.5 bits, not enough to
+  be found.
+- **Elsewhere the preset does about as well.** Without the leaking session, blind − default is
+  +0.22 ± 0.15 (P0/1), +0.11 ± 0.15 (PM0/1) and −0.01 ± 0.17 (PL0/1), n 17. Blind is above the
+  default in only 5–7 of 18 sessions.
+- **Reading:** the threshold of 3 found copies needs two sessions, and there are only three
+  sessions with a clear original. So "the preset alone does it" holds for faint passes, which are
+  most of our sessions. On clear passes the preset hides some and not others, and the track step
+  hid all three. Settling it needs more clear passes (lab/DATA.md, "What to record").
+- **Below chance:** blind isn't below 0 by 2 se under any judge, so the rule doesn't put the shift
+  on the preset. Without the leaking session it's −0.30 ± 0.17 (PM0/1) and −0.33 ± 0.17 (PL0/1), about
+  1.8 se, and below 0 in 12 and 14 of 18 sessions. Where the shift comes from isn't settled.
+
+**The below-chance shift, looked at after the fact** (tuning half, not a decision):
+
+- A single copy's hole can't be seen. Cloaked copies' p_low is consistent with uniform (KS p
+  0.14–0.80), with p_low ≤ 0.1 in 1–4 of 36.
+- Across sessions it's consistent. The default's excess bits are below 0 in 14 of 18 sessions under
+  PM0/1 and under PL0/1 (sign test p 0.031). Under PM0/1 the mean is −0.41 ± 0.12. w68's is closer
+  to 0: −0.18 ± 0.13, below 0 in 11 of 18.
+- Noise isn't exactly at 0 either: P0/1 +0.04 ± 0.21, PM0/1 +0.09 ± 0.20, PL0/1 −0.25 ± 0.16. So
+  under PL0/1 part of the shift may be the judge's.
+- **Why it might matter:** an attacker with many videos from one place could pool them and look
+  for the place that scores lowest. Nobody has tested that attacker. It's on the open list
+  (OPEN_QUESTIONS.md).
+
 ## Next experiments
 
 0. **The place as the metric** (envelope term, holdouts, stopping, the public corpus and the

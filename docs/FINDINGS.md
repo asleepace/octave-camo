@@ -57,8 +57,9 @@ sessions. Of those 4 sessions' 8 copies, they find none under the default and no
 `--track-windows 0.17,0.68` (two seeds). Overall, 0 of 36 and 1 of 36 copies are found, below the
 14 % chance rate on noise. On real backgrounds, the two-window cloak puts fewer copies in the top
 5 % than the default (11 against 13 under PM0, 1 against 3 under PXL0). It costs +0.08 ± 0.03 dB
-over the default on sessions. Both cloaks push the truth slightly *below* chance on sessions;
-whether an attacker can use that is open.
+over the default on sessions. Without the track step, the preset alone hides the faint passes too,
+but not every clear one: one of three sessions with a clear original keeps its lead. Both cloaks
+push the truth slightly *below* chance on sessions; whether an attacker can use that is open.
 
 Notebook: [The two-window cloak on our
 sessions](EXPERIMENTS.md#the-two-window-cloak-on-our-sessions-plan-written-before-it-ran),

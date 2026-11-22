@@ -42,9 +42,13 @@ attacker every result is scored against").
   Session aircraft are mostly far and faint.
 - **Re-scored:** any of three calibrated judges finds 4 of 18 untouched sessions. Neither cloak's
   copies are found in those sessions (docs/EXPERIMENTS.md, "The two-window cloak on our sessions").
+- **The preset alone** (no track step) hides faint passes about as well, but not every clear one:
+  one of three sessions with a clear original keeps its lead under the blind preset
+  (docs/EXPERIMENTS.md, "Does the preset alone already hide the place on our sessions?").
 - **Still open:** both cloaks push the truth *below* chance on sessions (negative excess bits).
-  It's not significant per copy, but it's consistent. Whether an attacker could use that, and
-  whether the blind preset does the same, isn't known.
+  One copy's hole can't be seen, but across sessions it's consistent (the default below 0 in 14 of
+  18, sign test p 0.031). Whether an attacker pooling many videos from one place could use it isn't
+  known. The blind preset leans the same way, but not by 2 se, so which stage does it isn't settled.
 
 ### Does a hole matter to a real attacker? (answered on the tuning half: no)
 - **Answered for two attackers** (docs/EXPERIMENTS.md, "Do holes help an attacker?"):
