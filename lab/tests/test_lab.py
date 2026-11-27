@@ -1154,6 +1154,180 @@ class BlankResumes(unittest.TestCase):
 
 
 
+def fake_located(name, p, p_low=0.5, bits=0.0):
+    return {"name": name, "p": p, "p_low": p_low, "excess_bits": bits}
+
+
+def session_row(sid, by):
+    """A hand-made session-check row: {attacker: {audio: (p, p_low, excess bits)}}."""
+    return {"sid": sid, "by": {a: {k: {"p": v[0], "p_low": v[1], "excess_bits": v[2]} for k, v in d.items()}
+                               for a, d in by.items()}}
+
+
+class SessionScoring(unittest.TestCase):
+    """lab session-calibrate and session-check (lab/sessionscore.py): synthetic scenes and
+    hand-made rows only, no session data."""
+
+    TUNE, HELD = "20261104T000000Z_abcdef", "20990101T000000Z_" + corpus.HOLDOUT[0]
+
+    def setUp(self):
+        import tempfile
+        from pathlib import Path
+        self.tmp, self.data = tempfile.TemporaryDirectory(), corpus.DATA
+        corpus.DATA = Path(self.tmp.name)
+
+    def tearDown(self):
+        corpus.DATA = self.data
+        self.tmp.cleanup()
+
+    def test_holdout_sessions_are_refused_without_holdout(self):
+        from unittest import mock
+        from lab import __main__ as lab_main, sessionscore
+        for cmd in (["session-calibrate"], ["session-check", "full-tracks"]):
+            with self.assertRaises(SystemExit) as e:
+                lab_main.main([*cmd, "--sessions", f"{self.TUNE},{self.HELD}"])
+            self.assertIn("holdout", str(e.exception))
+        self.assertEqual(sessionscore.sessions(True, [self.HELD]), [self.HELD])
+        # Unnamed: the tuning sessions, or with --holdout the held-out ones only.
+        with mock.patch.object(corpus, "all_ids", lambda holdout=False: [self.TUNE, self.HELD] if holdout else [self.TUNE]):
+            self.assertEqual(sessionscore.sessions(False), [self.TUNE])
+            self.assertEqual(sessionscore.sessions(True), [self.HELD])
+
+    def test_noise_is_seeded_by_session_and_kind_and_scaled_to_the_session(self):
+        from lab import sessionscore
+        self.assertEqual([sessionscore.noise_seed(i, k) for i in (0, 3) for k in ("white", "pink")], [2000, 2001, 2030, 2031])
+        x = 0.01 * np.random.default_rng(0).normal(0, 1, SR * 4)
+        y = sessionscore.noise_clip(x, SR, "pink", 2001)
+        self.assertAlmostEqual(np.std(y), np.std(x), places=9)
+        np.testing.assert_allclose(y / np.std(y), (lambda z: z / np.std(z))(zenodo.noise(len(x), SR, "pink", 2001)))
+        jobs = sessionscore.calibration_jobs(["a", "b"], ["P0/1"])
+        self.assertEqual([(j[0], j[1], j[2]) for j in jobs], [("a", 0, "white"), ("a", 0, "pink"), ("b", 1, "white"), ("b", 1, "pink")])
+
+    def test_calibrate_one_scores_noise_against_the_sessions_aircraft(self):
+        """The real place search on a synthetic pass's geometry and plane-free noise: scorable
+        (p < 1), and every row value an aggregate."""
+        from unittest import mock
+        from lab import sessionscore
+        sr = 8_000
+        te = np.arange(-60, 120, 0.1)
+        q = np.stack([140 * te, np.full_like(te, 2_000.0), np.full_like(te, 1_000.0)], 1)
+        geo = {"speed_of_sound": 343.0, "duration_s": 60.0, "tracks": {"abc123": (te, q, np.tile([140.0, 0, 0], (len(te), 1)))}}
+        x = np.random.default_rng(1).normal(0, 1, sr * 60)
+        whitened = locate.whitened
+        try:
+            with mock.patch.object(corpus, "geometry", return_value=geo), mock.patch.object(corpus, "load", return_value=(None, x, sr)):
+                row = sessionscore.calibrate_one((self.TUNE, 0, "pink", ["PM0/1"]))
+        finally:
+            locate.whitened = whitened
+        self.assertEqual((row["sid"], row["kind"], row["seed"]), ("abcdef", "pink", 2001))
+        r = row["by"]["PM0/1"]
+        self.assertEqual(set(r), {"p", "p_low", "excess_bits"})
+        self.assertTrue(0 <= r["p"] < 1, r)
+
+    def test_calibration_summary_counts_and_the_any_of_rate(self):
+        from lab import sessionscore
+        A = ("J1", "J2")
+        ps = [(0.01, 0.5), (0.5, 0.04), (0.03, 0.02), (0.6, 0.7), (1.0, 1.0), (0.2, 1.0)]
+        rows = [{"by": {"J1": {"p": a}, "J2": {"p": b}}} for a, b in ps]
+        s = sessionscore.calibration_summary(rows, A)
+        self.assertEqual((s["J1"]["scorable"], s["J1"]["p05"], s["J1"]["p01"]), (5, 2, 1))
+        self.assertAlmostEqual(s["J1"]["mean_p"], (0.01 + 0.5 + 0.03 + 0.6 + 0.2) / 5)
+        self.assertEqual((s["J2"]["scorable"], s["J2"]["p05"], s["J2"]["p01"]), (4, 2, 0))
+        # Any of the two: clips 1-3 at p ≤ 0.05 of the 5 scorable by at least one.
+        self.assertEqual((s["any"]["found"], s["any"]["scorable"]), (3, 5))
+        self.assertAlmostEqual(s["any"]["se"], np.sqrt(0.6 * 0.4 / 5))
+        # The written gate: 36 clips allow 5 at p ≤ 0.05 (docs/EXPERIMENTS.md); mean p 0.40-0.60.
+        self.assertEqual(sessionscore.binomial_limit(36), 5)
+        self.assertFalse(s["J1"]["passes"])                     # 2 of 5 is over the limit of 1
+        ok = [{"by": {"J1": {"p": p}}} for p in np.linspace(0.06, 0.94, 36)]
+        self.assertTrue(sessionscore.calibration_summary(ok, ("J1",))["J1"]["passes"])
+        self.assertIn("| J1 |", sessionscore.calibration_table(s, A))
+
+    def test_check_summary_pairs_copies_by_session(self):
+        from lab import sessionscore
+        groups = {"default": ["d7", "d8"], "w68": ["w7", "w8"]}
+        rows = [
+            session_row("s1", {"J": {"original": (0.01, 0.9, 3.0), "d7": (0.5, 0.5, -1.0), "d8": (0.5, 0.04, 0.0),
+                                     "w7": (0.02, 0.5, 2.0), "w8": (0.5, 0.5, 1.0)}}),
+            session_row("s2", {"J": {"original": (0.3, 0.5, 1.0), "d7": (0.5, 0.5, 1.0), "d8": (0.5, 0.5, 1.0),
+                                     "w7": (0.5, 0.5, 1.0), "w8": (0.5, 0.5, 2.0)}}),
+            session_row("s3", {"J": {"original": (1.0, 1.0, 0.0), "d7": (0.01, 0.5, 9.0), "d8": (1.0, 1.0, 0.0),
+                                     "w7": (1.0, 1.0, 0.0), "w8": (1.0, 1.0, 0.0)}}),     # unscorable: left out
+        ]
+        s = sessionscore.check_summary(rows, groups, ("J",))["J"]
+        self.assertEqual((s["sessions"], s["originals_found"]), (2, 1))
+        d, w = s["groups"]["default"], s["groups"]["w68"]
+        self.assertEqual((d["copies"], d["found"], d["holes"]), (4, 0, 1))
+        self.assertEqual((w["copies"], w["found"], w["holes"]), (4, 1, 0))
+        self.assertAlmostEqual(s["original_bits"][0], 2.0)
+        self.assertAlmostEqual(d["bits"][0], 0.25)               # sessions: -0.5 and 1.0
+        self.assertAlmostEqual(d["bits"][1], np.std([-0.5, 1.0], ddof=1) / np.sqrt(2))
+        self.assertAlmostEqual(w["minus_first"][0], 1.25)         # paired: 2.0 and 0.5
+        self.assertAlmostEqual(w["minus_first"][1], np.std([2.0, 0.5], ddof=1) / np.sqrt(2))
+        self.assertIsNone(d["minus_first"])
+        table = sessionscore.check_table(sessionscore.check_summary(rows, groups, ("J",)), groups, ("J",))
+        self.assertIn("+1.25 ± 0.75 (+1.7 se)", table)
+
+    def test_any_judge_counts_a_copy_once(self):
+        from lab import sessionscore
+        groups = {"c": ["c7"]}
+        rows = [session_row("s1", {"A": {"original": (0.01, 0.5, 2.0), "c7": (0.04, 0.5, 1.0)},
+                                   "B": {"original": (0.02, 0.5, 2.0), "c7": (0.03, 0.5, 1.0)}}),
+                session_row("s2", {"A": {"original": (1.0, 1.0, 0.0), "c7": (1.0, 1.0, 0.0)},
+                                   "B": {"original": (0.5, 0.5, 0.0), "c7": (0.01, 0.5, 2.0)}})]
+        s = sessionscore.check_summary(rows, groups, ("A", "B"))["any"]
+        self.assertEqual((s["sessions"], s["originals_found"]), (2, 1))
+        self.assertEqual(s["groups"]["c"], {"copies": 2, "found": 2})
+
+    def test_copy_groups_and_missing_copies(self):
+        from lab import sessionscore
+        self.assertEqual(sessionscore.parse_groups(["default=full-tracks,full-tracks-s8", "full-blind"]),
+                         {"default": ["full-tracks", "full-tracks-s8"], "full-blind": ["full-blind"]})
+        for bad in ([], ["a=b", "a=c"], ["original"], ["x="]):
+            with self.assertRaises(SystemExit):
+                sessionscore.parse_groups(bad)
+        with self.assertRaises(SystemExit) as e:
+            sessionscore.check_jobs([self.TUNE], {"d": ["full-tracks"]}, ["P0/1"])
+        self.assertIn("missing", str(e.exception))
+
+    def test_check_one_aligns_copies_and_scores_each_without_the_loudness_term(self):
+        import soundfile as sf
+        from unittest import mock
+        from lab import sessionscore
+        x = np.random.default_rng(5).normal(0, 0.1, SR * 4)
+        (corpus.DATA / "cloaked").mkdir()
+        sf.write(sessionscore.copy_path(self.TUNE, "full-tracks"), np.r_[np.zeros(160), x[:-160]], SR, subtype="FLOAT")
+        seen = []
+
+        def fake_locate(sid, audios, sr, envelope=True, attacker=None):
+            seen.append((envelope, attacker, [n for n, _ in audios]))
+            np.testing.assert_allclose(audios[1][1][:-200], audios[0][1][:-200], atol=1e-6)   # aligned
+            return [fake_located(n, 0.5) for n, _ in audios]
+        with mock.patch.object(corpus, "load", return_value=(None, x, SR)), mock.patch.object(locate, "locate", fake_locate):
+            (job,) = sessionscore.check_jobs([self.TUNE], {"d": ["full-tracks"]}, ["P0/1", "PM0/1"])
+            row = sessionscore.check_one(job)
+        self.assertEqual(seen, [(False, a, ["original", "full-tracks"]) for a in ("P0/1", "PM0/1")])
+        self.assertEqual(row["by"]["PM0/1"]["full-tracks"], {"p": 0.5, "p_low": 0.5, "excess_bits": 0.0})
+
+    def test_a_second_run_reads_the_first(self):
+        from unittest import mock
+        from lab import __main__ as lab_main, sessionscore
+        calls = []
+
+        def fake_one(job):
+            calls.append(job[0])
+            return {"sid": job[0][-6:], "kind": job[2], "seed": 0, "by": {a: {"p": 0.5} for a in job[3]}}
+        with mock.patch.object(corpus, "all_ids", return_value=[self.TUNE, "20261105T000000Z_bcdefa"]), \
+                mock.patch.object(sessionscore, "calibrate_one", fake_one), \
+                mock.patch.object(lab_main, "save_result", lambda *a: None):
+            f = corpus.DATA / "cal.jsonl"
+            lab_main.cmd_session_calibrate(["--attackers", "P0/1", "--resume", str(f)], workers=1)
+            s = lab_main.cmd_session_calibrate(["--attackers", "P0/1", "--resume", str(f)], workers=1)
+        self.assertEqual(len(calls), 4)                           # 2 sessions × white, pink; once
+        self.assertEqual(len(f.read_text().splitlines()), 4)
+        self.assertEqual(s["P0/1"]["scorable"], 4)
+
+
 class FetchCorpus(unittest.TestCase):
     """lab fetch-corpus against a fake record on a local server (never the real Zenodo)."""
 
