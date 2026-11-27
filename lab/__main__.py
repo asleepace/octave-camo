@@ -20,6 +20,14 @@
         the cloak's mark on real recordings along a curve nothing follows
                                         the public corpus, tone removal (tuning half by default)
   calibrate [--attackers P0,PM0] [--seeds 2]   each attacker on plane-free noise: fit to judge?
+  session-calibrate [--attackers P0/1,PM0/1,PL0/1] [--holdout] [--sessions a,b] [--resume file.jsonl]
+                                        the judges on plane-free noise against each session's own
+                                        aircraft (lab/sessionscore.py): fit to judge sessions?
+  session-check <copy-tag | name=tag,tag …> [--attackers …] [--holdout] [--sessions a,b] [--resume file.jsonl]
+                                        each session's original and its lab trackfill copies
+                                        (e.g. default=full-tracks,full-tracks-s8) under each judge:
+                                        found, holes, excess bits, paired differences
+                                        (both score the tuning sessions; --holdout the held-out ones)
   locate <session> [audio …] [--envelope] [--attacker PM0]   the place-searching attacker: rank of the true position
                                         (--envelope: the loudness swell too, alone and combined)
                                         among a grid of candidates (distances and areas only)
@@ -452,6 +460,62 @@ def _calibrate_one(job):
     return zenodo.calibrate_pass(p, ps, names, seeds)
 
 
+def _session_args(args: list[str], cmd: str):
+    """The options session-calibrate and session-check share: attackers, sessions, resume file."""
+    from pathlib import Path
+    from . import locate, sessionscore
+    opt = lambda name: args[args.index(name) + 1] if name in args else None
+    attackers = tuple(opt("--attackers").split(",")) if opt("--attackers") else sessionscore.JUDGES
+    for a in attackers:
+        try:
+            locate.attacker_spec(a)
+        except KeyError as e:
+            raise SystemExit(f"--attackers: {e}")
+    holdout = "--holdout" in args
+    sids = sessionscore.sessions(holdout, opt("--sessions").split(",") if opt("--sessions") else None)
+    if not sids:
+        raise SystemExit(f"{cmd}: no {'held-out' if holdout else 'tuning'} sessions")
+    tag = ("holdout" if holdout else "tune") + "-" + "_".join(attackers).replace("/", "")
+    resume = Path(opt("--resume")) if opt("--resume") else None
+    words = [a for i, a in enumerate(args) if not a.startswith("--")
+             and (i == 0 or args[i - 1] not in ("--attackers", "--sessions", "--resume"))]
+    return attackers, holdout, sids, tag, resume, words
+
+
+def cmd_session_calibrate(args: list[str], workers: int = 2):
+    """lab/sessionscore.py: each judge on plane-free noise, against each session's own aircraft."""
+    from . import resume, sessionscore
+    attackers, holdout, sids, tag, path, words = _session_args(args, "session-calibrate")
+    if words:
+        raise SystemExit(f"session-calibrate takes no arguments but options: {words[0]!r}")
+    path = path or corpus.DATA / "results" / f"session-calibrate-{tag}.partial.jsonl"
+    jobs = sessionscore.calibration_jobs(sids, attackers)
+    t = time.time()
+    rows = resume.run(sessionscore.calibrate_one, jobs, path, workers=workers)
+    summ = sessionscore.calibration_summary(rows, attackers)
+    print(f"{len(sids)} {'held-out' if holdout else 'tuning'} sessions × {len(sessionscore.KINDS)} noise kinds "
+          f"({time.time() - t:.0f} s)\n{sessionscore.calibration_table(summ, attackers)}")
+    save_result(f"session-calibrate-{tag}", {"rows": rows, "summary": summ})
+    return summ
+
+
+def cmd_session_check(args: list[str], workers: int = 2):
+    """lab/sessionscore.py: each session's original and its named copies under each judge."""
+    from . import resume, sessionscore
+    attackers, holdout, sids, tag, path, words = _session_args(args, "session-check")
+    groups = sessionscore.parse_groups(words)
+    tag += "-" + "_".join(groups)
+    path = path or corpus.DATA / "results" / f"session-check-{tag}.partial.jsonl"
+    jobs = sessionscore.check_jobs(sids, groups, attackers)
+    t = time.time()
+    rows = resume.run(sessionscore.check_one, jobs, path, workers=workers)
+    summ = sessionscore.check_summary(rows, groups, attackers)
+    print(f"{len(sids)} {'held-out' if holdout else 'tuning'} sessions; copies {groups} ({time.time() - t:.0f} s)\n"
+          f"{sessionscore.check_table(summ, groups, attackers)}")
+    save_result(f"session-check-{tag}", {"rows": rows, "summary": summ, "groups": groups})
+    return summ
+
+
 def cmd_zenodo(args: list[str]):
     """The public 40-flight corpus as a tone-removal holdout (lab/zenodo.py). Scored once."""
     from concurrent.futures import ProcessPoolExecutor
@@ -560,6 +624,10 @@ def main(argv):
         cmd_calibrate(rest)
     elif cmd == "blank":
         cmd_blank(rest)
+    elif cmd == "session-calibrate":
+        cmd_session_calibrate(rest)
+    elif cmd == "session-check":
+        cmd_session_check(rest)
     elif cmd == "bench":
         cmd_bench(rest)
     elif cmd == "trackfill":

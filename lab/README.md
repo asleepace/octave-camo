@@ -17,6 +17,8 @@ python3 -m lab envelope <session> [wav …]                        # the loudnes
 python3 -m lab locate <session> full.wav experimental.wav         # the place-searching attacker (slow: ~5 min each)
 python3 -m lab trackfill <session> full experimental             # flight-track removal (the CLI's --expect)
 python3 -m lab trackfill <session> full --archive                 # the page's path: curves from adsb.lol's archive
+python3 -m lab session-calibrate                                 # the session judges on plane-free noise (#14)
+python3 -m lab session-check default=full-tracks,full-tracks-s8 w68=…   # trackfill copies under the judges (#29)
 python3 -m lab plot <session>                                    # spectrogram + ADS-B Doppler curves
 python3 -m lab bench                                             # the curve benchmark (~45 min on 2 cores)
 python3 -m lab ml data && python3 -m lab ml train && python3 -m lab ml report   # the learned detector (needs jax, optax)
@@ -49,6 +51,12 @@ python3 -m unittest discover -s lab/tests -t .                   # invariants (s
   scored against the audio with the rest frequency free and against the same curve at wrong
   times; the aircraft are summed on one timeline. It reports the true point's rank, how far the
   best guess is, and the area scoring near the best: distances only, never positions.
+- **Scoring sessions** (`lab/sessionscore.py`): `session-calibrate` scores plane-free white and
+  pink noise, at each session's length and level, against that session's own aircraft, and checks
+  each judge against the written gate. `session-check` scores each session's original and its
+  `lab trackfill` copies (tags are file names without the session and `.wav`; `name=tag,tag` joins
+  seeds). Both default to the judges P0/1, PM0/1 and PL0/1 and the tuning sessions, resume per
+  session, and score the held-out sessions only with `--holdout`: the #16 holdout runs from these.
 - **The curve benchmark** (`lab/passes.py`, `lab/bench.py`): synthetic passes with what makes real
   ones messy, in real and synthetic backgrounds; every detector scored by strength and false
   alarms per hour. Per-clip results are cached in `$LAB_DATA/results/bench*.jsonl`, so a rerun only

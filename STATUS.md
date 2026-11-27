@@ -1,6 +1,6 @@
 # Status
 
-_Updated 2026-11-22. Start here when checking in. Rules for working on the project are in
+_Updated 2026-11-27. Start here when checking in. Rules for working on the project are in
 [CLAUDE.md](CLAUDE.md), and the backlog is in the
 [issues](https://github.com/asleepace/octave-camo/issues)._
 
@@ -78,9 +78,11 @@ holdout automatically as they're ingested ([lab/DATA.md](lab/DATA.md)).
    control ([#19](https://github.com/asleepace/octave-camo/issues/19)), native encoders
    ([#18](https://github.com/asleepace/octave-camo/issues/18)).
 
-**Custodial** (the weekly run picks these up, one PR each): `lab session-calibrate` and
-`lab session-check` as lab commands for the #16 holdout
-([#33](https://github.com/asleepace/octave-camo/issues/33)).
+**Custodial** (the weekly run picks these up, one PR each): none open once
+[#33](https://github.com/asleepace/octave-camo/issues/33) merges. Its PR adds `lab session-calibrate`
+and `lab session-check`, which the #16 holdout runs from. Before the holdout, rerun them on the tuning
+sessions and check they reproduce the 2026-11-20 tables (they were written from the spec, not the
+scratch scripts).
 
 ## Check-in loop
 
